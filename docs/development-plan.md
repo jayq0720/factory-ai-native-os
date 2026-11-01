@@ -1,6 +1,6 @@
 # 工厂 AI Native OS 开发方案（v0.6）
 
-> 版本：v0.6 · 日期：2026-11-01 · 目标：3 个月（2026-11-02 ～ 2027-01-31）完成整体搭建，在首家试点工厂（六安绿能，隔热耐火材料）上线运行，并具备复制到其他工厂/行业的能力。
+> 版本：v0.6 · 日期：2026-11-01 · 目标：以 AI 原生为第一性原理覆盖全公司所有职能；3 个月（至 2027-01-31）在首家试点工厂（六安绿能，隔热耐火材料）上线首批能力，全部职能按 1 个 Claude Pro 账号的额度约 7 个月完成（见第 10 章），并可复制到其他工厂/行业。
 
 **版本记录**
 
@@ -595,6 +595,10 @@ factory-ai-native-os/
 │   ├── fos-edge/                # 厂端 daemon：驱动插件、断网缓存、白名单命令
 │   └── fos-protocol/            # 共享数据契约
 ├── fos/                         # Python 核心 OS
+│   ├── ontology/                # 企业本体：对象、属性、关系定义
+│   ├── ledger/                  # 事件账本与投影视图
+│   ├── skills/                  # Skill 运行时
+│   ├── genui/                   # 按需界面：卡片与视图 DSL
 │   ├── triggers/                # Trigger 入口、两级过滤、Thread 订阅直通
 │   ├── router/                  # 工厂总管 Router
 │   ├── workers/                 # Worker 运行时（异步工具、Inline & Spill）
@@ -608,7 +612,8 @@ factory-ai-native-os/
 │   ├── governance/              # 身份、策略、审批、Evidence
 │   └── api/                     # FastAPI
 ├── packs/
-│   └── refractory/              # 耐火材料行业包
+│   ├── refractory/              # 耐火材料行业包（行业本体扩展、工程 Schema、模板）
+│   └── functions/               # 职能 Skill 包：sales / pmc / purchase / warehouse / quality / eam / finance / hr / ehs …
 ├── tenants/
 │   └── luneng/                  # 六安绿能租户配置（不含密钥）
 ├── web/                         # 控制台
