@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# Rust
+target/
+# 本地配置与密钥
+.env
+deploy/.env
+*.db

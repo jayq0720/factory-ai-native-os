@@ -1,0 +1,7 @@
+.venv
+target
+.git
+demo
+docs
+**/__pycache__
+deploy/.env

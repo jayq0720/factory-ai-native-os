@@ -1,0 +1,11 @@
+[package]
+name = "fos-protocol"
+description = "云边共享数据契约：点位读数、数据来源路径、上行批次、白名单命令"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
