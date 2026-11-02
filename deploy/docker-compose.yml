@@ -39,8 +39,15 @@ services:
       FOS_LLM_MODE: ${FOS_LLM_MODE:-mock}
       FOS_LITELLM_BASE_URL: http://litellm:4000
       FOS_LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
+      # 文档解析：mock 或 xiaomi（Xiaomi-OCR-0 部署在 PAI-EAS / GPU ECS 上的 vLLM）
+      FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
+      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
+      FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
+    volumes:
+      - blobs:/data/blobs   # 生产换 OSS
     ports:
       - "8000:8000"
 
 volumes:
   pgdata:
+  blobs:

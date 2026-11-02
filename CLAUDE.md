@@ -17,6 +17,7 @@
 - `fos/ontology/`：本体定义与校验；核心本体 `fos/ontology/core.yaml`，行业包 `packs/<pack>/ontology.yaml`，租户可选 `tenants/<id>/ontology.yaml`
 - `fos/ledger/`：事件账本 `Ledger.append()`、投影 `projection.py`（追加与重放共用）、链式追溯 `trace.py`；说明见 `docs/ontology-and-ledger.md`
 - `fos/api/ledger_routes.py`：`/v1/ontology`、`/v1/events`、`/v1/objects/...`、`.../trace`
+- `fos/perception/`：文档解析。`parser.py` 管线（PDF 文字层 / 扫描页 OCR / 图片 / docx / xlsx），`ocr.py` 的 `MockOCR` 与 `XiaomiOCR`（`FOS_OCR_MODE` 切换），`blobs.py` 原件存储；API 在 `fos/api/document_routes.py`
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 
 ## 规则（不要破坏）

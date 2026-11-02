@@ -1,4 +1,4 @@
-"""数据库表：身份（W1）、事件账本与投影（W2–W3）。
+"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）。
 
 约定：
 - 每张业务表都有 tenant_id，所有查询必须按 tenant_id 过滤（由 repository 层保证）。
@@ -11,7 +11,18 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, event
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -161,3 +172,39 @@ def _append_only(target, connection, **kw) -> None:  # create_all 路径（测�
     stmts = APPEND_ONLY_PG if connection.dialect.name == "postgresql" else APPEND_ONLY_SQLITE
     for s in stmts:
         connection.exec_driver_sql(s)
+
+
+# ---------------- 文档解析 ----------------
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (UniqueConstraint("tenant_id", "sha256", name="uq_documents_tenant_sha"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    filename: Mapped[str] = mapped_column(String(255))
+    format: Mapped[str] = mapped_column(String(8))  # pdf / image / docx / xlsx
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    blob_uri: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(
+        String(16), default="other"
+    )  # tech / tender / drawing / boq / receipt / other
+    status: Mapped[str] = mapped_column(String(16))  # parsed / failed
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    data_mode: Mapped[str] = mapped_column(String(8))
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    uploaded_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DocumentPage(Base):
+    __tablename__ = "document_pages"
+
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    page: Mapped[int] = mapped_column(Integer, primary_key=True)
+    method: Mapped[str] = mapped_column(String(16))  # text_layer / ocr / ocr_mock / docx / xlsx
+    data_mode: Mapped[str] = mapped_column(String(8))
+    title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    markdown: Mapped[str] = mapped_column(Text)

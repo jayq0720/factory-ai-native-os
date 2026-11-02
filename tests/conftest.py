@@ -61,6 +61,7 @@ def settings(tmp_path: Path, tenants_dir: Path) -> Settings:
         database_url=os.environ.get("FOS_TEST_DATABASE_URL") or f"sqlite+aiosqlite:///{tmp_path / 'fos.db'}",
         tenants_dir=tenants_dir,
         packs_dir=REPO / "packs",
+        blob_dir=tmp_path / "blobs",
         llm_mode=LLMMode.mock,
     )
 

@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from fos import __version__
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
+from fos.api.document_routes import router as document_router
 from fos.api.ledger_routes import router as ledger_router
 from fos.config import Settings, get_settings
 from fos.db.session import make_engine, make_sessionmaker
@@ -20,6 +21,8 @@ from fos.gateway.llm import MODEL_ALIASES, ChatMessage, LLMClient, LLMError
 from fos.governance.principal import Principal
 from fos.ledger import Ledger
 from fos.ontology.loader import load_ontology
+from fos.perception.blobs import LocalBlobStore
+from fos.perception.ocr import make_ocr
 from fos.tenancy import TenantRegistry
 
 
@@ -56,9 +59,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         app.state.ledger = Ledger(lambda tid: app.state.ontologies[tid])
         app.state.llm = LLMClient.from_settings(settings)
+        app.state.ocr = make_ocr(settings)
+        app.state.blobs = LocalBlobStore(settings.blob_dir)
         try:
             yield
         finally:
+            await app.state.ocr.aclose()
             await app.state.llm.aclose()
             await engine.dispose()
 
@@ -79,7 +85,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/readyz")
     async def readyz(session: SessionDep, registry: RegistryDep) -> dict[str, Any]:
         await session.execute(text("SELECT 1"))
-        return {"status": "ready", "tenants": len(registry.ids()), "llm_mode": settings.llm_mode.value}
+        return {
+            "status": "ready",
+            "tenants": len(registry.ids()),
+            "llm_mode": settings.llm_mode.value,
+            "ocr_mode": settings.ocr_mode.value,
+        }
 
     @app.get("/v1/me", response_model=MeOut)
     async def me(principal: PrincipalDep, registry: RegistryDep) -> MeOut:
@@ -111,6 +122,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return result.model_dump()
 
     app.include_router(ledger_router)
+    app.include_router(document_router)
     return app
 
 
