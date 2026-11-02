@@ -12,18 +12,15 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from fos import __version__
+from fos.api.channel_routes import router as channel_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
 from fos.api.document_routes import router as document_router
 from fos.api.ledger_routes import router as ledger_router
+from fos.channels.mock import MockChannel
 from fos.config import Settings, get_settings
-from fos.db.session import make_engine, make_sessionmaker
 from fos.gateway.llm import MODEL_ALIASES, ChatMessage, LLMClient, LLMError
 from fos.governance.principal import Principal
-from fos.ledger import Ledger
-from fos.ontology.loader import load_ontology
-from fos.perception.blobs import LocalBlobStore
-from fos.perception.ocr import make_ocr
-from fos.tenancy import TenantRegistry
+from fos.services import Services
 
 
 class MeOut(BaseModel):
@@ -45,28 +42,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        engine = make_engine(settings.database_url)
-        app.state.settings = settings
-        app.state.engine = engine
-        app.state.sessionmaker = make_sessionmaker(engine)
-        registry = TenantRegistry.load(settings.tenants_dir)
-        app.state.registry = registry
-        # 启动时加载并校验每个租户的本体；任何一个不合法就拒绝启动
-        app.state.ontologies = {
-            tid: load_ontology(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
-            for tid in registry.ids()
-            if (t := registry.get(tid)) is not None
-        }
-        app.state.ledger = Ledger(lambda tid: app.state.ontologies[tid])
-        app.state.llm = LLMClient.from_settings(settings)
-        app.state.ocr = make_ocr(settings)
-        app.state.blobs = LocalBlobStore(settings.blob_dir)
+        svc = Services.build(settings)
+        st = app.state
+        st.services = svc
+        st.settings, st.engine, st.sessionmaker = settings, svc.engine, svc.sessionmaker
+        st.registry, st.ontologies, st.ledger = svc.registry, svc.ontologies, svc.ledger
+        st.llm, st.ocr, st.blobs, st.intake = svc.llm, svc.ocr, svc.blobs, svc.intake
+        st.mock_channel = MockChannel()  # 模拟信道（非 prod 环境），见 channel_routes
+        st.adapters = {}  # 按租户缓存的真实信道适配器（发卡片用）
         try:
             yield
         finally:
-            await app.state.ocr.aclose()
-            await app.state.llm.aclose()
-            await engine.dispose()
+            for a in st.adapters.values():
+                await a.aclose()
+            await svc.aclose()
 
     app = FastAPI(title="Factory AI Native OS", version=__version__, lifespan=lifespan)
 
@@ -123,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(ledger_router)
     app.include_router(document_router)
+    app.include_router(channel_router)
     return app
 
 

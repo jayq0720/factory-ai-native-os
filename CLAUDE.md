@@ -18,6 +18,9 @@
 - `fos/ledger/`：事件账本 `Ledger.append()`、投影 `projection.py`（追加与重放共用）、链式追溯 `trace.py`；说明见 `docs/ontology-and-ledger.md`
 - `fos/api/ledger_routes.py`：`/v1/ontology`、`/v1/events`、`/v1/objects/...`、`.../trace`
 - `fos/perception/`：文档解析。`parser.py` 管线（PDF 文字层 / 扫描页 OCR / 图片 / docx / xlsx），`ocr.py` 的 `MockOCR` 与 `XiaomiOCR`（`FOS_OCR_MODE` 切换），`blobs.py` 原件存储；API 在 `fos/api/document_routes.py`
+- `fos/channels/`：统一信道层。`types.py` 统一消息格式，`cards.py` 卡片 DSL，`dingtalk.py` 钉钉（Stream 收 + OpenAPI 发），`mock.py` 模拟信道；说明见 `docs/channels.md`
+- `fos/triggers/`：`intake.py` Trigger 入口与 Fast Path，`cards.py` 卡片确认（L2，以点击人身份 `Ledger.append()`）；API 在 `fos/api/channel_routes.py`；`fos channels run` 启动长连接
+- `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 
 ## 规则（不要破坏）
@@ -27,8 +30,9 @@
 3. **数字不让模型算**：用量、传热、金额、成本由确定性代码计算。
 4. **模拟与真实不混用**：模拟结果带 `data_mode="mock"`，不能发布或导出正式文件。
 5. **业务事实只通过 `Ledger.append()` 写入**：不要直接改 `objects` / `object_links`（它们是投影，可随时重建），`events` 表数据库层禁止改删。新业务 = 在本体 YAML 里加对象类型和事件类型，一般不需要写 Python。
-6. 厂端只执行白名单只读命令，协议里不存在写设备的命令。
-7. 文档、注释、界面文案用中文；标识符用英文。
+6. **写操作只在人确认之后**：IM 消息是不可信输入，Agent 只提出卡片，确认时以点击人的权限执行；回复在事务提交后再发。
+7. 厂端只执行白名单只读命令，协议里不存在写设备的命令。
+8. 文档、注释、界面文案用中文；标识符用英文。
 
 ## 常用命令
 

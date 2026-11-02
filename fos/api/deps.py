@@ -7,7 +7,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.governance import apikeys
-from fos.governance.principal import Principal
+from fos.governance.principal import Principal, principal_for_user
 from fos.tenancy import TenantRegistry
 
 
@@ -47,14 +47,7 @@ async def get_principal(request: Request, session: SessionDep, registry: Registr
     tenant = registry.get(user.tenant_id)
     if tenant is None:  # 租户配置被移除：一律拒绝
         raise _UNAUTH
-    return Principal(
-        tenant_id=user.tenant_id,
-        subject_id=user.id,
-        kind="user",
-        display_name=user.display_name,
-        roles=tuple(user.roles),
-        permissions=tenant.permissions_for(list(user.roles)),
-    )
+    return principal_for_user(user, tenant)
 
 
 PrincipalDep = Annotated[Principal, Depends(get_principal)]

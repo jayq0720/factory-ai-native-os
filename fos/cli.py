@@ -4,18 +4,22 @@ fos tenants                         列出租户配置并校验
 fos create-user <tenant> <login> <显示名> --roles admin,sales
 fos issue-key <tenant> <login> [--label 说明]
 fos revoke-key <key_id>
+fos ontology <tenant> | rebuild <tenant>
+fos bind-im <tenant> <login> <channel> <IM 账号 id>   绑定 IM 账号（钉钉为企业内 userid）
+fos channels run [--tenant luneng]                   启动 IM 长连接（钉钉 Stream），收消息进 Trigger 入口
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 
 from sqlalchemy import select
 
 from fos.config import get_settings
-from fos.db.models import ApiKey, User, utcnow
+from fos.db.models import ApiKey, ChannelIdentity, User, utcnow
 from fos.db.session import make_engine, make_sessionmaker
 from fos.governance import apikeys
 from fos.ledger.projection import rebuild
@@ -23,8 +27,50 @@ from fos.ontology.loader import load_ontology
 from fos.tenancy import TenantRegistry
 
 
+async def _run_channels(tenant_ids: list[str]) -> int:
+    from fos.channels.dingtalk import DingTalkAdapter, DingTalkApp, DingTalkStream
+    from fos.channels.types import InboundMessage
+    from fos.services import Services
+    from fos.triggers.intake import deliver
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    svc = Services.build(get_settings())
+    runs = []
+    for tid in tenant_ids or svc.registry.ids():
+        tenant = svc.registry.get(tid)
+        if tenant is None or "dingtalk" not in tenant.im:
+            continue
+        app = DingTalkApp.from_env(tid)
+        if app is None:
+            print(
+                f"{tid}: 没有配置 FOS_DINGTALK_{tid.upper()}_CLIENT_ID / _CLIENT_SECRET，跳过",
+                file=sys.stderr,
+            )
+            continue
+        adapter = DingTalkAdapter(app)
+
+        async def handle(msg: InboundMessage, adapter: DingTalkAdapter = adapter) -> None:
+            async with svc.sessionmaker() as session, session.begin():
+                out = await svc.intake.handle(session, adapter, msg)
+            await deliver(adapter, out)  # 提交之后再回复
+
+        runs.append(DingTalkStream(app, handle).run_forever())
+        print(f"{tid}: 钉钉 Stream 启动")
+    if not runs:
+        print("没有可启动的信道", file=sys.stderr)
+        await svc.aclose()
+        return 1
+    try:
+        await asyncio.gather(*runs)
+    finally:
+        await svc.aclose()
+    return 0
+
+
 async def _run(args: argparse.Namespace) -> int:
     s = get_settings()
+    if args.cmd == "channels":
+        return await _run_channels([args.tenant] if args.tenant else [])
     registry = TenantRegistry.load(s.tenants_dir)
     if args.cmd == "tenants":
         for tid in registry.ids():
@@ -79,6 +125,24 @@ async def _run(args: argparse.Namespace) -> int:
             elif args.cmd == "rebuild":
                 n = await rebuild(session, onto, tenant.id)
                 print(f"已重放 {n} 个事件")
+            elif args.cmd == "bind-im":
+                u = (
+                    await session.execute(
+                        select(User).where(User.tenant_id == args.tenant, User.login == args.login)
+                    )
+                ).scalar_one_or_none()
+                if not u:
+                    print("用户不存在", file=sys.stderr)
+                    return 1
+                key = (args.tenant, args.channel, args.external_id)
+                ident = await session.get(ChannelIdentity, key)
+                if ident is None:
+                    session.add(
+                        ChannelIdentity(tenant_id=key[0], channel=key[1], external_id=key[2], user_id=u.id)
+                    )
+                else:
+                    ident.user_id = u.id
+                print(f"已绑定 {args.channel}:{args.external_id} → {u.login}")
             elif args.cmd == "revoke-key":
                 k = await session.get(ApiKey, args.key_id)
                 if not k:
@@ -106,6 +170,14 @@ def main(argv: list[str] | None = None) -> int:
     ik.add_argument("--label", default="")
     rk = sub.add_parser("revoke-key")
     rk.add_argument("key_id")
+    bi = sub.add_parser("bind-im")
+    bi.add_argument("tenant")
+    bi.add_argument("login")
+    bi.add_argument("channel", choices=["dingtalk", "feishu", "wecom"])
+    bi.add_argument("external_id")
+    ch = sub.add_parser("channels")
+    ch.add_argument("action", choices=["run"])
+    ch.add_argument("--tenant", default="")
     for name in ("ontology", "rebuild"):
         sp = sub.add_parser(name)
         sp.add_argument("tenant")

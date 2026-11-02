@@ -43,10 +43,37 @@ services:
       FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
       FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
       FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
+      # 发卡片（POST /v1/cards）也要用钉钉应用凭据
+      FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
+      FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
+      FOS_DINGTALK_LUNENG_ROBOT_CODE: ${FOS_DINGTALK_LUNENG_ROBOT_CODE:-}
+      FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID: ${FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID:-}
     volumes:
       - blobs:/data/blobs   # 生产换 OSS
     ports:
       - "8000:8000"
+
+  # IM 长连接（钉钉 Stream 不需要公网回调地址）。凭据只从 .env / KMS 注入。
+  channels:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ["fos", "channels", "run"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD}@db:5432/fos
+      FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
+      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
+      FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
+      FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
+      FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
+      FOS_DINGTALK_LUNENG_ROBOT_CODE: ${FOS_DINGTALK_LUNENG_ROBOT_CODE:-}
+      FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID: ${FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID:-}
+    volumes:
+      - blobs:/data/blobs
 
 volumes:
   pgdata:
