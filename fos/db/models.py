@@ -1,4 +1,4 @@
-"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）。
+"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）、Agent 运行（W7）。
 
 约定：
 - 每张业务表都有 tenant_id，所有查询必须按 tenant_id 过滤（由 repository 层保证）。
@@ -297,3 +297,34 @@ class CardRecord(Base):
     acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------- Agent 运行（W7） ----------------
+
+
+class Run(Base):
+    """一次 Worker 运行（方案 2.6 Run / Worker Session）：用哪个 Skill、走了哪些步骤、花了多少 Token。"""
+
+    __tablename__ = "runs"
+    __table_args__ = (
+        Index("ix_runs_thread", "tenant_id", "thread_id", "status"),
+        Index("ix_runs_trigger", "tenant_id", "trigger_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"))
+    trigger_id: Mapped[str] = mapped_column(ForeignKey("triggers.id"))
+    user_id: Mapped[str] = mapped_column(String(36))  # 以谁的名义在查（权限取交集）
+    skill_id: Mapped[str] = mapped_column(String(48))
+    skill_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))  # running / waiting（等人回答）/ done / failed
+    task: Mapped[str] = mapped_column(Text)
+    messages: Mapped[list] = mapped_column(JSON, default=list)  # 对话上下文，用于追问后继续
+    steps: Mapped[list] = mapped_column(JSON, default=list)  # 每次工具调用（参数、结果摘要、耗时）
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    data_mode: Mapped[str] = mapped_column(String(8))
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

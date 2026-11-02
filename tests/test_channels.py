@@ -238,12 +238,12 @@ def test_unbound_and_ignored(client, send, bind, h):
     assert r["ignored"] and r["trigger_id"] is None  # 群聊没 @：不落库
 
     r1 = send("im-worker", text="昨天合格率多少", external_msg_id="dup-1")
-    assert r1["route"] == "router" and r1["status"] == "pending"
+    assert r1["route"] == "run" and r1["agent"]["decision"] == "dispatch"  # 交给 Agent 运行时
     r2 = send("im-worker", text="昨天合格率多少", external_msg_id="dup-1")
     assert r2["duplicate"] and r2["trigger_id"] == r1["trigger_id"] and r2["replies"] == []
 
     dm = send("im-worker", text="单聊", conversation_type="direct", conversation_id="dm", mentioned=False)
-    assert dm["route"] == "router" and dm["thread_id"] != r1["thread_id"]
+    assert dm["agent"]["decision"] == "reply" and dm["thread_id"] != r1["thread_id"]
     again = send("im-worker", text="同一个群")
     assert again["thread_id"] == r1["thread_id"]  # 同一会话同一 Thread
 

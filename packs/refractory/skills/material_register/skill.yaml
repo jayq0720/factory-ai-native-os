@@ -1,0 +1,12 @@
+id: material_register
+name: 新增物料
+role: 仓管员
+version: 1
+description: 用户要求登记一个新物料（原料、辅料、包材、备件）时，整理名称、规格、类别、单位，提议新增物料，由仓管确认
+keywords: [新增物料, 加个物料, 登记物料, 新物料]
+model: fos-chat
+autonomy: L2
+tools: [ontology.describe, objects.list, ledger.propose]
+permissions: ["warehouse.material:read"]
+proposes: [warehouse.material_defined]
+max_steps: 5

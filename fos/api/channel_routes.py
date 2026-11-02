@@ -251,6 +251,14 @@ async def mock_message(
     await session.commit()
     send_errors = await deliver(mock, out)
     t = out.trigger
+    run = None
+    if t is not None and not out.duplicate and t.route == "router" and t.status == "pending":
+        ro = await st.services.runtime.process(st.sessionmaker, mock, t.id)
+        out.replies.extend({"type": "text", "text": r} for r in ro.replies)
+        out.replies.extend({"type": "card", "card_id": c.id, "short_code": c.short_code} for c in ro.cards)
+        run = {"decision": ro.decision, "run_id": ro.run.id if ro.run else None}
+        async with st.sessionmaker() as s2:
+            t = await s2.get(Trigger, t.id)
     return {
         "ignored": t is None,
         "duplicate": out.duplicate,
@@ -261,6 +269,7 @@ async def mock_message(
         "result": t.result if t else None,
         "replies": out.replies,
         "send_errors": send_errors,
+        "agent": run,
     }
 
 

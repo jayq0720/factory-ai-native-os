@@ -53,6 +53,9 @@ async def _run_channels(tenant_ids: list[str]) -> int:
             async with svc.sessionmaker() as session, session.begin():
                 out = await svc.intake.handle(session, adapter, msg)
             await deliver(adapter, out)  # 提交之后再回复
+            t = out.trigger
+            if t is not None and not out.duplicate and t.route == "router" and t.status == "pending":
+                await svc.runtime.process(svc.sessionmaker, adapter, t.id)
 
         runs.append(DingTalkStream(app, handle).run_forever())
         print(f"{tid}: 钉钉 Stream 启动")

@@ -1,0 +1,11 @@
+id: ask_data
+name: 问数
+role: 总经理助理
+version: 1
+description: 回答“有多少、最近有哪些、某个客户/物料/设备的情况”这类查询；只读，按提问人的权限
+keywords: [多少, 有哪些, 最近, 列一下, 查一下, 查询, 合格率]
+model: fos-chat
+autonomy: L1
+tools: [ontology.describe, objects.list, objects.get]
+permissions: ["*.*:read"]
+max_steps: 6

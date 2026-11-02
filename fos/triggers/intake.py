@@ -8,7 +8,7 @@
 5. 分流（零模型成本的确定性规则）：
    - 卡片按钮 / 文字指令「确认 K7Q2M」→ 卡片确认（L2）；
    - 图片、文件 → 直接进文档解析；
-   - 其他文字 → 交给 Router（W7–W8 上线前先记为待处理）。
+   - 其他文字 → 交给 Router（fos.agents.runtime，事务提交后执行）。
 
 IM 消息是不可信输入：这里不把消息内容交给模型，也不据此执行任何写操作；写操作只发生在卡片确认，
 并以点击人自己的权限执行。
@@ -53,8 +53,6 @@ METHOD_TEXT = {
     "xlsx": "Excel",
     "image": "OCR",
 }
-
-ROUTER_PENDING_REPLY = "收到。对话理解还没上线，现在可以发照片或文件给我识别，或者回复卡片上的指令。"
 
 
 @dataclass
@@ -160,8 +158,7 @@ class TriggerIntake:
             elif msg.attachments and msg.kind in ("image", "file", "rich"):
                 await self._documents(session, adapter, msg, out, principal)
             elif msg.kind in ("text", "rich") and msg.text:
-                trig.route, trig.status = "router", "pending"
-                await self._reply(adapter, msg, out, ROUTER_PENDING_REPLY)
+                trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
                 trig.route, trig.status = "unsupported", "rejected"
                 await self._reply(adapter, msg, out, "暂时不支持这类消息，可以发文字、照片或文件。")
