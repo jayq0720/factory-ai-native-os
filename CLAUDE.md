@@ -20,6 +20,8 @@
 - `fos/perception/`：文档解析。`parser.py` 管线（PDF 文字层 / 扫描页 OCR / 图片 / docx / xlsx），`ocr.py` 的 `MockOCR` 与 `XiaomiOCR`（`FOS_OCR_MODE` 切换），`blobs.py` 原件存储；API 在 `fos/api/document_routes.py`
 - `fos/channels/`：统一信道层。`types.py` 统一消息格式，`cards.py` 卡片 DSL，`dingtalk.py` 钉钉（Stream 收 + OpenAPI 发），`mock.py` 模拟信道；说明见 `docs/channels.md`
 - `fos/triggers/`：`intake.py` Trigger 入口与 Fast Path，`cards.py` 卡片确认（L2，以点击人身份 `Ledger.append()`）；API 在 `fos/api/channel_routes.py`；`fos channels run` 启动长连接
+- `fos/agents/`：`router.py`（分派）、`worker.py`（工具调用循环）、`runtime.py`（接 Trigger、Thread 直通、提议转卡片）；说明见 `docs/agents.md`
+- `fos/skills/` + `packs/<pack>/skills/<id>/{skill.yaml,SKILL.md}`：Skill 包；`fos/tools/`：Agent 工具（只读 + `ledger.propose`），权限 = Skill 上限 ∩ 提问人
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 

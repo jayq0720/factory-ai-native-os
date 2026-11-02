@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
 from fos.db.session import make_engine, make_sessionmaker
 from fos.gateway.llm import LLMClient
@@ -14,7 +15,11 @@ from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.ocr import OCRProvider, make_ocr
+from fos.skills.loader import load_skills
+from fos.skills.schema import SkillDef
 from fos.tenancy import TenantRegistry
+from fos.tools import builtin  # noqa: F401  注册内置工具
+from fos.tools.registry import REGISTRY
 from fos.triggers.intake import TriggerIntake
 
 
@@ -30,6 +35,8 @@ class Services:
     ocr: OCRProvider
     blobs: LocalBlobStore
     intake: TriggerIntake
+    skills: dict[str, dict[str, SkillDef]]
+    runtime: AgentRuntime
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -42,6 +49,12 @@ class Services:
             if (t := registry.get(tid)) is not None
         }
         ledger = Ledger(lambda tid: ontologies[tid])
+        skills = {
+            tid: load_skills(t, packs_dir=settings.packs_dir, ontology=ontologies[tid], tools=set(REGISTRY))
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        llm = LLMClient.from_settings(settings)
         ocr = make_ocr(settings)
         blobs = LocalBlobStore(settings.blob_dir)
         return cls(
@@ -51,10 +64,14 @@ class Services:
             registry=registry,
             ontologies=ontologies,
             ledger=ledger,
-            llm=LLMClient.from_settings(settings),
+            llm=llm,
             ocr=ocr,
             blobs=blobs,
             intake=TriggerIntake(registry=registry, ledger=ledger, ocr=ocr, blobs=blobs, settings=settings),
+            skills=skills,
+            runtime=AgentRuntime(
+                registry=registry, ontologies=ontologies, skills=skills, llm=llm, settings=settings
+            ),
         )
 
     async def aclose(self) -> None:

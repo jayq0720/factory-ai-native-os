@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from fos import __version__
+from fos.api.agent_routes import router as agent_router
 from fos.api.channel_routes import router as channel_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
 from fos.api.document_routes import router as document_router
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ledger_router)
     app.include_router(document_router)
     app.include_router(channel_router)
+    app.include_router(agent_router)
     return app
 
 

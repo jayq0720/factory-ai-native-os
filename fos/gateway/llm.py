@@ -55,7 +55,7 @@ class LLMClient:
             await self._http.aclose()
 
     async def chat(
-        self, messages: list[ChatMessage], *, model: str = "fos-chat", tenant_id: str
+        self, messages: list[ChatMessage], *, model: str = "fos-chat", tenant_id: str, json_mode: bool = False
     ) -> ChatResult:
         if model not in MODEL_ALIASES:
             raise LLMError(f"未知模型别名 {model!r}，可用：{', '.join(MODEL_ALIASES)}")
@@ -71,6 +71,8 @@ class LLMClient:
             "user": tenant_id,
             "metadata": {"tenant_id": tenant_id},
         }
+        if json_mode:  # DeepSeek / Qwen 都支持 JSON 输出模式
+            payload["response_format"] = {"type": "json_object"}
         try:
             r = await self._http.post("/v1/chat/completions", json=payload)
             r.raise_for_status()

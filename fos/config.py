@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     max_upload_mb: int = 50
     max_pages: int = 300
 
+    # Agent 运行预算（方案 2.6 Budget Lease）：单次运行的上限
+    agent_max_tokens: int = 40_000
+    agent_tool_result_chars: int = 4_000  # 工具结果放进上下文的上限，超出部分只存在运行记录里（Spill）
+
 
 @lru_cache
 def get_settings() -> Settings:

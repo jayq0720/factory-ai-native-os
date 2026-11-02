@@ -1,0 +1,11 @@
+id: batch_trace
+name: 批次追溯
+role: 车间助理
+version: 1
+description: 按生产批次号、窑次号或原料批次号，追溯它用了哪些原料、在哪一窑烧、检验结果如何；用于质量问题和客户异议排查
+keywords: [追溯, 哪批原料, 哪一窑, 哪个窑, 批次, 窑次]
+model: fos-chat
+autonomy: L1
+tools: [ontology.describe, objects.get, objects.list, objects.trace]
+permissions: ["production.*:read", "warehouse.*:read", "quality.*:read", "purchase.supplier:read"]
+max_steps: 6
