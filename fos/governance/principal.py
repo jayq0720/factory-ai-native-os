@@ -19,3 +19,15 @@ class Principal:
 
     def can(self, permission: str) -> bool:
         return grants(self.permissions, permission)
+
+
+def principal_for_user(user, tenant) -> Principal:
+    """由用户记录和租户配置构造主体（API Key 鉴权与 IM 消息共用）。"""
+    return Principal(
+        tenant_id=user.tenant_id,
+        subject_id=user.id,
+        kind="user",
+        display_name=user.display_name,
+        roles=tuple(user.roles),
+        permissions=tenant.permissions_for(list(user.roles)),
+    )

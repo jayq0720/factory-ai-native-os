@@ -1,4 +1,4 @@
-"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）。
+"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）。
 
 约定：
 - 每张业务表都有 tenant_id，所有查询必须按 tenant_id 过滤（由 repository 层保证）。
@@ -208,3 +208,92 @@ class DocumentPage(Base):
     data_mode: Mapped[str] = mapped_column(String(8))
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
     markdown: Mapped[str] = mapped_column(Text)
+
+
+# ---------------- 信道、Trigger、卡片（W5–W6） ----------------
+
+
+class ChannelIdentity(Base):
+    """IM 账号 → 系统用户。同一个人在钉钉 / 企业微信 / 飞书的账号映射到同一个用户。"""
+
+    __tablename__ = "channel_identities"
+    __table_args__ = (Index("ix_channel_identities_user", "user_id"),)
+
+    tenant_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    channel: Mapped[str] = mapped_column(String(16), primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Thread(Base):
+    """一条事件流：一个 IM 会话、一张卡片、一个批次或窑次（方案 2.4.2）。"""
+
+    __tablename__ = "threads"
+    __table_args__ = (UniqueConstraint("tenant_id", "key", name="uq_threads_tenant_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    key: Mapped[str] = mapped_column(String(200))  # 例如 dingtalk:group:<会话 id>
+    kind: Mapped[str] = mapped_column(String(16))  # im / object / alert
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_trigger_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Trigger(Base):
+    """进入系统的一条事件（IM 消息、卡片点击、设备告警、定时任务）及其处理结果。
+
+    这是运行记录，不是业务事实；业务事实仍只通过 Ledger.append() 写入。
+    """
+
+    __tablename__ = "triggers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "source", "external_id", name="uq_triggers_external"),
+        Index("ix_triggers_thread", "tenant_id", "thread_id", "created_at"),
+        Index("ix_triggers_route", "tenant_id", "route", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(16))  # dingtalk / feishu / wecom / mock / device / schedule
+    external_id: Mapped[str] = mapped_column(String(160))  # 平台消息 id，用于去重
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"))
+    user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)  # 未绑定的 IM 账号为空
+    sender_ref: Mapped[str] = mapped_column(String(128))  # 平台用户 id
+    kind: Mapped[str] = mapped_column(String(16))  # text / image / file / card_action …
+    route: Mapped[str] = mapped_column(String(24))  # Fast Path 的分流结果
+    status: Mapped[str] = mapped_column(String(16))  # done / pending / failed / rejected
+    text: Mapped[str] = mapped_column(Text, default="")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)  # 附件引用、卡片动作等
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CardRecord(Base):
+    """发出去的卡片，以及点击后要执行的动作（L2 单步获准）。"""
+
+    __tablename__ = "cards"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "short_code", name="uq_cards_tenant_code"),
+        Index("ix_cards_thread", "tenant_id", "thread_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    short_code: Mapped[str] = mapped_column(String(8))  # 文字指令确认用，如 K7Q2M
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"))
+    channel: Mapped[str] = mapped_column(String(16))
+    conversation: Mapped[dict] = mapped_column(JSON)  # ConversationRef
+    card: Mapped[dict] = mapped_column(JSON)  # Card DSL
+    action: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 确认后执行的动作
+    required_permission: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    allowed_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)  # 只允许某个人确认
+    status: Mapped[str] = mapped_column(
+        String(16), default="open"
+    )  # open / done / cancelled / expired / failed
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(64))
+    acted_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
