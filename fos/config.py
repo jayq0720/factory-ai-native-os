@@ -15,6 +15,11 @@ class LLMMode(StrEnum):
     litellm = "litellm"  # 通过 LiteLLM 代理调用百炼 / DeepSeek 等
 
 
+class OCRMode(StrEnum):
+    mock = "mock"  # 返回预置或占位结果，结果标记 data_mode=mock
+    xiaomi = "xiaomi"  # 调用 vLLM / SGLang 上部署的 Xiaomi-OCR-0（OpenAI 兼容接口）
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="FOS_", env_file=".env", extra="ignore")
 
@@ -27,6 +32,17 @@ class Settings(BaseSettings):
     litellm_base_url: str = "http://localhost:4000"
     litellm_api_key: str = ""  # LiteLLM master key，从 KMS / 凭据管家注入
     llm_timeout_s: float = 60.0
+
+    # 文档解析
+    blob_dir: Path = Field(default=Path("var/blobs"))  # 本地原件存储；生产换 OSS
+    ocr_mode: OCRMode = OCRMode.mock
+    ocr_base_url: str = "http://localhost:8001/v1"
+    ocr_api_key: str = ""
+    ocr_model: str = "xiaomi-ocr-0"  # vLLM --served-model-name
+    ocr_timeout_s: float = 120.0
+    ocr_render_scale: float = 2.0  # PDF 扫描页渲染倍率（72 dpi × 2 ≈ 144 dpi）
+    max_upload_mb: int = 50
+    max_pages: int = 300
 
 
 @lru_cache
