@@ -1,0 +1,56 @@
+# 六安绿能（试点）租户配置。只放配置，不放任何密钥。
+# 权限串格式见 fos/governance/permissions.py：<域>.<对象>:<动作>
+id: luneng
+name: 六安绿能
+industry_pack: refractory
+timezone: Asia/Shanghai
+im: [dingtalk, wecom, feishu]   # 三种都支持；先上哪种待现场确认（方案 12.1）
+
+roles:
+  admin:
+    name: 系统管理员
+    permissions: ["*.*:*"]
+  gm:
+    name: 总经理
+    permissions: ["*.*:read", "*.*:approve"]
+  sales:
+    name: 销售
+    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read"]
+  sales_lead:
+    name: 销售负责人
+    permissions: ["sales.*:*", "eng.*:read", "eng.quote:approve"]
+  engineer:
+    name: 工程技术
+    permissions: ["eng.*:read", "eng.*:write", "kb.*:read", "kb.change:write"]
+  kb_admin:
+    name: 知识库管理员
+    permissions: ["kb.*:*"]
+  planner:
+    name: 计划员
+    permissions: ["pmc.*:read", "pmc.*:write", "production.*:read", "warehouse.stock:read"]
+  purchaser:
+    name: 采购
+    permissions: ["purchase.*:read", "purchase.*:write", "warehouse.stock:read"]
+  warehouse:
+    name: 仓管
+    permissions: ["warehouse.*:read", "warehouse.*:write"]
+  shift_lead:
+    name: 班组长
+    permissions: ["production.*:read", "production.*:write", "production.kiln:approve"]
+  worker:
+    name: 工人
+    permissions: ["production.record:write", "production.record:read"]
+  qc:
+    name: 质检
+    permissions: ["quality.*:read", "quality.*:write", "production.*:read"]
+  finance:
+    name: 财务
+    permissions: ["finance.*:read", "finance.*:write"]
+
+# 每类动作 Agent 最多能做到的自治级别（方案 2.7）
+autonomy:
+  production.record: L2     # 录单：Agent 起草，人确认后入账
+  eng.draft: L1             # 工程草稿：只建议
+  eng.quote: L2             # 报价发布：人确认
+  kb.change: L2             # 知识库修改：管理员确认
+  purchase.order: L2

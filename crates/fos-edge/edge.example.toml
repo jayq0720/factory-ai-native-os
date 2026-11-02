@@ -1,0 +1,29 @@
+# fos-edge 示例配置（六安绿能，点位为示意，W1 现场调研后替换）
+tenant_id = "luneng"
+edge_id = "luneng-ws1-ipc01"
+uplink_url = "https://fos.example.com/edge/uplink"
+buffer_days = 7
+
+# 路径 A：1# 隧道窑温控仪表，RS485 Modbus RTU
+[[point]]
+id = "kiln1.zone18.temp"
+driver = "modbus-rtu"
+unit = "℃"
+interval_s = 5
+params = { port = "/dev/ttyUSB0", baud = 9600, address = 3, register = 4096, scale = 0.1 }
+
+# 路径 B：2# 梭式窑旁路加装热电偶 + 4G 采集模块
+[[point]]
+id = "kiln2.top.temp"
+driver = "modbus-tcp"
+source = "retrofit"
+unit = "℃"
+interval_s = 60
+params = { host = "192.168.10.21", port = 502, address = 1, register = 0, scale = 0.1 }
+
+# 路径 C：3# 倒焰窑不能联网，每 2 小时提醒工人拍仪表
+[[point]]
+id = "kiln3.temp"
+driver = "manual"
+unit = "℃"
+interval_s = 7200

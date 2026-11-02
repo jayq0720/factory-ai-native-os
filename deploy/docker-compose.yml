@@ -1,0 +1,46 @@
+# 全云形态的最小部署：ECS + Docker Compose（方案 7.1）。
+# 生产数据库用 RDS PostgreSQL 时，去掉 db 服务并把 FOS_DATABASE_URL 指向 RDS。
+name: fos
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: fos
+      POSTGRES_DB: fos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 deploy/.env 设置}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fos -d fos"]
+      interval: 5s
+      retries: 10
+
+  litellm:
+    # 首次部署跑通后，把 main-stable 换成当时的具体版本号再固定
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?请在 deploy/.env 设置}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD}@db:5432/fos
+      FOS_LLM_MODE: ${FOS_LLM_MODE:-mock}
+      FOS_LITELLM_BASE_URL: http://litellm:4000
+      FOS_LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

@@ -1,0 +1,62 @@
+# LiteLLM 模型路由。业务代码只用别名（fos-*），换模型 / 换云 / 换本地推理只改这里。
+# 百炼 OpenAI 兼容接口：https://dashscope.aliyuncs.com/compatible-mode/v1
+# 具体模型名以百炼控制台为准，上线前核对一次。
+
+model_list:
+  # 对话、抽取、撰写：百炼上的 DeepSeek-V3
+  - model_name: fos-chat
+    litellm_params:
+      model: openai/deepseek-v3
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY
+  # 备用：DeepSeek 官方
+  - model_name: fos-chat-backup
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  # 深度推理：选材权衡、根因分析、风险审核
+  - model_name: fos-reason
+    litellm_params:
+      model: openai/deepseek-r1
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY
+  - model_name: fos-reason-backup
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  # 轻量：Router 分派、快速分类
+  - model_name: fos-fast
+    litellm_params:
+      model: openai/qwen-turbo
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # 视觉：照片、图纸中的表格与标题栏
+  - model_name: fos-vl
+    litellm_params:
+      model: openai/qwen-vl-max
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+  # 向量：历史项目、标准、工艺知识检索
+  - model_name: fos-embed
+    litellm_params:
+      model: openai/text-embedding-v3
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY
+
+router_settings:
+  num_retries: 2
+  timeout: 60
+  # 百炼故障时自动切到 DeepSeek 官方
+  fallbacks:
+    - fos-chat: [fos-chat-backup]
+    - fos-reason: [fos-reason-backup]
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
