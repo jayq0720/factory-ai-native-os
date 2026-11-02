@@ -39,10 +39,13 @@ roles:
     permissions: ["production.*:read", "production.*:write", "production.kiln:approve"]
   worker:
     name: 工人
-    permissions: ["production.record:write", "production.record:read"]
+    permissions: ["production.record:write", "production.*:read"]
   qc:
     name: 质检
     permissions: ["quality.*:read", "quality.*:write", "production.*:read"]
+  rnd:
+    name: 研发
+    permissions: ["rnd.*:*", "production.*:read", "quality.*:read", "sales.product:read"]
   finance:
     name: 财务
     permissions: ["finance.*:read", "finance.*:write"]

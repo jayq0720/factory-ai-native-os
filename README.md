@@ -10,7 +10,7 @@
 
 | 路径 | 内容 |
 |---|---|
-| `fos/` | Python 核心 OS：配置、租户、权限、API、LLM 网关（之后加入本体、事件账本、Router/Worker…） |
+| `fos/` | Python 核心 OS：配置、租户、权限、API、LLM 网关、企业本体、事件账本（之后加入 Router/Worker…） |
 | `crates/` | Rust：`fos-protocol` 云边共享数据契约，`fos-edge` 厂端 daemon |
 | `tenants/<id>/tenant.yaml` | 租户配置（角色与权限、IM、自治级别），不含密钥 |
 | `packs/` | 行业包与职能 Skill 包 |

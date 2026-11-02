@@ -1,0 +1,200 @@
+# 核心本体：所有行业共用的对象与事件。行业专有的东西放到 packs/<pack>/ontology.yaml。
+# 对象读权限：<domain>.<对象类型>:read；事件写权限在每个事件上声明。
+
+objects:
+  customer:
+    name: 客户
+    domain: sales
+    properties:
+      name: {type: string, name: 名称, required: true}
+      credit_code: {type: string, name: 统一社会信用代码}
+      contact: {type: string, name: 联系人}
+      phone: {type: string, name: 电话}
+      address: {type: text, name: 地址}
+
+  supplier:
+    name: 供应商
+    domain: purchase
+    properties:
+      name: {type: string, name: 名称, required: true}
+      credit_code: {type: string, name: 统一社会信用代码}
+      contact: {type: string, name: 联系人}
+      phone: {type: string, name: 电话}
+
+  material:
+    name: 物料
+    domain: warehouse
+    description: 原料、辅料、包材等物料主数据
+    properties:
+      name: {type: string, name: 名称, required: true}
+      spec: {type: string, name: 规格}
+      category: {type: enum, name: 类别, values: [raw, auxiliary, packaging, spare_part], required: true}
+      unit: {type: string, name: 计量单位, required: true}
+      safety_stock: {type: number, name: 安全库存}
+
+  material_lot:
+    name: 原料批次
+    domain: warehouse
+    description: 一次到货形成一个批次；后续检验、领用、追溯都挂在批次上
+    properties:
+      material: {type: ref, target: material, name: 物料, required: true}
+      supplier: {type: ref, target: supplier, name: 供应商}
+      supplier_lot_no: {type: string, name: 供方批号}
+      qty: {type: number, name: 数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      received_at: {type: datetime, name: 到货时间, required: true}
+      purchase_order: {type: string, name: 采购单号}
+      status: {type: enum, name: 状态, values: [pending_inspection, accepted, rejected, concession]}
+
+  product:
+    name: 产品
+    domain: sales
+    properties:
+      code: {type: string, name: 牌号, required: true}
+      name: {type: string, name: 名称, required: true}
+      spec: {type: string, name: 规格}
+      unit: {type: string, name: 计量单位, required: true}
+
+  sales_order:
+    name: 销售订单
+    domain: sales
+    properties:
+      customer: {type: ref, target: customer, name: 客户, required: true}
+      product: {type: ref, target: product, name: 产品, required: true}
+      qty: {type: number, name: 数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      due_date: {type: date, name: 交期}
+      amount: {type: number, name: 金额, unit: 元}
+      status: {type: enum, name: 状态, values: [open, in_production, shipped, closed, cancelled]}
+
+  production_batch:
+    name: 生产批次
+    domain: production
+    properties:
+      product: {type: ref, target: product, name: 产品, required: true}
+      order: {type: ref, target: sales_order, name: 订单}
+      material_lots: {type: ref, target: material_lot, many: true, name: 所用原料批次}
+      planned_qty: {type: number, name: 计划数量}
+      good_qty: {type: number, name: 合格数量}
+      unit: {type: string, name: 单位, required: true}
+      started_at: {type: datetime, name: 开始时间, required: true}
+      completed_at: {type: datetime, name: 完成时间}
+      status: {type: enum, name: 状态, values: [in_progress, completed, in_stock, shipped, scrapped]}
+
+  inspection:
+    name: 检验
+    domain: quality
+    description: 来料检验、过程检验、出厂检验。指标项由行业包扩展
+    properties:
+      kind: {type: enum, name: 类型, values: [incoming, process, final], required: true}
+      material_lot: {type: ref, target: material_lot, name: 原料批次}
+      batch: {type: ref, target: production_batch, name: 生产批次}
+      inspected_at: {type: datetime, name: 检验时间, required: true}
+      result: {type: enum, name: 结论, values: [pass, fail, conditional], required: true}
+      report_no: {type: string, name: 报告编号}
+      note: {type: text, name: 备注}
+
+  equipment:
+    name: 设备
+    domain: eam
+    properties:
+      name: {type: string, name: 名称, required: true}
+      model: {type: string, name: 型号}
+      location: {type: string, name: 位置}
+      status: {type: enum, name: 状态, values: [running, idle, maintenance, retired]}
+
+events:
+  sales.customer_registered:
+    name: 新增客户
+    object: customer
+    op: create
+    permission: sales.customer:write
+    fields: [name, credit_code, contact, phone, address]
+
+  purchase.supplier_registered:
+    name: 新增供应商
+    object: supplier
+    op: create
+    permission: purchase.supplier:write
+    fields: [name, credit_code, contact, phone]
+
+  warehouse.material_defined:
+    name: 新增物料
+    object: material
+    op: create
+    permission: warehouse.material:write
+    fields: [name, spec, category, unit, safety_stock]
+
+  warehouse.lot_received:
+    name: 来料入库
+    object: material_lot
+    op: create
+    permission: warehouse.stock:write
+    evidence: required   # 送货单照片
+    fields: [material, supplier, supplier_lot_no, qty, unit, received_at, purchase_order, status]
+
+  quality.lot_dispositioned:
+    name: 来料处置
+    object: material_lot
+    op: update
+    permission: quality.disposition:approve
+    fields: [status]
+
+  sales.product_defined:
+    name: 新增产品
+    object: product
+    op: create
+    permission: sales.product:write
+    fields: [code, name, spec, unit]
+
+  sales.order_created:
+    name: 新建订单
+    object: sales_order
+    op: create
+    permission: sales.order:write
+    evidence: required   # 合同或客户确认
+    fields: [customer, product, qty, unit, due_date, amount, status]
+
+  sales.order_status_changed:
+    name: 订单状态变更
+    object: sales_order
+    op: update
+    permission: sales.order:write
+    fields: [status]
+
+  production.batch_started:
+    name: 批次开工
+    object: production_batch
+    op: create
+    permission: production.record:write
+    fields: [product, order, material_lots, planned_qty, unit, started_at, status]
+
+  production.batch_completed:
+    name: 批次完工
+    object: production_batch
+    op: update
+    permission: production.record:write
+    evidence: required   # 报工单照片或班组长确认
+    fields: [good_qty, completed_at, status]
+
+  warehouse.batch_stocked:
+    name: 成品入库
+    object: production_batch
+    op: update
+    permission: warehouse.stock:write
+    fields: [status]
+
+  quality.inspection_recorded:
+    name: 录入检验
+    object: inspection
+    op: create
+    permission: quality.inspection:write
+    evidence: required   # 检验报告
+    fields: [kind, material_lot, batch, inspected_at, result, report_no, note]
+
+  eam.equipment_registered:
+    name: 新增设备
+    object: equipment
+    op: create
+    permission: eam.equipment:write
+    fields: [name, model, location, status]
