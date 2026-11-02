@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>六安绿能工厂 OS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 左侧导航 + 主工作区；顶部固定"模拟数据"横幅；工程模块为五步流水线 */
+:root{
+  --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#EBEFF4; --line:#D7DDE6;
+  --fg:#17202B; --muted:#5A6576; --accent:#1F5FBF; --accent-soft:#E2EBF9; --on-accent:#FFFFFF;
+  --heat:#D9480F; --heat-soft:#FDEBE1; --ok:#2B7A4B; --ok-soft:#E3F3E8; --warn:#A8670A; --warn-soft:#FBF0DA;
+  --bad:#C12F2F; --bad-soft:#FBE4E4; --mock:#8A5A00; --mock-bg:#FFF4D6; --paper:#FFFFFF; --paper-fg:#222;
+  --hl:#FFE58A; --shadow:0 1px 2px rgba(20,30,45,.06),0 4px 16px rgba(20,30,45,.05);
+  --f-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E131A; --surface:#161D27; --surface-2:#1D2633; --line:#2B3645;
+  --fg:#E5EAF1; --muted:#98A4B5; --accent:#6EA2F0; --accent-soft:#1B2C47; --on-accent:#0E131A;
+  --heat:#FF7A45; --heat-soft:#3A1F14; --ok:#5BC48A; --ok-soft:#173022; --warn:#E3B04F; --warn-soft:#352812;
+  --bad:#F07171; --bad-soft:#3A1A1C; --mock:#F2C14E; --mock-bg:#2E2412; --paper:#1F2731; --paper-fg:#E2E6EC;
+  --hl:#6B5A12; --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E131A; --surface:#161D27; --surface-2:#1D2633; --line:#2B3645;
+  --fg:#E5EAF1; --muted:#98A4B5; --accent:#6EA2F0; --accent-soft:#1B2C47; --on-accent:#0E131A;
+  --heat:#FF7A45; --heat-soft:#3A1F14; --ok:#5BC48A; --ok-soft:#173022; --warn:#E3B04F; --warn-soft:#352812;
+  --bad:#F07171; --bad-soft:#3A1A1C; --mock:#F2C14E; --mock-bg:#2E2412; --paper:#1F2731; --paper-fg:#E2E6EC;
+  --hl:#6B5A12; --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.6}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--mock-bg)}
+h1,h2,h3,h4{margin:0;text-wrap:balance;line-height:1.3}
+h1{font-size:22px;font-weight:700}
+h2{font-size:17px;font-weight:700}
+h3{font-size:15px;font-weight:700}
+p{margin:0}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,[contenteditable]:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent)}
+
+.mockbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--mock-bg);color:var(--mock);border-bottom:1px solid var(--line);
+  padding-block:6px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px}
+.mockbar b{font-weight:700}
+.mockbar .sp{flex:1}
+.mockbar .tenant{font-family:var(--f-mono);font-size:12px;opacity:.9}
+
+.shell{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:calc(100% - 36px)}
+nav.side{border-right:1px solid var(--line);background:var(--surface);padding:18px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:36px;align-self:start;height:calc(100vh - 36px)}
+.brand{padding:4px 10px 16px;display:flex;flex-direction:column;gap:2px}
+.brand .t{font-weight:700;font-size:16px}
+.brand .s{font-size:12px;color:var(--muted)}
+.navbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:transparent;padding:9px 10px;border-radius:6px;color:var(--fg)}
+.navbtn:hover{background:var(--surface-2)}
+.navbtn[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.navbtn .k{font-family:var(--f-mono);font-size:11px;color:var(--muted);width:18px}
+.navbtn[aria-current="page"] .k{color:var(--accent)}
+.side .foot{margin-top:auto;font-size:12px;color:var(--muted);padding:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+
+main{padding-block:22px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));min-width:0}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.head{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap}
+.head .sub{color:var(--muted);margin-top:4px;max-width:70ch}
+.eyebrow{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:500}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.pad{padding:16px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.col{display:flex;flex-direction:column;gap:10px}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.sec-h{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+
+.btn{border:1px solid var(--line);background:var(--surface);padding:6px 12px;border-radius:6px;font-size:13px}
+.btn:hover{background:var(--surface-2)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:500}
+.btn.pri:hover{filter:brightness(1.07)}
+.btn.sm{padding:3px 9px;font-size:12px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid transparent;white-space:nowrap;line-height:1.6}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)}
+.p-info{background:var(--accent-soft);color:var(--accent)}
+.p-mute{background:var(--surface-2);color:var(--muted)}
+.p-mock{background:var(--mock-bg);color:var(--mock);border-color:currentColor;font-size:11px;padding:0 6px}
+.p-heat{background:var(--heat-soft);color:var(--heat)}
+
+.stat{display:flex;flex-direction:column;gap:2px;padding:14px 16px}
+.stat .v{font-family:var(--f-mono);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat .l{font-size:12px;color:var(--muted)}
+.stat .d{font-size:12px}
+
+.talk{border:1px dashed var(--line);border-radius:var(--r);background:var(--surface)}
+.talk summary{cursor:pointer;padding:10px 14px;font-size:13px;color:var(--muted);list-style:none;display:flex;gap:8px;align-items:center}
+.talk summary::-webkit-details-marker{display:none}
+.talk summary::before{content:"▸";font-size:11px}
+.talk[open] summary::before{content:"▾"}
+.talk ol{margin:0;padding:0 14px 12px 34px;display:flex;flex-direction:column;gap:4px}
+
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:12px;background:var(--surface-2);white-space:nowrap}
+td.n,th.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--surface-2)}
+tr.sel td{background:var(--accent-soft)}
+tfoot td{font-weight:700;border-bottom:0}
+
+/* 总览 */
+.agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.agent{border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;background:var(--surface)}
+.agent .n{font-weight:500}
+.agent .x{font-size:12px;color:var(--muted)}
+.agent .c{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.ledger{display:flex;flex-direction:column;max-height:420px;overflow:auto}
+.ev{display:grid;grid-template-columns:56px minmax(0,1fr);gap:10px;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.ev .tm{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.ev .who{color:var(--muted);font-size:12px}
+.ev.new{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}
+.chain{display:flex;gap:0;overflow-x:auto;padding:14px 16px 16px}
+.chain .st{flex:0 0 auto;display:flex;flex-direction:column;gap:4px;min-width:118px;padding-right:22px;position:relative}
+.chain .st::after{content:"";position:absolute;top:9px;right:4px;width:14px;height:2px;background:var(--line)}
+.chain .st:last-child::after{display:none}
+.chain .dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-family:var(--f-mono);border:2px solid var(--line);background:var(--surface)}
+.chain .st.done .dot{background:var(--ok);border-color:var(--ok);color:var(--on-accent)}
+.chain .st.now .dot{border-color:var(--accent);color:var(--accent)}
+.chain .st .a{font-size:13px;font-weight:500}
+.chain .st .b{font-size:12px;color:var(--muted)}
+.inbox-item{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;padding:10px 16px;border-bottom:1px solid var(--line)}
+.inbox-item:last-child{border-bottom:0}
+.inbox-item .tx{min-width:0}
+.inbox-item .tx .t{font-weight:500}
+
+/* IM */
+.im{display:flex;flex-direction:column;height:560px}
+.im-h{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);gap:8px;flex-wrap:wrap}
+.im-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:var(--surface-2)}
+.msg{display:flex;gap:8px;max-width:92%}
+.msg .av{flex:0 0 30px;height:30px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--surface);border:1px solid var(--line)}
+.msg.bot .av{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.msg .bub{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.msg.me{align-self:flex-end;flex-direction:row-reverse}
+.msg.me .bub{background:var(--accent-soft);border-color:transparent}
+.msg .nm{font-size:11px;color:var(--muted);margin-bottom:2px}
+.photo{width:220px;max-width:100%;aspect-ratio:4/3;border-radius:6px;background:linear-gradient(160deg,#e9e3d3,#d7cfba);color:#3b3426;padding:10px 12px;font-size:11px;line-height:1.5;transform:rotate(-1.2deg);font-family:"Noto Sans SC",cursive;box-shadow:inset 0 0 30px rgba(0,0,0,.12)}
+.photo b{font-size:12px}
+.photo .hw{font-family:var(--f-mono);color:#1d3a8a}
+.cardmsg{display:flex;flex-direction:column;gap:6px;min-width:240px}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-family:var(--f-mono)}
+.im-in{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+.im-in input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:7px 10px;font:inherit;color:var(--fg)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:12px}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.typing{font-size:12px;color:var(--muted)}
+
+/* 工程 */
+.stepper{display:flex;gap:0;overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.step{flex:1 0 140px;border:0;background:transparent;padding:10px 14px;text-align:left;display:flex;flex-direction:column;gap:1px;border-right:1px solid var(--line);position:relative}
+.step:last-child{border-right:0}
+.step .i{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.step .t{font-weight:500}
+.step .s{font-size:12px;color:var(--muted)}
+.step[aria-current="step"]{background:var(--accent-soft)}
+.step[aria-current="step"] .t,.step[aria-current="step"] .i{color:var(--accent)}
+.step.done .i::after{content:" ✓";color:var(--ok)}
+.docview{height:640px;overflow:auto;background:var(--surface-2);padding:16px;display:flex;flex-direction:column;gap:16px;border-radius:0 0 var(--r) var(--r)}
+.page{background:var(--paper);color:var(--paper-fg);border:1px solid var(--line);border-radius:2px;padding:28px 30px 34px;position:relative;font-size:13px;line-height:1.85;box-shadow:var(--shadow)}
+.page .pno{position:absolute;bottom:8px;left:0;right:0;text-align:center;font-size:11px;color:var(--muted)}
+.page .how{position:absolute;top:8px;right:10px}
+.page h4{font-size:14px;margin:10px 0 4px}
+.page .ttl{font-size:18px;text-align:center;font-weight:700;margin:40px 0 18px;line-height:1.5}
+.page table{font-size:12px;margin:6px 0}
+.page th{background:transparent;color:inherit;border:1px solid var(--line)}
+.page td{border:1px solid var(--line)}
+.page.scanned{background-image:repeating-linear-gradient(0deg,transparent 0 3px,rgba(128,128,128,.035) 3px 4px)}
+.page.parsing::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent,var(--accent-soft) 50%,transparent);background-size:100% 40%;background-repeat:no-repeat;animation:scan 1s linear infinite;opacity:.8}
+@keyframes scan{from{background-position:0 -40%}to{background-position:0 140%}}
+.page.pending{opacity:.45}
+mark.src{background:transparent;border-radius:2px;transition:background .3s}
+mark.src.hot{background:var(--hl);color:inherit;box-shadow:0 0 0 2px var(--hl)}
+mark.src.seen{border-bottom:1.5px dotted var(--accent);background:transparent;color:inherit}
+.fields td .cite{font-family:var(--f-mono);font-size:11px;color:var(--accent);white-space:nowrap}
+.fields input{width:100%;min-width:90px;border:1px solid transparent;background:transparent;border-radius:4px;padding:2px 4px;font:inherit;color:inherit}
+.fields input:hover{border-color:var(--line)}
+.fields input:focus{border-color:var(--accent);background:var(--surface)}
+.fields .grp td{background:var(--surface-2);font-size:12px;font-weight:500;color:var(--muted);padding:5px 10px}
+.progress{height:4px;background:var(--surface-2);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.opt{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:14px;display:flex;flex-direction:column;gap:10px;cursor:pointer;text-align:left}
+.opt:hover{border-color:var(--accent)}
+.opt.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.layers{display:flex;flex-direction:column;gap:4px}
+.layer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;font-size:12px;padding:5px 8px;border-radius:4px;background:var(--surface-2);align-items:center}
+.layer .bar{height:6px;border-radius:3px}
+.metric{display:flex;justify-content:space-between;font-size:13px;gap:8px}
+.metric .num{font-weight:600}
+.wall{width:100%;height:auto;display:block}
+.thick{display:grid;grid-template-columns:minmax(0,1fr) 110px 60px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.thick input[type=range]{width:100%}
+.thick:last-child{border-bottom:0}
+.editor{padding:20px 24px;line-height:1.9;min-height:300px;outline:none}
+.editor h3{margin:14px 0 4px}
+.editor p{margin:4px 0}
+.cell-in{width:72px;border:1px solid var(--line);background:var(--bg);border-radius:4px;padding:2px 6px;font:inherit;font-family:var(--f-mono);color:var(--fg);text-align:right}
+.risk{display:grid;grid-template-columns:4px minmax(0,1fr) auto;gap:12px;padding:12px 16px 12px 0;border-bottom:1px solid var(--line);align-items:start}
+.risk .sv{align-self:stretch;border-radius:0 2px 2px 0}
+.risk .sv.bad{background:var(--bad)}.risk .sv.warn{background:var(--warn)}.risk .sv.info{background:var(--accent)}
+.risk .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.risk.handled{opacity:.6}
+.toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:6px;font-size:13px;max-width:min(420px,calc(100vw - 32px));box-shadow:var(--shadow)}
+.modal-bg{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:40;display:grid;place-items:center;padding:16px}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);max-width:520px;width:100%;padding:20px;display:flex;flex-direction:column;gap:12px}
+
+/* 招标 */
+.countdown{font-family:var(--f-mono);font-size:28px;font-weight:600;color:var(--heat)}
+.star{color:var(--bad);font-weight:700}
+
+/* 窑炉 */
+.kiln{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);cursor:pointer;text-align:left}
+.kiln.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.chart{width:100%;height:auto;display:block}
+.trace{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.tnode{border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--surface);min-width:150px;flex:1 1 150px;display:flex;flex-direction:column;gap:2px}
+.tnode .k{font-size:11px;color:var(--muted)}
+.tnode .v{font-weight:500;font-family:var(--f-mono);font-size:13px}
+.tnode .e{font-size:12px;color:var(--accent)}
+
+@media (max-width:1000px){.split,.g3{grid-template-columns:minmax(0,1fr)}.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+  .mockbar{position:static}.mockbar .tenant,.mockbar .sp{display:none}
+  body::before{display:none}
+  .shell{grid-template-columns:minmax(0,1fr)}
+  nav.side{position:static;height:auto;flex-direction:row;overflow-x:auto;padding:8px;border-right:0;border-bottom:1px solid var(--line);gap:2px}
+  .brand,.side .foot{display:none}
+  .navbtn{width:auto;white-space:nowrap}
+  .g2{grid-template-columns:minmax(0,1fr)}
+  .docview{height:480px}
+  .im{height:520px}
+  .thick{grid-template-columns:minmax(0,1fr) 90px 52px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="mockbar" role="status">
+  <b>演示模式</b><span>模拟数据，非真实识别结果。文件解析使用预置样例（Xiaomi-OCR-0 mock），客户与项目均为示例。</span>
+  <span class="sp"></span><span class="tenant">tenant: lu-an-lvneng · industry-pack: refractory v0.1 · data_mode: mock</span>
+</div>
+<div class="shell">
+  <nav class="side" aria-label="主导航">
+    <div class="brand"><span class="t">工厂 AI OS</span><span class="s">六安绿能 · 隔热耐火材料</span></div>
+    <button class="navbtn" data-go="overview"><span class="k">01</span>工厂总览</button>
+    <button class="navbtn" data-go="eng"><span class="k">02</span>技术文件 → 报价</button>
+    <button class="navbtn" data-go="tender"><span class="k">03</span>招标文件拆解</button>
+    <button class="navbtn" data-go="kiln"><span class="k">04</span>窑炉与追溯</button>
+    <button class="navbtn" data-go="kb"><span class="k">05</span>工程知识库</button>
+    <div class="foot">
+      <span>模型：DeepSeek-V3 / R1 · Qwen3 · Xiaomi-OCR-0</span>
+      <span>部署：阿里云（百炼）</span>
+      <button class="btn sm" data-act="reset">重置演示数据</button>
+    </div>
+  </nav>
+  <main><div class="wrap" id="view"></div></main>
+</div>
+<div id="layer"></div>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=(n,d=0)=>Number(n).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d});
+const now=()=>{const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")};
+
+/* ---------------- 示例数据 ---------------- */
+const PRODUCTS={
+  ML26:{code:"LN-ML26",name:"莫来石轻质隔热砖",cat:"轻质隔热砖",cls:1430,rho:0.80,a:0.18,b:0.00020,price:4200,unit:"t",form:"brick",loss:0.05,color:"#C9822B"},
+  ML23:{code:"LN-ML23",name:"莫来石轻质隔热砖",cat:"轻质隔热砖",cls:1260,rho:0.60,a:0.12,b:0.00018,price:3600,unit:"t",form:"brick",loss:0.05,color:"#D9A15A"},
+  GL13:{code:"LN-GL13",name:"高铝聚轻砖",cat:"轻质隔热砖",cls:1350,rho:1.00,a:0.28,b:0.00022,price:2600,unit:"t",form:"brick",loss:0.05,color:"#B8643A"},
+  FB12:{code:"LN-FB1260",name:"硅酸铝纤维板",cat:"纤维制品",cls:1260,rho:0.32,a:0.035,b:0.00015,price:8000,unit:"t",form:"board",loss:0.08,color:"#E8D9A8"},
+  FB14:{code:"LN-FB1430",name:"含锆纤维板",cat:"纤维制品",cls:1430,rho:0.32,a:0.040,b:0.00014,price:14000,unit:"t",form:"board",loss:0.08,color:"#EFE6C4"},
+  GG10:{code:"LN-GG10",name:"硅酸钙板",cat:"隔热板",cls:1000,rho:0.24,a:0.050,b:0.00011,price:5200,unit:"t",form:"board",loss:0.08,color:"#C9CED6"},
+  NM10:{code:"LN-NM10",name:"纳米微孔隔热板",cat:"隔热板",cls:1000,rho:0.40,a:0.020,b:0.000025,price:68000,unit:"t",form:"board",loss:0.08,color:"#9FB3C8"},
+  NJ:{code:"LN-NJ14",name:"轻质耐火泥浆",cat:"不定形",cls:1400,rho:1.6,a:0,b:0,price:2200,unit:"t",form:"aux",loss:0,color:"#999"}
+};
+const OPTIONS=[
+  {id:"A",name:"方案 A · 推荐",why:"工作层分类温度余量 130℃；纤维板 + 硅酸钙板复合隔热，总厚 350mm 正好在限值内，外壁温度达标，成本适中。",layers:[["ML26",230],["FB12",75],["GG10",45]]},
+  {id:"B",name:"方案 B · 经济型",why:"高铝聚轻砖价格低，但分类温度 1350℃ 相对最高温度 1300℃ 只有 50℃ 余量，外壁温度也略超要求。",layers:[["GL13",230],["GG10",115]]},
+  {id:"C",name:"方案 C · 薄型高效",why:"纳米微孔板导热系数极低，总厚 270mm 可增加窑内有效宽度；材料成本最高，适合客户重视节能和空间的情况。",layers:[["ML26",230],["NM10",40]]}
+];
+const AREA={wall:172.8,roof:100.8}; // m²，来自第 4 页工程量表
+const REQ={tNormal:1250,tMax:1300,tAmb:25,tOuter:85,maxThick:350,margin:100};
+
+const DOC_PAGES=[
+ {n:1,how:"文字层",html:`<div class="ttl">华东某陶瓷有限公司<br>2# 辊道窑烧成带炉衬改造<br>技术要求</div>
+  <p style="text-align:center">文件编号：<mark class="src" data-f="no">HDTC-JS-2026-117</mark></p>
+  <p style="text-align:center">编制日期：2026 年 10 月 20 日</p>
+  <p style="text-align:center;margin-top:60px">发包方：<mark class="src" data-f="customer">华东某陶瓷有限公司（示例客户）</mark> 设备动力部</p>`},
+ {n:2,how:"文字层",html:`<h4>一、工程概况</h4>
+  <p>1.1 项目名称：<mark class="src" data-f="project">2# 辊道窑烧成带炉衬改造</mark>。</p>
+  <p>1.2 项目地点：<mark class="src" data-f="site">江西省景德镇市某工业园区（示例）</mark>。</p>
+  <p>1.3 设备概况：窑型为<mark class="src" data-f="kiln">辊道窑</mark>，全长 168 m，烧成带长 36 m，内宽 2.80 m，用于建筑陶瓷砖烧成。</p>
+  <p>1.4 改造范围：烧成带<mark class="src" data-f="part">炉墙（两侧）及炉顶</mark>的工作层、隔热层更换。</p>
+  <p>1.5 工期要求：材料须在<mark class="src" data-f="delivery">合同签订后 45 天内</mark>运抵现场，施工在年度停窑检修期内完成。</p>`},
+ {n:3,how:"OCR（模拟）",scan:true,html:`<h4>二、工况条件</h4>
+  <p>2.1 烧成带<mark class="src" data-f="tNormal">正常工作温度 1250℃</mark>，<mark class="src" data-f="tMax">最高温度 1300℃</mark>。</p>
+  <p>2.2 炉内<mark class="src" data-f="atm">气氛为氧化气氛</mark>，燃料为天然气。</p>
+  <p>2.3 <mark class="src" data-f="regime">连续生产，每年计划停窑检修 1 次</mark>，冷热交替次数少。</p>
+  <p>2.4 炉衬外壁温度要求：<mark class="src" data-f="tOuter">环境温度 25℃ 时，外壁温度不高于 85℃</mark>。</p>
+  <p>2.5 炉顶荷载与磨损：无特殊要求。</p>`},
+ {n:4,how:"OCR（模拟）",scan:true,html:`<h4>三、衬里结构与工程量</h4>
+  <p>3.1 现有衬里：工作层轻质高铝砖 230 mm，隔热层硅藻土砖 115 mm，使用 4 年后隔热性能下降，外壁温度达 120℃。</p>
+  <p>3.2 改造要求：<mark class="src" data-f="maxThick">衬里总厚度不超过 350 mm</mark>（受钢结构限制）；<mark class="src" data-f="tDesign">工作层按 1280℃ 选材</mark>。</p>
+  <p>3.3 工程量：</p>
+  <table><thead><tr><th>部位</th><th>尺寸</th><th>面积</th></tr></thead><tbody>
+  <tr><td>炉墙（两侧）</td><td>36 m × 2.40 m × 2</td><td><mark class="src" data-f="areaWall">172.8 m²</mark></td></tr>
+  <tr><td>炉顶</td><td>36 m × 2.80 m</td><td><mark class="src" data-f="areaRoof">100.8 m²</mark></td></tr></tbody></table>
+  <p>3.4 砌筑与验收按国家现行有关标准执行。</p>`},
+ {n:5,how:"文字层",html:`<h4>四、商务要求</h4>
+  <p>4.1 <mark class="src" data-f="validity">报价有效期 30 天</mark>。</p>
+  <p>4.2 付款方式：<mark class="src" data-f="pay">预付 30%，到货验收后付 60%，质保金 10%</mark>。</p>
+  <p>4.3 <mark class="src" data-f="warranty">质保期 1 年</mark>，自窑炉点火投产之日起计。</p>
+  <p>4.4 报价含 <mark class="src" data-f="tax">13% 增值税</mark>及运至现场的运输费；施工费单独列项。</p>
+  <p>4.5 包装：砖类托盘缠绕膜包装，纤维制品纸箱包装，防潮。</p>`}
+];
+const FIELD_DEFS=[
+ ["项目",[["customer","客户名称","华东某陶瓷有限公司（示例客户）","",1,.99],["project","项目名称","2# 辊道窑烧成带炉衬改造","",2,.99],["site","项目地点","江西省景德镇市某工业园区","",2,.97],["delivery","交货期","合同签订后 45 天","",2,.96],["no","文件编号","HDTC-JS-2026-117","",1,.99]]],
+ ["设备与部位",[["kiln","炉型","辊道窑","",2,.98],["part","部位","炉墙（两侧）、炉顶","",2,.95]]],
+ ["工况",[["tNormal","正常工作温度","1250","℃",3,.93],["tMax","最高温度","1300","℃",3,.93],["tDesign","工作层选材温度","1280","℃",4,.88],["atm","气氛","氧化","",3,.95],["regime","热震/升降温","连续生产，年检修 1 次","",3,.86],["tOuter","外壁温度要求","≤ 85（环境 25℃）","℃",3,.91]]],
+ ["衬里",[["maxThick","总厚度限制","≤ 350","mm",4,.92],["anchor","锚固方式","","",0,0]]],
+ ["标准与验收",[["std","执行标准","","",0,0]]],
+ ["工程量",[["areaWall","炉墙面积","172.8","m²",4,.95],["areaRoof","炉顶面积","100.8","m²",4,.95]]],
+ ["商务",[["validity","报价有效期","30 天","",5,.98],["pay","付款方式","30% / 60% / 10%（质保金）","",5,.96],["warranty","质保期","1 年","",5,.98],["tax","税率","13%","",5,.99]]]
+];
+
+const TENDER_REQS=[
+ {no:"1.3",cat:"资格",txt:"投标人须具有有效的安全生产许可证。",star:true,fail:true,p:12,dev:"无偏离",own:"商务"},
+ {no:"1.5",cat:"资格",txt:"近三年（2023 年 1 月至今）至少 3 项同类加热炉炉衬耐材供货及施工业绩，须附合同扫描件。",star:true,fail:true,p:13,dev:"待确认",own:"销售"},
+ {no:"3.2",cat:"商务",txt:"投标保证金人民币 50,000 元，须在投标截止前到账。",star:true,fail:true,p:21,dev:"无偏离",own:"财务"},
+ {no:"5.1",cat:"技术",txt:"均热段炉墙工作层采用分类温度不低于 1450℃ 的轻质隔热砖。",star:true,fail:false,p:64,dev:"负偏离",own:"工程"},
+ {no:"5.3",cat:"技术",txt:"炉顶采用含锆纤维模块，锚固件材质不低于 310S。",star:false,fail:false,p:65,dev:"无偏离",own:"工程"},
+ {no:"5.6",cat:"技术",txt:"炉衬外表面温度：炉墙 ≤ 80℃，炉顶 ≤ 90℃（环境温度 25℃）。",star:true,fail:false,p:66,dev:"待确认",own:"工程"},
+ {no:"5.9",cat:"技术",txt:"所供材料须提供一年内有资质的第三方检测报告。",star:true,fail:true,p:67,dev:"待确认",own:"质检"},
+ {no:"6.2",cat:"技术",txt:"施工期不超过 25 天，须提供施工组织设计。",star:false,fail:false,p:72,dev:"正偏离",own:"工程"},
+ {no:"7.1",cat:"商务",txt:"质保期 2 年，质保金 5%。",star:false,fail:false,p:88,dev:"负偏离",own:"销售"},
+ {no:"7.4",cat:"商务",txt:"付款：到货 70%，验收合格 25%，质保金 5%。",star:false,fail:false,p:89,dev:"无偏离",own:"财务"},
+ {no:"8.2",cat:"格式",txt:"投标文件正本 1 份、副本 4 份，电子版 U 盘 1 份，密封并加盖公章。",star:true,fail:true,p:102,dev:"无偏离",own:"商务"},
+ {no:"8.5",cat:"格式",txt:"法定代表人授权书须原件，并附被授权人身份证复印件。",star:true,fail:true,p:103,dev:"无偏离",own:"商务"}
+];
+const CREDS=[
+ ["营业执照","有效","ok"],["安全生产许可证","有效至 2027-03-31","ok"],["ISO 9001 质量管理体系证书","有效至 2027-08-15","ok"],
+ ["同类业绩合同（需 3 份）","库中找到 2 份，缺 1 份","bad"],["LN-ML26 第三方检测报告","2025-08-12 出具，已超一年","warn"],
+ ["LN-FB1430 第三方检测报告","2026-05-20 出具","ok"],["法人授权书","需现场签署原件","warn"]
+];
+
+const AGENTS=[
+ ["销售助理","跟进商机 · 追回款",3],["工程师助理","技术文件 → 方案报价",2],["计划员","交期评估 · 排窑建议",1],["采购员","请购 · 比价 · 三单匹配",2],
+ ["仓管员","出入库 · 盘点 · 发货",4],["车间助理","录单 · 报工 · 窑炉监控",7],["质检员","检验判定 · NCR · 质保书",3],["设备员","巡检 · 报修 · 保养",1],
+ ["研发助理","配方版本 · 试验记录",0],["财务助理","凭证草稿 · 成本归集",2],["HR 助理","计件工资 · 证照到期",1],["安全员","隐患闭环 · 作业票",1]
+];
+
+const CHAIN=[
+ ["询价/技术文件","IM 收到 PDF","done"],["方案报价","工程师助理","done"],["合同","条款抽取比对","done"],["订单","SO-2026-0412","done"],
+ ["交期与排窑","计划员","done"],["请购比价","缺矾土熟料 30t","done"],["来料检验","待质检","now"],["生产/烧成","1# 隧道窑",""],["出厂检验","质保书",""],["发货","发货单",""],["开票回款","凭证草稿",""]
+];
+
+function initialState(){return{
+  view:"overview",
+  im:"钉钉",
+  ledger:[
+   ["08:02","车间助理","1# 隧道窑 早班交接：在窑 46 车，推车间隔 52 min","production.shift_handover"],
+   ["08:15","质检员","批次 B2611-03 体积密度 0.79 g/cm³ 判定合格（检验报告 OCR）","quality.inspection_passed"],
+   ["08:40","采购员","缺料：矾土熟料 30t → 已起草请购单 PR-0388，3 家比价","purchase.request_drafted"],
+   ["09:05","工程师助理","收到技术文件 HDTC-JS-2026-117（5 页），已创建工程项目","eng.project_created"],
+   ["09:21","车间助理","1# 隧道窑 第 34–38 m 温度偏高 +25℃，已推送班长","kiln.deviation_detected"]
+  ],
+  inbox:[
+   {id:"i1",t:"批准请购单 PR-0388",d:"矾土熟料 30t · 推荐供应商 B（比最低价贵 2%，近 6 个月来料合格率 100%）",lv:"L2",done:false},
+   {id:"i2",t:"确认 1# 隧道窑温度偏差处置",d:"Agent 预分析：燃烧器 B7 空燃比偏高，建议下调 3%",lv:"L1",done:false,go:"kiln"},
+   {id:"i3",t:"核对工程项目字段",d:"HDTC-JS-2026-117 · 2 个字段缺失、1 处冲突",lv:"L1",done:false,go:"eng"}
+  ],
+  imMsgs:null, imStage:0,
+  eng:{step:0,parsed:0,parsing:false,hot:null,opt:"A",layers:null,edits:{},discount:8,install:true,installPrice:380,freight:260,risks:{},submitted:false},
+  tenderFilter:"all", tenderSent:false,
+  kiln:"k1",
+  kbProposal:"pending"
+}}
+let S=initialState();
+S.eng.layers=OPTIONS[0].layers.map(l=>l.slice());
+
+/* ---------------- 确定性计算：多层平壁一维稳态传热 ---------------- */
+function hOut(Ts,Ta){const d=Math.max(Ts-Ta,0.01);const hc=1.31*Math.cbrt(d);const e=0.8,s=5.67e-8;const hr=e*s*((Ts+273.15)**4-(Ta+273.15)**4)/d;return hc+hr}
+function heat(layers,Tin,Ta){
+  let lo=0,hi=20000,res=null;
+  for(let i=0;i<80;i++){
+    const q=(lo+hi)/2;let T=Tin,ok=true;const temps=[Tin];
+    for(const [pk,t] of layers){const P=PRODUCTS[pk],tm=t/1000;let T2;
+      if(P.b===0)T2=T-q*tm/P.a;else{const c=P.a*T+P.b/2*T*T-q*tm;const disc=P.a*P.a+2*P.b*c;if(disc<0){ok=false;break}T2=(-P.a+Math.sqrt(disc))/P.b}
+      temps.push(T2);T=T2}
+    if(!ok||T<Ta){hi=q;continue}
+    const qo=hOut(T,Ta)*(T-Ta);res={q,temps,Ts:T};if(qo>q)lo=q;else hi=q}
+  return res}
+function evalOption(layers){
+  const r=heat(layers,REQ.tNormal,REQ.tAmb), rMax=heat(layers,REQ.tMax,REQ.tAmb);
+  const area=AREA.wall+AREA.roof;const total=layers.reduce((s,l)=>s+l[1],0);
+  const bom=[];let mat=0,tons=0;
+  layers.forEach(([pk,t],i)=>{const P=PRODUCTS[pk];const vol=area*t/1000*(1+P.loss);const w=vol*P.rho;const cost=w*P.price;
+    let cnt,cu;if(P.form==="brick"){cnt=Math.ceil(area/(0.114*0.065)*(1+P.loss));cu="块"}else{cnt=Math.ceil(area/(1.0*0.6)*(1+P.loss));cu="张"}
+    bom.push({pk,P,t,layer:i,vol,w,cost,cnt,cu});mat+=cost;tons+=w});
+  const brickVol=bom.filter(b=>b.P.form==="brick").reduce((s,b)=>s+b.vol,0);
+  if(brickVol>0){const P=PRODUCTS.NJ;const w=brickVol*0.12;bom.push({pk:"NJ",P,t:0,layer:-1,vol:w/P.rho,w,cost:w*P.price,cnt:Math.ceil(w*40),cu:"袋(25kg)"});mat+=w*P.price;tons+=w}
+  const checks=[];
+  const hot=PRODUCTS[layers[0][0]];
+  checks.push({k:"margin",ok:hot.cls-REQ.tMax>=REQ.margin,txt:`工作层分类温度 ${hot.cls}℃，相对最高温度 ${REQ.tMax}℃ 余量 ${hot.cls-REQ.tMax}℃（要求 ≥ ${REQ.margin}℃）`});
+  layers.forEach(([pk],i)=>{if(i===0)return;const P=PRODUCTS[pk];const Ti=rMax.temps[i];checks.push({k:"iface"+i,ok:Ti<=P.cls-50,txt:`${P.code} 热面温度 ${fmt(Ti)}℃（最高工况），分类温度 ${P.cls}℃`})});
+  checks.push({k:"outer",ok:r.Ts<=REQ.tOuter,txt:`外壁温度 ${fmt(r.Ts,1)}℃（要求 ≤ ${REQ.tOuter}℃）`});
+  checks.push({k:"thick",ok:total<=REQ.maxThick,txt:`总厚度 ${total} mm（限值 ${REQ.maxThick} mm）`});
+  return{r,rMax,total,bom,mat,tons,area,checks}}
+function quote(ev){
+  const e=S.eng;const list=ev.mat;const disc=list*e.discount/100;const matNet=list-disc;
+  const freight=ev.tons*e.freight;const install=e.install?ev.area*e.installPrice:0;
+  const net=matNet+freight+install;const tax=net*0.13;const total=net+tax;
+  const costLine=list*0.80; // 示例：材料成本线 = 标价 × 80%
+  return{list,disc,matNet,freight,install,net,tax,total,belowCost:matNet<costLine,costLine}}
+
+/* ---------------- 通用 ---------------- */
+function toast(t){const el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),3200)}
+function addEvent(who,txt,type){S.ledger.push([now(),who,txt,type]);S._newEv=true}
+function talk(points){return `<details class="talk"><summary>演示讲解要点</summary><ol>${points.map(p=>`<li>${p}</li>`).join("")}</ol></details>`}
+function go(v){if(location.hash!=="#"+v)location.hash=v;else render()}
+
+/* ---------------- 01 总览 ---------------- */
+function vOverview(){
+  const pend=S.inbox.filter(i=>!i.done).length;
+  return `
+  <div class="head"><div><div class="eyebrow">工厂总览 · 2026-11-02 周一</div><h1>工厂 Agent 今天替人做了什么</h1>
+  <p class="sub">没有 MES/ERP 的工厂，直接由常驻在线的 Agent 承担录入、追溯、监控和跟进。人只在确认点出现：拍照、说一句话、点一下确认。</p></div></div>
+  ${talk(["先讲第一性原理：不是再上一套 ERP，所有事实都是带证据的事件，表格只是事件的投影。","右侧是工人在钉钉里的真实用法：拍一张送货单，点确认，左下的事件账本立刻多一条记录，质检员 Agent 自动接手。","可以切换企业微信/飞书，三种 IM 都支持，同一个工厂助手。","收件箱里的事都是 Agent 起草好、等人批准的，点进去能跳到对应模块。"])}
+  <div class="grid g4">
+    <div class="card stat"><span class="l">今天由 Agent 完成的录入</span><span class="v">${38+S.ledger.length-5}</span><span class="d muted">拍照 / 语音 / 仪表自动采集</span></div>
+    <div class="card stat"><span class="l">待你确认</span><span class="v">${pend}</span><span class="d muted">L1 建议 + L2 审批</span></div>
+    <div class="card stat"><span class="l">1# 隧道窑</span><span class="v" style="color:var(--heat)">1 项偏差</span><span class="d muted">34–38 m 段 +25℃</span></div>
+    <div class="card stat"><span class="l">工程报价进行中</span><span class="v">2</span><span class="d muted">1 份技术文件 · 1 份招标文件</span></div>
+  </div>
+  <div class="split">
+    <div class="col" style="gap:16px">
+      <section class="card"><div class="sec-h"><h2>订单到回款：一串事件</h2><span class="pill p-info">SO-2026-0412 · 莫来石轻质砖 180t</span></div>
+        <div class="chain">${CHAIN.map((c,i)=>`<div class="st ${c[2]}"><span class="dot">${c[2]==="done"?"✓":i+1}</span><span class="a">${c[0]}</span><span class="b">${c[1]}</span></div>`).join("")}</div>
+        <p class="small muted" style="padding:0 16px 14px">每一步都是一个事件，下一个岗位 Agent 订阅它并自动起草下一步。</p></section>
+      <section class="card"><div class="sec-h"><h2>待你确认</h2><span class="small muted">汇总所有职能的审批，同时推送到 IM</span></div>
+        ${S.inbox.map(i=>`<div class="inbox-item"><div class="tx"><div class="t">${esc(i.t)} <span class="pill ${i.lv==="L2"?"p-warn":"p-info"}">${i.lv}</span></div><div class="small muted">${esc(i.d)}</div></div>
+          <div class="row" style="flex-wrap:nowrap">${i.done?`<span class="pill p-ok">已处理</span>`:(i.go?`<button class="btn sm" data-go="${i.go}">去处理</button>`:`<button class="btn sm pri" data-act="approve" data-id="${i.id}">批准</button>`)}</div></div>`).join("")}
+      </section>
+      <section class="card"><div class="sec-h"><h2>事件账本</h2><span class="small muted">只追加，每条带操作主体和证据</span></div>
+        <div class="ledger" id="ledger">${S.ledger.slice().reverse().map((e,i)=>`<div class="ev ${i===0&&S._newEv?"new":""}"><span class="tm">${e[0]}</span><div><div>${esc(e[2])}</div><div class="who">${esc(e[1])} · <span class="mono">${esc(e[3])}</span></div></div></div>`).join("")}</div></section>
+    </div>
+    <div class="col" style="gap:16px">
+      ${imPanel()}
+    </div>
+  </div>
+  <section class="card"><div class="sec-h"><h2>岗位 Agent（数字同事）</h2><span class="small muted">新职能 = 新 Skill 包，共用同一套企业本体和事件账本</span></div>
+    <div class="pad"><div class="agents">${AGENTS.map(a=>`<div class="agent"><span class="n">${a[0]}</span><span class="x">${a[1]}</span><span class="c">今日 ${a[2]} 件待确认/已起草</span></div>`).join("")}</div></div></section>`}
+
+function imInit(){S.imMsgs=[
+  {who:"王师傅",role:"仓管",me:false,html:`<div class="photo"><b>送 货 单</b>　No.<span class="hw">0026517</span><br>收货单位：六安绿能<br>品名：<span class="hw">矾土熟料 88#</span><br>数量：<span class="hw">32.46 吨</span>　车号：<span class="hw">皖N·3K821</span><br>供货：<span class="hw">某某矿业（示例）</span><br>批号：<span class="hw">KF-1031</span>　司机签字 <span class="hw">刘</span></div>`},
+  {who:"王师傅",role:"仓管",me:false,html:"刚到一车料"}
+ ];S.imStage=0}
+function imPanel(){
+  if(!S.imMsgs)imInit();
+  const bot=S.im+"工厂助手";
+  return `<section class="card im" aria-label="IM 对话演示">
+   <div class="im-h"><div><h3>${esc(S.im)} · 仓储群</h3><span class="small muted">工人用 IM，不用学新系统</span></div>
+     <div class="row">${["钉钉","企业微信","飞书"].map(n=>`<button class="chip ${S.im===n?"on":""}" data-act="im" data-v="${n}">${n}</button>`).join("")}</div></div>
+   <div class="im-body" id="imbody">${S.imMsgs.map(m=>`<div class="msg ${m.bot?"bot":""} ${m.me?"me":""}"><div class="av">${m.bot?"AI":esc(m.who.slice(0,1))}</div><div><div class="nm">${m.bot?bot:esc(m.who+" · "+m.role)}</div><div class="bub">${m.html}</div></div></div>`).join("")}
+     ${S.imStage===0?`<div class="row"><button class="btn sm pri" data-act="im-ocr">▶ 让助手识别这张照片</button></div>`:""}</div>
+   <div class="chips">${["1# 窑昨天烧了几车？","B2611-03 批次用的哪批原料？","这周回款情况"].map(q=>`<button class="chip" data-act="ask" data-q="${q}">${q}</button>`).join("")}</div>
+   <form class="im-in" id="imform"><input id="imq" placeholder="问工厂助手，例如：本月莫来石砖合格率" autocomplete="off"><button class="btn pri" type="submit">发送</button></form>
+  </section>`}
+function imPush(m){S.imMsgs.push(m);render();const b=$("#imbody");if(b)b.scrollTop=b.scrollHeight}
+const ANSWERS=[
+ [/几车|烧了/,()=>`昨天（11-01）1# 隧道窑出窑 <b class="mono">27</b> 车，推车间隔平均 52 min；其中 1 车因 34–38 m 段超温待复检。<div class="small muted">来源：kiln.car_out 事件 × 27 · 只读 SQL</div>`],
+ [/批次|原料|B2611/,()=>`B2611-03（莫来石轻质砖 LN-ML26）用料：矾土熟料 KF-1019、高岭土 GL-0922、锯末 JM-1028；烧成窑次 1#-1031-14；检验合格。<a href="#kiln">查看追溯链</a><div class="small muted">来源：链式召回 批次 → 原料 → 窑次 → 检验</div>`],
+ [/回款|应收/,()=>`本周应回款 <b class="mono">¥1,286,400</b>，已到 <b class="mono">¥842,000</b>；逾期 1 笔：某钢厂 ¥216,000（逾期 9 天），销售助理已起草催款提醒，待你确认后发出。<div class="small muted">来源：finance.receivable 投影</div>`],
+ [/合格率/,()=>`本月 LN-ML26 出厂检验 42 批，合格 41 批，合格率 <b class="mono">97.6%</b>；1 批加热永久线变化超标，已开 NCR-0057。<div class="small muted">来源：quality.inspection_* 事件</div>`]
+];
+function ask(q){
+  imPush({who:"你",role:"总经理",me:true,html:esc(q)});
+  setTimeout(()=>{const a=ANSWERS.find(x=>x[0].test(q));
+    imPush({bot:true,html:a?a[1]():`演示版只预置了几个问题，可以试试：“1# 窑昨天烧了几车？”“这周回款情况”“本月莫来石砖合格率”。`})},500)}
+
+/* ---------------- 02 工程 ---------------- */
+const STEPS=[["上传与解析","5 页 · 文字层 + OCR"],["字段核对","带页码引用"],["选材与计算","知识库匹配 · 传热计算"],["方案 / BOM / 报价","可编辑草稿"],["审核","风险与缺失信息"]];
+function vEng(){
+  const e=S.eng;
+  return `
+  <div class="head"><div><div class="eyebrow">AI for Engineering · 工程项目 EP-2026-031</div><h1>客户技术文件 → 技术方案、BOM 与报价</h1>
+  <p class="sub">华东某陶瓷有限公司（示例） · 2# 辊道窑烧成带炉衬改造。每个字段都能追到原文页码，用量和传热由代码计算，模型只负责理解和撰写。</p></div>
+  <div class="row"><span class="pill p-mock">MOCK</span><span class="pill p-info">草稿 L1 · 发布 L2</span></div></div>
+  <div class="stepper" role="tablist">${STEPS.map((s,i)=>`<button class="step ${i<e.step?"done":""}" ${i===e.step?'aria-current="step"':""} data-act="step" data-v="${i}" ${i>0&&e.parsed<DOC_PAGES.length?"disabled":""}><span class="i">步骤 ${i+1}</span><span class="t">${s[0]}</span><span class="s">${s[1]}</span></button>`).join("")}</div>
+  ${[engParse,engFields,engMatch,engDraft,engReview][e.step]()}`}
+
+function docView(){
+  const e=S.eng;
+  return `<div class="docview" id="docview">${DOC_PAGES.map((p,i)=>{
+    const st=i<e.parsed?"":(i===e.parsed&&e.parsing?"parsing":"pending");
+    return `<div class="page ${p.scan?"scanned":""} ${st}" id="pg${p.n}"><span class="how">${i<e.parsed?`<span class="pill ${p.scan?"p-mock":"p-mute"}">${p.how}</span>`:""}</span>${p.html}<span class="pno">— 第 ${p.n} 页 / 共 ${DOC_PAGES.length} 页 —</span></div>`}).join("")}</div>`}
+
+function engParse(){
+  const e=S.eng;const done=e.parsed>=DOC_PAGES.length;
+  return `${talk(["客户把 PDF 发到 IM 或拖到这里，系统先判断每一页：有文字层直接取字，扫描页走 Xiaomi-OCR-0。","演示里第 3、4 页是扫描件，所以标“OCR（模拟）”；正式环境会调用部署在阿里云上的 OCR 服务。","解析完就能进入字段核对。"])}
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>原文</h2><span class="small muted mono">HDTC-JS-2026-117.pdf · 1.8 MB · sha256 9f2c…a71e</span></div>${docView()}</section>
+    <section class="card"><div class="sec-h"><h2>解析任务</h2>${done?`<span class="pill p-ok">完成</span>`:e.parsing?`<span class="pill p-info">解析中</span>`:`<span class="pill p-mute">待开始</span>`}</div>
+      <div class="pad col">
+        <div class="progress"><i style="width:${e.parsed/DOC_PAGES.length*100}%"></i></div>
+        <table><thead><tr><th>页</th><th>解析方式</th><th>状态</th><th class="n">耗时</th></tr></thead><tbody>
+        ${DOC_PAGES.map((p,i)=>`<tr><td class="mono">${p.n}</td><td>${p.scan?"Xiaomi-OCR-0（模拟）":"PDF 文字层"}</td><td>${i<e.parsed?'<span class="pill p-ok">完成</span>':(i===e.parsed&&e.parsing?'<span class="pill p-info">进行中</span>':'<span class="pill p-mute">排队</span>')}</td><td class="n">${i<e.parsed?(p.scan?"2.4 s":"0.1 s"):"—"}</td></tr>`).join("")}
+        </tbody></table>
+        <div class="row">${done?`<button class="btn pri" data-act="step" data-v="1">下一步：核对字段 →</button>`:`<button class="btn pri" data-act="parse" ${e.parsing?"disabled":""}>${e.parsing?"解析中…":"开始解析"}</button>`}
+          <span class="small muted">模拟模式下结果不能发布或导出正式文件。</span></div>
+      </div></section>
+  </div>`}
+function startParse(){const e=S.eng;if(e.parsing)return;e.parsing=true;render();
+  const tick=()=>{e.parsed++;if(e.parsed>=DOC_PAGES.length){e.parsing=false;addEvent("工程师助理","HDTC-JS-2026-117 解析完成：抽取 22 个字段，2 个缺失，1 处冲突","eng.document_parsed")}
+    render();if(e.parsing)setTimeout(tick,DOC_PAGES[e.parsed].scan?900:350)};
+  setTimeout(tick,350)}
+
+function fieldVal(id,def){return S.eng.edits[id]!==undefined?S.eng.edits[id]:def}
+function engFields(){
+  const e=S.eng;
+  return `${talk(["左边原文、右边字段。点任意一行，左边跳到对应页并高亮原文，这就是“每个数字都有证据”。","找不到的字段（锚固方式、执行标准）标红“缺失”，模型不允许编造。","第 3 页最高温度 1300℃ 和第 4 页“按 1280℃ 选材”不一致，系统会在审核步骤提示冲突。","字段可以直接改，修改留痕。"])}
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>原文</h2><span class="small muted">点右侧字段定位</span></div>${docView()}</section>
+    <section class="card"><div class="sec-h"><h2>工程字段</h2><span class="small muted">耐火材料行业包 Schema v0.1</span></div>
+      <div class="tbl-wrap" style="max-height:640px;overflow:auto"><table class="fields"><thead><tr><th>字段</th><th>值</th><th>出处</th><th class="n">置信度</th></tr></thead><tbody>
+      ${FIELD_DEFS.map(([g,fs])=>`<tr class="grp"><td colspan="4">${g}</td></tr>`+fs.map(([id,name,val,unit,pg,conf])=>{
+        const v=fieldVal(id,val);const missing=!pg&&!v;const edited=e.edits[id]!==undefined;
+        return `<tr class="click ${e.hot===id?"sel":""}" data-act="cite" data-f="${id}" data-p="${pg}"><td>${name}${edited?' <span class="pill p-info">人工修改</span>':""}</td>
+          <td><span class="row" style="flex-wrap:nowrap;gap:4px"><input id="f-${id}" data-edit="${id}" value="${esc(v)}" placeholder="${missing?"缺失":""}" aria-label="${name}">${unit?`<span class="small muted">${unit}</span>`:""}</span></td>
+          <td>${pg?`<span class="cite">p.${pg}</span>`:'<span class="pill p-bad">缺失</span>'}</td>
+          <td class="n">${pg?`${Math.round(conf*100)}%`:"—"}${pg?' <span class="pill p-mock">模拟</span>':""}</td></tr>`}).join("")).join("")}
+      </tbody></table></div>
+      <div class="pad row" style="border-top:1px solid var(--line)"><button class="btn pri" data-act="step" data-v="2">下一步：知识库选材 →</button><span class="small muted">20 个已抽取 · 2 个缺失 · 1 处冲突</span></div>
+    </section>
+  </div>`}
+function cite(id,pg){
+  S.eng.hot=id;render();
+  if(!pg){toast("这个字段在原文中没找到，已标记缺失，会进入审核清单");return}
+  const dv=$("#docview"),m=document.querySelector(`#docview mark[data-f="${id}"]`);
+  document.querySelectorAll("#docview mark.src").forEach(x=>x.classList.remove("hot"));
+  if(m&&dv){m.classList.add("hot");const top=m.getBoundingClientRect().top-dv.getBoundingClientRect().top+dv.scrollTop-120;dv.scrollTo({top,behavior:"smooth"})}}
+
+function wallSvg(ev,layers){
+  const W=520,H=230,x0=60,x1=W-30,y0=44,y1=H-36;const total=ev.total;const sc=(x1-x0)/Math.max(total,1);
+  const Tmax=REQ.tNormal,yT=t=>y1-(t-0)/(Tmax)*(y1-y0);
+  let x=x0,rects="",labels="";
+  layers.forEach(([pk,t],i)=>{const P=PRODUCTS[pk];const w=t*sc;rects+=`<rect x="${x}" y="${y0}" width="${w}" height="${y1-y0}" fill="${P.color}" opacity=".55"/>`;
+    labels+=`<text x="${x+w/2}" y="${y1+14}" text-anchor="middle" font-size="10" fill="var(--muted)">${P.code.replace("LN-","")} ${t}</text>`;x+=w});
+  let pts=[],xx=x0;ev.r.temps.forEach((T,i)=>{pts.push(`${xx},${yT(T)}`);if(i<layers.length)xx+=layers[i][1]*sc});
+  const temps=ev.r.temps.map((T,i)=>{let px=x0;for(let j=0;j<i;j++)px+=layers[j][1]*sc;const anchor=i===0?"start":(i===ev.r.temps.length-1?"end":"middle");return `<circle cx="${px}" cy="${yT(T)}" r="3" fill="var(--heat)"/><text x="${px+(i===0?5:0)}" y="${yT(T)-8}" text-anchor="${anchor}" font-size="11" font-family="JetBrains Mono,monospace" fill="var(--fg)">${fmt(T)}℃</text>`}).join("");
+  const ticks=[0,400,800,1200].map(t=>`<line x1="${x0}" x2="${x1}" y1="${yT(t)}" y2="${yT(t)}" stroke="var(--line)" stroke-dasharray="2 3"/><text x="${x0-6}" y="${yT(t)+3}" text-anchor="end" font-size="10" fill="var(--muted)">${t}</text>`).join("");
+  return `<svg class="wall" viewBox="0 0 ${W} ${H}" role="img" aria-label="衬里温度分布">${ticks}${rects}
+    <polyline points="${pts.join(" ")}" fill="none" stroke="var(--heat)" stroke-width="2"/>${temps}${labels}
+    <text x="${x0}" y="12" font-size="10" fill="var(--muted)">窑内 ${REQ.tNormal}℃ →</text><text x="${x1}" y="12" text-anchor="end" font-size="10" fill="var(--muted)">→ 外壁 / 环境 ${REQ.tAmb}℃</text>
+    <text x="${(x0+x1)/2}" y="${H-4}" text-anchor="middle" font-size="10" fill="var(--muted)">厚度 mm（总 ${total}）</text></svg>`}
+function engMatch(){
+  const e=S.eng;const ev=evalOption(e.layers);const q=quote(ev);
+  return `${talk(["规则先过滤硬约束：分类温度 ≥ 最高温度 + 100℃、化学相容、热面温度不超过各层允许值。","给出 3 个备选方案，DeepSeek-R1 解释取舍；方案 B 便宜但温度余量不足、外壁超温，标红。","拖动厚度滑块，传热、外壁温度、用量、报价全部实时重算，这些都是 Python 确定性代码（演示里用同样公式的前端实现），不是模型估的。"])}
+  <div class="grid g3">${OPTIONS.map(o=>{const v=evalOption(o.layers);const bad=v.checks.filter(c=>!c.ok).length;
+    return `<button class="opt ${e.opt===o.id?"sel":""}" data-act="opt" data-v="${o.id}"><div class="row" style="justify-content:space-between;width:100%"><h3>${o.name}</h3>${bad?`<span class="pill p-bad">${bad} 项不满足</span>`:`<span class="pill p-ok">全部满足</span>`}</div>
+      <div class="layers">${o.layers.map(([pk,t])=>{const P=PRODUCTS[pk];return `<div class="layer"><span>${P.code} ${P.name}</span><span class="mono">${t} mm</span></div>`}).join("")}</div>
+      <div class="metric"><span class="muted">外壁温度</span><span class="num" style="color:${v.r.Ts>REQ.tOuter?"var(--bad)":"var(--ok)"}">${fmt(v.r.Ts,1)}℃</span></div>
+      <div class="metric"><span class="muted">热损失</span><span class="num">${fmt(v.r.q)} W/m²</span></div>
+      <div class="metric"><span class="muted">总厚度</span><span class="num">${v.total} mm</span></div>
+      <div class="metric"><span class="muted">材料标价</span><span class="num">¥${fmt(v.mat)}</span></div>
+      <p class="small muted">${o.why}</p></button>`}).join("")}</div>
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>调整厚度 · ${OPTIONS.find(o=>o.id===e.opt).name}</h2><span class="small muted">一维稳态传热 · k(T)=a+bT · 外壁对流+辐射 ε=0.8</span></div>
+      <div class="pad">${e.layers.map(([pk,t],i)=>{const P=PRODUCTS[pk];return `<div class="thick"><label for="th${i}">${["工作层","隔热层","保温层"][i]||"层"+(i+1)} · ${P.code} ${P.name}</label><input type="range" id="th${i}" data-thick="${i}" min="${P.form==="brick"?114:20}" max="${P.form==="brick"?345:150}" step="${P.form==="brick"?(i===0?115:5):5}" value="${t}"><span class="mono">${t} mm</span></div>`}).join("")}
+      <div id="wallbox">${wallSvg(ev,e.layers)}</div></div></section>
+    <section class="card" id="checks">${checksCard(ev,q)}</section>
+  </div>`}
+function checksCard(ev,q){return `<div class="sec-h"><h2>校核结果</h2>${ev.checks.every(c=>c.ok)?'<span class="pill p-ok">全部满足</span>':'<span class="pill p-bad">存在不满足项</span>'}</div>
+      <div class="pad col">${ev.checks.map(c=>`<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="pill ${c.ok?"p-ok":"p-bad"}">${c.ok?"满足":"不满足"}</span><span>${c.txt}</span></div>`).join("")}
+        <div class="grid g2" style="gap:10px;margin-top:6px">
+          <div class="card stat" style="box-shadow:none"><span class="l">热损失（正常工况）</span><span class="v">${fmt(ev.r.q)}</span><span class="d muted">W/m²</span></div>
+          <div class="card stat" style="box-shadow:none"><span class="l">材料总重</span><span class="v">${fmt(ev.tons,1)}</span><span class="d muted">t（含损耗与泥浆）</span></div>
+          <div class="card stat" style="box-shadow:none"><span class="l">衬里面积</span><span class="v">${fmt(ev.area,1)}</span><span class="d muted">m²（炉墙 172.8 + 炉顶 100.8）</span></div>
+          <div class="card stat" style="box-shadow:none"><span class="l">报价合计（含税）</span><span class="v">${fmt(q.total/10000,1)}</span><span class="d muted">万元</span></div>
+        </div>
+        <div class="row"><button class="btn pri" data-act="step" data-v="3">用这个方案生成草稿 →</button></div></div>`}
+
+function engDraft(){
+  const e=S.eng;const ev=evalOption(e.layers);const q=quote(ev);const o=OPTIONS.find(x=>x.id===e.opt);
+  const L=e.layers.map(([pk,t])=>`${PRODUCTS[pk].code} ${PRODUCTS[pk].name} ${t} mm`);
+  return `${talk(["三份草稿联动：技术方案正文、BOM、报价。改折扣或施工费，报价立即重算；回到上一步改厚度，三份全变。","正文由 DeepSeek 按模板撰写（这里是模拟生成），可以直接在页面上编辑。","单价取自知识库价格表 2026-10 版，报价记录引用的版本号。"])}
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>技术方案（草稿）</h2><div class="row"><span class="pill p-mock">模拟生成</span><span class="small muted">可直接编辑</span></div></div>
+      <div class="editor" contenteditable="true" id="proposal" spellcheck="false">
+        <h3>一、工况分析</h3><p>2# 辊道窑烧成带正常工作温度 ${REQ.tNormal}℃，最高 ${REQ.tMax}℃（技术要求 p.3），氧化气氛，连续生产、热震少。外壁温度要求不高于 ${REQ.tOuter}℃，衬里总厚度受钢结构限制不超过 ${REQ.maxThick} mm（p.4）。</p>
+        <h3>二、选材与衬里结构</h3><p>推荐采用 ${o.name.replace(" · 推荐","")}，自热面向外依次为：${L.join("；")}，总厚度 ${ev.total} mm。工作层选用分类温度 ${PRODUCTS[e.layers[0][0]].cls}℃ 的产品，相对最高工作温度留有 ${PRODUCTS[e.layers[0][0]].cls-REQ.tMax}℃ 余量。</p>
+        <h3>三、热工校核</h3><p>按一维稳态传热计算，正常工况下热流密度约 ${fmt(ev.r.q)} W/m²，外壁温度约 ${fmt(ev.r.Ts,1)}℃；各层界面温度分别为 ${ev.r.temps.slice(1,-1).map(t=>fmt(t)+"℃").join("、")}，均低于对应材料的允许使用温度。与现衬里（外壁 120℃）相比，散热损失明显降低。</p>
+        <h3>四、施工要点</h3><p>轻质砖采用 LN-NJ14 轻质耐火泥浆砌筑，灰缝不大于 2 mm；纤维板与硅酸钙板错缝铺设；炉顶结构形式待客户确认后补充锚固方案。</p>
+        <h3>五、执行标准</h3><p>【待补充：技术要求未明确执行标准，需与客户确认】</p>
+      </div></section>
+    <div class="col" style="gap:16px">
+      <section class="card"><div class="sec-h"><h2>BOM / 材料清单</h2><span class="small muted">面积 ${fmt(ev.area,1)} m² · 含损耗</span></div>
+        <div class="tbl-wrap"><table><thead><tr><th>牌号</th><th>名称</th><th class="n">厚度</th><th class="n">体积 m³</th><th class="n">重量 t</th><th class="n">数量</th></tr></thead><tbody>
+        ${ev.bom.map(b=>`<tr><td class="mono">${b.P.code}</td><td>${b.P.name}</td><td class="n">${b.t||"—"}</td><td class="n">${fmt(b.vol,2)}</td><td class="n">${fmt(b.w,2)}</td><td class="n">${fmt(b.cnt)} ${b.cu}</td></tr>`).join("")}
+        </tbody><tfoot><tr><td colspan="4">合计</td><td class="n">${fmt(ev.tons,2)}</td><td></td></tr></tfoot></table></div></section>
+      <section class="card"><div class="sec-h"><h2>报价（草稿）</h2><span class="small muted mono">价格表 PL-2026-10</span></div>
+        <div class="tbl-wrap"><table><thead><tr><th>项目</th><th class="n">单价</th><th class="n">金额 元</th></tr></thead><tbody>
+        ${ev.bom.map(b=>`<tr><td>${b.P.code} ${b.P.name}</td><td class="n">${fmt(b.P.price)}/t</td><td class="n">${fmt(b.cost)}</td></tr>`).join("")}
+        <tr><td>材料折扣 <input class="cell-in" id="disc" data-q="discount" type="number" min="0" max="40" step="1" value="${e.discount}"> %</td><td></td><td class="n">−${fmt(q.disc)}</td></tr>
+        <tr><td>运费（${fmt(ev.tons,1)} t）</td><td class="n"><input class="cell-in" id="frt" data-q="freight" type="number" min="0" step="10" value="${e.freight}">/t</td><td class="n">${fmt(q.freight)}</td></tr>
+        <tr><td><label><input type="checkbox" id="inst" data-q="install" ${e.install?"checked":""}> 施工费（单独列项）</label></td><td class="n"><input class="cell-in" id="instp" data-q="installPrice" type="number" min="0" step="10" value="${e.installPrice}">/m²</td><td class="n">${fmt(q.install)}</td></tr>
+        <tr><td>增值税 13%</td><td></td><td class="n">${fmt(q.tax)}</td></tr>
+        </tbody><tfoot><tr><td>合计（含税）</td><td></td><td class="n">¥${fmt(q.total)}</td></tr></tfoot></table></div>
+        ${q.belowCost?`<div class="pad"><span class="pill p-bad">折后材料价低于成本线 ¥${fmt(q.costLine)}，审核时需销售负责人确认</span></div>`:""}
+        <div class="pad row" style="border-top:1px solid var(--line)"><button class="btn pri" data-act="step" data-v="4">提交审核 →</button></div></section>
+    </div>
+  </div>`}
+
+function buildRisks(){
+  const e=S.eng;const ev=evalOption(e.layers);const q=quote(ev);const out=[];
+  out.push({id:"c1",sv:"warn",type:"冲突",t:"不同页给出的选材温度不一致",d:"第 3 页最高温度 1300℃，第 4 页要求“工作层按 1280℃ 选材”。方案已按更严格的 1300℃ 校核。",pg:"p.3 / p.4",fix:"向客户确认设计温度"});
+  if(!fieldVal("std",""))out.push({id:"m1",sv:"bad",type:"缺失",t:"未给出执行的施工与验收标准",d:"第 4 页只写“按国家现行有关标准执行”，方案第五节暂空。",pg:"p.4",fix:"请客户指定标准，或按我方企业标准报价并在方案中注明"});
+  if(!fieldVal("anchor",""))out.push({id:"m2",sv:"warn",type:"缺失",t:"炉顶结构形式与锚固方式未说明",d:"影响炉顶纤维板/砖的固定方式和锚固件数量，BOM 暂未计锚固件。",pg:"—",fix:"补充现场照片或图纸"});
+  ev.checks.filter(c=>!c.ok).forEach(c=>out.push({id:"s-"+c.k,sv:"bad",type:"选材",t:c.txt,d:"由确定性校核计算得出，非模型判断。",pg:"计算",fix:"返回选材步骤调整材料或厚度"}));
+  if(q.belowCost)out.push({id:"b1",sv:"bad",type:"商务",t:`折扣 ${e.discount}% 后材料价低于成本线`,d:`折后材料 ¥${fmt(q.matNet)}，成本线 ¥${fmt(q.costLine)}。`,pg:"报价",fix:"销售负责人二次确认"});
+  out.push({id:"b2",sv:"info",type:"商务",t:"质保金 10%、质保期 1 年，自点火投产起算",d:"若投产延后，回款周期会拉长。",pg:"p.5",fix:"建议约定最迟起算日期"});
+  out.push({id:"b3",sv:"info",type:"商务",t:"报价有效期 30 天，价格表 PL-2026-10 在有效期内",d:"原料矾土熟料近 30 天涨价 4%，注意有效期内锁价风险。",pg:"p.5",fix:"可缩短有效期至 15 天"});
+  return out}
+function engReview(){
+  const e=S.eng;const risks=buildRisks();const left=risks.filter(r=>!e.risks[r.id]).length;
+  return `${talk(["审核页自动列出缺失、冲突、选材和商务风险，每条带原文页码或计算依据。","工程师逐条标“已处理 / 接受风险 / 不适用”，全部处理完才能提交。","报价属于 L2：需要销售负责人确认，Agent 不能自己发出去。演示数据是模拟的，所以只演示提交，不生成正式文件。"])}
+  <section class="card"><div class="sec-h"><h2>风险与缺失信息</h2><div class="row"><span class="pill ${left?"p-warn":"p-ok"}">${left?`还有 ${left} 条未处理`:"全部已处理"}</span></div></div>
+    ${risks.map(r=>{const h=e.risks[r.id];return `<div class="risk ${h?"handled":""}"><span class="sv ${r.sv}"></span><div><div class="row"><span class="pill ${r.sv==="bad"?"p-bad":r.sv==="warn"?"p-warn":"p-info"}">${r.type}</span><b>${esc(r.t)}</b><span class="mono small muted">${r.pg}</span></div><p class="small muted" style="margin-top:4px">${esc(r.d)} 建议：${esc(r.fix)}</p></div>
+      <div class="acts">${h?`<span class="pill p-ok">${h}</span><button class="btn sm" data-act="risk" data-id="${r.id}" data-v="">撤销</button>`:["已处理","接受风险","不适用"].map(x=>`<button class="btn sm" data-act="risk" data-id="${r.id}" data-v="${x}">${x}</button>`).join("")}</div></div>`}).join("")}
+    <div class="pad row"><button class="btn pri" data-act="submit" ${left||e.submitted?"disabled":""}>${e.submitted?"已提交，等待销售负责人确认":"提交给销售负责人确认（L2）"}</button>
+      <button class="btn" disabled title="模拟数据不能导出正式文件">导出 Word / Excel / PDF</button><span class="small muted">模拟数据不能导出正式文件</span></div></section>`}
+
+/* ---------------- 03 招标 ---------------- */
+function vTender(){
+  const f=S.tenderFilter;
+  const rows=TENDER_REQS.filter(r=>f==="all"||(f==="star"&&r.star)||(f==="fail"&&r.fail)||(f==="neg"&&r.dev==="负偏离")||(f==="tbd"&&r.dev==="待确认"));
+  const days=Math.ceil((new Date("2026-11-20T09:30:00+08:00")-new Date("2026-11-02T12:30:00+08:00"))/864e5);
+  const devPill=d=>`<span class="pill ${d==="负偏离"?"p-bad":d==="待确认"?"p-warn":d==="正偏离"?"p-info":"p-ok"}">${d}</span>`;
+  return `
+  <div class="head"><div><div class="eyebrow">AI for Engineering · 招标文件解析</div><h1>某钢铁集团 2# 加热炉炉衬耐材采购及施工</h1>
+  <p class="sub">186 页招标文件（示例）拆成需求矩阵：★ 实质性条款和可能废标的条款单独标出，技术条款和我方产品能力逐条对照，资质资料与知识库自动对上。</p></div><span class="pill p-mock">MOCK</span></div>
+  ${talk(["先看左上角：截止时间已经自动在 IM 设了提醒，还剩多少天一目了然。","需求矩阵可以只看 ★ 条款或可能废标的条款，这是投标最容易出事的地方。","资料清单自动比对：业绩合同缺 1 份、检测报告过期，都是会废标的问题，提前 18 天就暴露出来。","技术规格可以一键转成工程项目，进入选材报价流程。"])}
+  <div class="grid g4">
+    <div class="card stat"><span class="l">距投标截止</span><span class="countdown">${days} 天</span><span class="d muted mono">2026-11-20 09:30 · IM 提醒已设置</span></div>
+    <div class="card stat"><span class="l">招标编号</span><span class="v" style="font-size:16px">GT-ZB-2026-0815</span><span class="d muted">最高限价 ¥3,860,000</span></div>
+    <div class="card stat"><span class="l">需求条款</span><span class="v">${TENDER_REQS.length}</span><span class="d muted">★ ${TENDER_REQS.filter(r=>r.star).length} 条 · 可能废标 ${TENDER_REQS.filter(r=>r.fail).length} 条</span></div>
+    <div class="card stat"><span class="l">偏离</span><span class="v" style="color:var(--bad)">${TENDER_REQS.filter(r=>r.dev==="负偏离").length} 负</span><span class="d muted">${TENDER_REQS.filter(r=>r.dev==="待确认").length} 条待确认</span></div>
+  </div>
+  <section class="card"><div class="sec-h"><h2>需求矩阵</h2><div class="row">${[["all","全部"],["star","★ 实质性"],["fail","可能废标"],["neg","负偏离"],["tbd","待确认"]].map(([k,n])=>`<button class="chip ${f===k?"on":""}" data-act="tf" data-v="${k}">${n}</button>`).join("")}</div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>条款</th><th>类别</th><th>原文</th><th>页码</th><th>实质性</th><th>偏离</th><th>负责人</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="mono">${r.no}</td><td>${r.cat}</td><td style="min-width:260px">${esc(r.txt)}</td><td class="mono">p.${r.p}</td><td>${r.star?'<span class="star">★</span>':""}${r.fail?' <span class="pill p-bad">废标风险</span>':""}</td><td>${devPill(r.dev)}</td><td>${r.own}</td></tr>`).join("")}
+    </tbody></table></div></section>
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>投标资料清单</h2><span class="small muted">与知识库“资质与资料”自动比对</span></div>
+      <div class="tbl-wrap"><table><tbody>${CREDS.map(c=>`<tr><td>${c[0]}</td><td>${c[1]}</td><td><span class="pill ${c[2]==="ok"?"p-ok":c[2]==="bad"?"p-bad":"p-warn"}">${c[2]==="ok"?"已有":c[2]==="bad"?"缺失":"需处理"}</span></td></tr>`).join("")}</tbody></table></div></section>
+    <section class="card"><div class="sec-h"><h2>评分点与下一步</h2></div><div class="pad col">
+      <div class="kv" style="grid-template-columns:auto minmax(0,1fr)"><dt>技术分 50</dt><dd style="font-family:inherit">炉衬方案合理性 20 · 外壁温度计算 10 · 施工组织 10 · 检测报告 10</dd>
+      <dt>商务分 20</dt><dd style="font-family:inherit">业绩 10 · 质保与服务 10</dd><dt>价格分 30</dt><dd style="font-family:inherit">基准价 = 有效报价平均值 × 0.97</dd></div>
+      <div class="col small"><b>Agent 建议</b>
+        <span>· 5.1 条要求分类温度 ≥ 1450℃，我方 LN-ML26 为 1430℃，属负偏离，建议改用 LN-ML28（研发在试，需确认能否提供检测报告）。</span>
+        <span>· 7.1 条质保 2 年，我方标准 1 年，建议商务评估后响应，否则失分。</span>
+        <span>· 业绩差 1 份：知识库中 2024 年某钢厂加热炉项目合同未上传，已提醒销售补传。</span></div>
+      <div class="row"><button class="btn pri" data-act="tender2eng" ${S.tenderSent?"disabled":""}>${S.tenderSent?"已创建工程项目 EP-2026-032":"把技术规格转成工程项目"}</button></div></div></section>
+  </div>`}
+
+/* ---------------- 04 窑炉 ---------------- */
+const KILNS={
+ k1:{name:"1# 隧道窑",path:"A 直接联网",proto:"Modbus RTU · RS485 · 秒级",state:"偏差",pts:48},
+ k2:{name:"2# 梭式窑",path:"B 旁路改造",proto:"加装热电偶 + 4G 采集模块 · 1 分钟",state:"正常",pts:6},
+ k3:{name:"3# 倒焰窑",path:"C 不能联网",proto:"工人拍仪表 → OCR · 每 2 小时",state:"正常",pts:2}
+};
+function stdCurve(x){ // 位置 m → 标准温度 ℃（示例烧成曲线）
+  if(x<=20)return 40+x/20*560; if(x<=30)return 600+(x-20)/10*500; if(x<=42)return 1100+Math.min((x-30)/4,1)*180; if(x<=50)return 1280-(x-42)/8*680; return 600-(x-50)/10*480}
+function actual(x){let d=Math.sin(x*1.7)*3+Math.cos(x*.6)*2.5;if(x>=33&&x<=39)d+=30*Math.sin((x-33)/6*Math.PI);return stdCurve(x)+d}
+const DEV_X=(()=>{let bx=33,bd=-1e9;for(let x=33;x<=39;x+=0.25){const d=actual(x)-stdCurve(x);if(d>bd){bd=d;bx=x}}return bx})();
+function kilnChart(){
+  const W=760,H=280,x0=48,x1=W-16,y0=16,y1=H-34;const X=x=>x0+x/60*(x1-x0),Y=t=>y1-t/1400*(y1-y0);
+  let band="",std="",act="";const xs=[];for(let x=0;x<=60;x+=0.5)xs.push(x);
+  band=xs.map(x=>`${X(x)},${Y(stdCurve(x)+15)}`).join(" ")+" "+xs.slice().reverse().map(x=>`${X(x)},${Y(stdCurve(x)-15)}`).join(" ");
+  std=xs.map(x=>`${X(x)},${Y(stdCurve(x))}`).join(" ");act=xs.map(x=>`${X(x)},${Y(actual(x))}`).join(" ");
+  const grid=[0,400,800,1200].map(t=>`<line x1="${x0}" x2="${x1}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--line)"/><text x="${x0-6}" y="${Y(t)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${t}</text>`).join("")+
+    [0,10,20,30,40,50,60].map(x=>`<text x="${X(x)}" y="${y1+16}" text-anchor="middle" font-size="11" fill="var(--muted)">${x}</text>`).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="1# 隧道窑温度曲线">${grid}
+   <rect x="${X(33)}" y="${y0}" width="${X(39)-X(33)}" height="${y1-y0}" fill="var(--heat-soft)"/>
+   <polygon points="${band}" fill="var(--accent-soft)"/><polyline points="${std}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4"/>
+   <polyline points="${act}" fill="none" stroke="var(--heat)" stroke-width="2"/>
+   <circle cx="${X(DEV_X)}" cy="${Y(actual(DEV_X))}" r="4" fill="var(--heat)"/><text x="${X(DEV_X)+8}" y="${Y(actual(DEV_X))-6}" font-size="12" fill="var(--heat)" font-family="JetBrains Mono,monospace">${fmt(actual(DEV_X))}℃</text>
+   <text x="${x1}" y="${H-2}" text-anchor="end" font-size="11" fill="var(--muted)">窑车位置 m</text><text x="${x0}" y="${y0-4}" font-size="11" fill="var(--muted)">℃</text>
+   <g font-size="11" fill="var(--muted)"><line x1="${x0+8}" x2="${x0+30}" y1="${y0+10}" y2="${y0+10}" stroke="var(--heat)" stroke-width="2"/><text x="${x0+34}" y="${y0+14}">实测</text>
+   <line x1="${x0+70}" x2="${x0+92}" y1="${y0+10}" y2="${y0+10}" stroke="var(--accent)" stroke-dasharray="5 4"/><text x="${x0+96}" y="${y0+14}">标准曲线 ±15℃</text></g></svg>${devChart()}`}
+function devChart(){
+  const W=760,H=150,x0=48,x1=W-16,y0=22,y1=H-26;const X=x=>x0+x/60*(x1-x0),Y=d=>y0+(40-d)/80*(y1-y0);
+  const xs=[];for(let x=0;x<=60;x+=0.5)xs.push(x);
+  const area=`${X(0)},${Y(0)} `+xs.map(x=>`${X(x)},${Y(actual(x)-stdCurve(x))}`).join(" ")+` ${X(60)},${Y(0)}`;
+  const grid=[-40,-15,0,15,40].map(d=>`<line x1="${x0}" x2="${x1}" y1="${Y(d)}" y2="${Y(d)}" stroke="var(--line)" ${d===15||d===-15?'stroke-dasharray="4 3"':""}/><text x="${x0-6}" y="${Y(d)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${d>0?"+":""}${d}</text>`).join("");
+  const md=actual(DEV_X)-stdCurve(DEV_X);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="与标准曲线的偏差">
+   <text x="${x0}" y="12" font-size="11" fill="var(--muted)">与标准曲线的偏差 ℃（虚线为 ±15℃ 告警阈值）</text>${grid}
+   <rect x="${X(0)}" y="${Y(15)}" width="${X(60)-X(0)}" height="${Y(-15)-Y(15)}" fill="var(--accent-soft)" opacity=".6"/>
+   <polygon points="${area}" fill="var(--heat)" opacity=".25"/><polyline points="${xs.map(x=>`${X(x)},${Y(actual(x)-stdCurve(x))}`).join(" ")}" fill="none" stroke="var(--heat)" stroke-width="1.5"/>
+   <circle cx="${X(DEV_X)}" cy="${Y(md)}" r="4" fill="var(--heat)"/><text x="${X(DEV_X)+8}" y="${Y(md)+4}" font-size="12" fill="var(--heat)" font-family="JetBrains Mono,monospace">+${fmt(md)}℃ @ ${DEV_X} m</text>
+   ${[0,10,20,30,40,50,60].map(x=>`<text x="${X(x)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--muted)">${x}</text>`).join("")}</svg>`}
+function vKiln(){
+  const k=KILNS[S.kiln];const i2=S.inbox.find(i=>i.id==="i2");
+  return `
+  <div class="head"><div><div class="eyebrow">生产现场 · 窑炉接入与批次追溯</div><h1>三种窑，三条接入路径，进同一张时序表</h1>
+  <p class="sub">能联网的直接读仪表，没有通讯口的旁路加装传感器，老设备拍照读数。设备事件先过规则快筛，再由 Agent 慢分析，结论推给班长确认。</p></div><span class="pill p-mock">MOCK</span></div>
+  ${talk(["窑炉型号未知不是问题：三条路径可以混用，数据只是来源和精度标记不同。","1# 隧道窑 34–38 m 段偏高 28℃，规则先触发告警；DeepSeek-R1 在后台做投机预分析，给班长一个可执行的建议，班长确认才执行（L1）。","下面是批次追溯：一个批次号链出原料、窑次、检验报告，每一环都有照片或记录作为证据。"])}
+  <div class="grid g3">${Object.entries(KILNS).map(([id,v])=>`<button class="kiln ${S.kiln===id?"sel":""}" data-act="kiln" data-v="${id}"><div class="row" style="justify-content:space-between;width:100%"><h3>${v.name}</h3><span class="pill ${v.state==="偏差"?"p-heat":"p-ok"}">${v.state}</span></div><span class="pill p-info" style="align-self:flex-start">路径 ${v.path}</span><span class="small muted">${v.proto}</span><span class="small muted">测点 ${v.pts} 个</span></button>`).join("")}</div>
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>${k.name} · 温度曲线</h2><span class="small muted">${S.kiln==="k1"?"当前在窑 46 车 · 实时":"示例曲线（演示统一使用 1# 窑数据）"}</span></div><div class="pad">${kilnChart()}</div></section>
+    <section class="card"><div class="sec-h"><h2>偏差处置</h2><span class="pill p-heat">kiln.deviation_detected · 09:21</span></div>
+      <div class="pad col">
+        <div class="kv"><dt>位置</dt><dd>34–38 m（烧成带后段）</dd><dt>偏差</dt><dd>最高 +${fmt(actual(DEV_X)-stdCurve(DEV_X))}℃，持续 47 min</dd><dt>影响窑车</dt><dd>#1031-14 至 #1031-17（4 车）</dd></div>
+        <div class="col small"><b>Agent 预分析（DeepSeek-R1，后台投机执行）</b>
+          <span>1. 同段燃烧器 B7 空燃比 1.18，高于近 7 天均值 1.09，最可能原因。</span>
+          <span>2. 天然气压力稳定，排除供气波动。</span>
+          <span>3. 历史上 3 次类似偏差，下调 B7 空燃比 3% 后 20 min 内恢复。</span>
+          <span><b>建议：</b>B7 空燃比下调 3%，受影响 4 车出窑后加检加热永久线变化。</span></div>
+        <div class="row">${i2&&!i2.done?`<button class="btn pri" data-act="kilnok">班长确认执行</button><button class="btn" data-act="kilnno">不采纳</button>`:`<span class="pill p-ok">已确认，质检员已为 4 车添加加检任务</span>`}</div>
+      </div></section>
+  </div>
+  <section class="card"><div class="sec-h"><h2>批次追溯 · B2611-03</h2><span class="small muted">链式召回：批次 → 原料 → 配料 → 窑次 → 检验 → 发货</span></div>
+    <div class="pad trace">
+      ${[["客户订单","SO-2026-0412","合同 p.2 交期 11-25"],["成品批次","B2611-03 · LN-ML26","入库照片 ×2"],["原料","矾土熟料 KF-1019 · 高岭土 GL-0922","送货单 OCR · 来料检验合格"],["配料/成型","配方 R-ML26 v7 · 10-28 夜班","语音录单 · 班长确认"],["烧成","1#-1031-14 · 1#隧道窑","温度曲线 · 含偏差段"],["出厂检验","体积密度 0.79 · 耐压 3.1 MPa","检验报告 OCR p.1"]].map(n=>`<div class="tnode"><span class="k">${n[0]}</span><span class="v">${n[1]}</span><span class="e">证据：${n[2]}</span></div>`).join("")}
+    </div></section>`}
+
+/* ---------------- 05 知识库 ---------------- */
+function vKb(){
+  return `
+  <div class="head"><div><div class="eyebrow">工程知识库 · 版本 KB-2026-10-28</div><h1>产品、价格、衬里模板、标准与资质</h1>
+  <p class="sub">业务人员自己维护，所有修改留痕可回滚。AI 只能提议修改，管理员确认后生效（L2）。选材和报价都引用这里的版本。</p></div><span class="pill p-mock">示例数据</span></div>
+  ${talk(["知识库是选材报价能落地的关键，必须让业务人员自己能维护。","右上这条是 AI 从新检测报告里发现的参数变化，它只能提议，管理员确认才改。","导热系数用 k(T)=a+bT 表示，计算直接引用。"])}
+  <div class="split">
+    <section class="card"><div class="sec-h"><h2>产品库</h2><span class="small muted">${Object.keys(PRODUCTS).length} 个牌号</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>牌号</th><th>名称</th><th>类别</th><th class="n">分类温度 ℃</th><th class="n">密度 g/cm³</th><th class="n">k@600℃ W/(m·K)</th><th class="n">单价 元/t</th></tr></thead><tbody>
+      ${Object.values(PRODUCTS).map(P=>`<tr><td class="mono">${P.code}</td><td>${P.name}</td><td>${P.cat}</td><td class="n">${fmt(P.cls)}</td><td class="n">${P.rho.toFixed(2)}</td><td class="n">${P.a?(P.a+P.b*600).toFixed(3):"—"}</td><td class="n">${fmt(P.price)}</td></tr>`).join("")}
+      </tbody></table></div></section>
+    <div class="col" style="gap:16px">
+      <section class="card"><div class="sec-h"><h2>AI 提议的修改</h2><span class="pill ${S.kbProposal==="pending"?"p-warn":S.kbProposal==="ok"?"p-ok":"p-mute"}">${S.kbProposal==="pending"?"待确认 L2":S.kbProposal==="ok"?"已生效":"已驳回"}</span></div>
+        <div class="pad col"><p>从 <span class="mono">检测报告 JC-2026-1022.pdf p.2</span> 识别到 <b class="mono">LN-ML26</b> 导热系数（平均温度 350℃）：</p>
+          <p class="mono" style="font-size:16px">0.250 → <b style="color:var(--accent)">0.238</b> W/(m·K)</p>
+          <p class="small muted">影响：使用 LN-ML26 的 3 个在制方案外壁温度预计降低 1–2℃，报价不变。</p>
+          <div class="row">${S.kbProposal==="pending"?`<button class="btn pri" data-act="kb" data-v="ok">确认生效</button><button class="btn" data-act="kb" data-v="no">驳回</button>`:`<button class="btn sm" data-act="kb" data-v="pending">撤销</button>`}</div></div></section>
+      <section class="card"><div class="sec-h"><h2>衬里结构模板</h2></div>
+        <div class="tbl-wrap"><table><thead><tr><th>炉型 · 部位</th><th>温度区间</th><th>推荐结构</th></tr></thead><tbody>
+          <tr><td>辊道窑 · 炉墙</td><td class="mono">1200–1320℃</td><td>莫来石轻质砖 230 + 纤维板 60–80 + 硅酸钙板 40–60</td></tr>
+          <tr><td>隧道窑 · 窑顶</td><td class="mono">1250–1350℃</td><td>含锆纤维模块 250 + 纤维毯 50</td></tr>
+          <tr><td>加热炉 · 均热段</td><td class="mono">1300–1400℃</td><td>轻质浇注料 200 + 纤维板 100</td></tr></tbody></table></div></section>
+      <section class="card"><div class="sec-h"><h2>修改历史</h2></div><div class="pad col small">
+        <span><span class="mono muted">10-28 16:02</span> 张工 · 价格表 PL-2026-10 生效（矾土基产品 +4%）</span>
+        <span><span class="mono muted">10-21 10:15</span> 李经理 · 新增牌号 LN-NM10 纳米微孔隔热板</span>
+        <span><span class="mono muted">10-15 09:40</span> AI 提议 → 张工确认 · LN-FB1260 体积密度 0.30 → 0.32</span></div></section>
+    </div>
+  </div>`}
+
+/* ---------------- 路由与事件 ---------------- */
+const VIEWS={overview:vOverview,eng:vEng,tender:vTender,kiln:vKiln,kb:vKb};
+function render(){
+  const v=VIEWS[S.view]?S.view:"overview";
+  const keep=document.activeElement&&document.activeElement.id;const selStart=document.activeElement&&document.activeElement.selectionStart;
+  const ims=$("#imbody")?$("#imbody").scrollTop:null, dvs=$("#docview")?$("#docview").scrollTop:null;
+  $("#view").innerHTML=VIEWS[v]();
+  document.querySelectorAll(".navbtn").forEach(b=>b.setAttribute("aria-current",b.dataset.go===v?"page":"false"));
+  if(keep){const el=document.getElementById(keep);if(el&&el.tagName==="INPUT"){el.focus();try{if(selStart!=null&&el.type!=="range"&&el.type!=="number"&&el.type!=="checkbox")el.setSelectionRange(selStart,selStart)}catch(_){}}}
+  const ib=$("#imbody");if(ib)ib.scrollTop=ims==null?ib.scrollHeight:Math.max(ims,ib.scrollHeight);
+  const dv=$("#docview");if(dv&&dvs!=null)dv.scrollTop=dvs;
+  if(S.eng.hot){const m=document.querySelector(`#docview mark[data-f="${S.eng.hot}"]`);if(m)m.classList.add("hot")}
+  document.querySelectorAll("#docview mark.src").forEach(m=>{if(S.eng.step===1&&!m.classList.contains("hot"))m.classList.add("seen")});
+  S._newEv=false}
+function route(){const h=location.hash.replace("#","");S.view=VIEWS[h]?h:"overview";render();window.scrollTo(0,0)}
+window.addEventListener("hashchange",route);
+
+document.addEventListener("click",ev=>{
+  const g=ev.target.closest("[data-go]");if(g){$("#layer").innerHTML="";go(g.dataset.go);return}
+  const a=ev.target.closest("[data-act]");if(!a)return;
+  const act=a.dataset.act,v=a.dataset.v,e=S.eng;
+  switch(act){
+   case "reset":S=initialState();S.eng.layers=OPTIONS[0].layers.map(l=>l.slice());route();toast("已重置演示数据");break;
+   case "im":S.im=v;render();break;
+   case "im-ocr":S.imStage=1;render();
+     setTimeout(()=>imPush({bot:true,html:`<span class="typing">Xiaomi-OCR-0 识别中…</span>`}),200);
+     setTimeout(()=>{S.imMsgs.pop();imPush({bot:true,html:`<div class="cardmsg"><b>识别到一张送货单，请确认入库</b><dl class="kv"><dt>供应商</dt><dd>某某矿业（示例）</dd><dt>品名</dt><dd>矾土熟料 88#</dd><dt>数量</dt><dd>32.46 t</dd><dt>批号</dt><dd>KF-1031</dd><dt>车号</dt><dd>皖N·3K821</dd><dt>对应</dt><dd>采购单 PO-0371（订 30t，超 8.2%）</dd></dl><span class="small" style="color:var(--warn)">实收比采购单多 2.46 t，超出 5% 容差</span><div class="row"><button class="btn sm pri" data-act="im-ok">确认入库</button><button class="btn sm" data-act="im-edit">修改</button></div><span class="small muted">模拟识别结果</span></div>`})},1300);break;
+   case "im-ok":if(S.imStage>=2)break;S.imStage=2;
+     imPush({who:"王师傅",role:"仓管",me:true,html:"确认"});
+     addEvent("仓管员","入库 矾土熟料 88# 32.46t，批号 KF-1031（送货单照片为证）","warehouse.received");
+     addEvent("质检员","已为 KF-1031 生成来料检验任务：Al₂O₃、Fe₂O₃、体积密度","quality.task_created");
+     addEvent("采购员","PO-0371 超量 2.46t，已起草与供应商的结算说明","purchase.over_receipt_flagged");
+     setTimeout(()=>imPush({bot:true,html:`已入库，事件已记账。<br>· 质检员已生成来料检验任务（@质检 小陈）<br>· 超量 2.46 t 已交给采购员处理`}),400);break;
+   case "im-edit":toast("演示：会打开字段修改卡片，修改后再确认");break;
+   case "ask":ask(a.dataset.q);break;
+   case "approve":{const it=S.inbox.find(i=>i.id===a.dataset.id);it.done=true;addEvent("你（总经理）","批准 "+it.t,"policy.approved");render();toast("已批准，采购员会把采购单发给供应商");break}
+   case "step":{const n=+v;if(n>0&&e.parsed<DOC_PAGES.length)break;e.step=n;render();window.scrollTo({top:0});break}
+   case "parse":startParse();break;
+   case "cite":cite(a.dataset.f,+a.dataset.p);break;
+   case "opt":e.opt=v;e.layers=OPTIONS.find(o=>o.id===v).layers.map(l=>l.slice());render();break;
+   case "risk":if(v)e.risks[a.dataset.id]=v;else delete e.risks[a.dataset.id];render();break;
+   case "submit":e.submitted=true;addEvent("工程师助理","EP-2026-031 方案与报价已提交，等待销售负责人确认（L2）","eng.review_submitted");render();
+     modal(`<h2>已提交给销售负责人</h2><p>销售负责人会在钉钉收到审批卡片：方案摘要、报价合计、未关闭风险。确认后才会生成正式文件发给客户。</p><p class="small muted">这是演示：数据为模拟识别结果，按规则不能生成正式文件。</p><div class="row"><button class="btn pri" data-act="close">知道了</button><button class="btn" data-go="overview" data-act="close">回总览看事件账本</button></div>`);break;
+   case "close":$("#layer").innerHTML="";break;
+   case "tf":S.tenderFilter=v;render();break;
+   case "tender2eng":S.tenderSent=true;addEvent("工程师助理","从 GT-ZB-2026-0815 技术规格书创建工程项目 EP-2026-032（工况 9 项、工程量 4 项）","eng.project_created");render();toast("已创建工程项目 EP-2026-032，工况和工程量已带入");break;
+   case "kiln":S.kiln=v;render();break;
+   case "kilnok":{const it=S.inbox.find(i=>i.id==="i2");it.done=true;addEvent("班长 赵师傅","确认执行：B7 空燃比下调 3%","kiln.action_confirmed");addEvent("质检员","为 #1031-14～17 添加加热永久线变化加检","quality.task_created");render();break}
+   case "kilnno":toast("演示：会要求填写不采纳原因，作为 Agent 下次判断的依据");break;
+   case "kb":S.kbProposal=v;if(v==="ok")addEvent("张工","确认 AI 提议：LN-ML26 导热系数更新（JC-2026-1022 p.2）","kb.change_approved");render();break;
+  }
+});
+document.addEventListener("click",ev=>{if(ev.target.classList&&ev.target.classList.contains("modal-bg"))$("#layer").innerHTML=""});
+function modal(html){$("#layer").innerHTML=`<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`}
+
+document.addEventListener("input",ev=>{
+  const t=ev.target,e=S.eng;
+  if(t.dataset.thick!==undefined){e.layers[+t.dataset.thick][1]=+t.value;t.nextElementSibling.textContent=t.value+" mm";
+    const ev2=evalOption(e.layers);$("#wallbox").innerHTML=wallSvg(ev2,e.layers);$("#checks").innerHTML=checksCard(ev2,quote(ev2));return}
+  if(t.dataset.q){if(t.type==="checkbox")e[t.dataset.q]=t.checked;else{const n=parseFloat(t.value);if(!isNaN(n))e[t.dataset.q]=n}render();return}
+  if(t.dataset.edit){e.edits[t.dataset.edit]=t.value}
+});
+document.addEventListener("change",ev=>{const t=ev.target;if(t.dataset.edit)render()});
+document.addEventListener("submit",ev=>{if(ev.target.id==="imform"){ev.preventDefault();const q=$("#imq").value.trim();if(q){$("#imq").value="";ask(q)}}});
+
+route();
+})();
+</script>
+
+</body>
+</html>
