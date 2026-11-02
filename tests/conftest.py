@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import textwrap
 from pathlib import Path
 
@@ -14,6 +15,19 @@ from fos.db.session import make_engine, make_sessionmaker
 from fos.governance import apikeys
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+USERS = [
+    ("admin", "luneng", ["admin"]),
+    ("worker", "luneng", ["worker"]),
+    ("warehouse", "luneng", ["warehouse"]),
+    ("qc", "luneng", ["qc"]),
+    ("shift_lead", "luneng", ["shift_lead"]),
+    ("sales", "luneng", ["sales"]),
+    ("rnd", "luneng", ["rnd"]),
+    ("gm", "luneng", ["gm"]),
+    ("other_admin", "other", ["admin"]),
+]
 
 
 @pytest.fixture
@@ -43,8 +57,10 @@ def tenants_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def settings(tmp_path: Path, tenants_dir: Path) -> Settings:
     return Settings(
-        database_url=f"sqlite+aiosqlite:///{tmp_path / 'fos.db'}",
+        # 设置 FOS_TEST_DATABASE_URL 时在真实 PostgreSQL 上跑（CI 这样做），否则用临时 SQLite
+        database_url=os.environ.get("FOS_TEST_DATABASE_URL") or f"sqlite+aiosqlite:///{tmp_path / 'fos.db'}",
         tenants_dir=tenants_dir,
+        packs_dir=REPO / "packs",
         llm_mode=LLMMode.mock,
     )
 
@@ -56,15 +72,12 @@ def keys(settings: Settings) -> dict[str, str]:
     async def setup() -> dict[str, str]:
         engine = make_engine(settings.database_url)
         async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
         sm = make_sessionmaker(engine)
         out: dict[str, str] = {}
         async with sm() as s, s.begin():
-            for name, tenant, roles in [
-                ("admin", "luneng", ["admin"]),
-                ("worker", "luneng", ["worker"]),
-                ("other_admin", "other", ["admin"]),
-            ]:
+            for name, tenant, roles in USERS:
                 u = User(tenant_id=tenant, login=name, display_name=name, roles=roles, im_ids={})
                 s.add(u)
                 await s.flush()

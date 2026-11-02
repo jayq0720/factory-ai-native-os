@@ -18,6 +18,8 @@ from fos.config import get_settings
 from fos.db.models import ApiKey, User, utcnow
 from fos.db.session import make_engine, make_sessionmaker
 from fos.governance import apikeys
+from fos.ledger.projection import rebuild
+from fos.ontology.loader import load_ontology
 from fos.tenancy import TenantRegistry
 
 
@@ -30,6 +32,19 @@ async def _run(args: argparse.Namespace) -> int:
             assert t
             print(f"{t.id}\t{t.name}\tpack={t.industry_pack}\tim={','.join(t.im)}\troles={len(t.roles)}")
         return 0
+    if args.cmd in ("ontology", "rebuild"):
+        tenant = registry.get(args.tenant)
+        if not tenant:
+            print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+            return 1
+        onto = load_ontology(tenant, packs_dir=s.packs_dir, tenants_dir=s.tenants_dir)
+        if args.cmd == "ontology":
+            print("层：" + " → ".join(onto.layers))
+            for k, o in onto.objects.items():
+                print(f"  对象 {k:<18} {o.name}（{len(o.properties)} 个属性，域 {o.domain}）")
+            for k, e in onto.events.items():
+                print(f"  事件 {k:<36} {e.name}  [{e.op} {e.object}，需 {e.permission}]")
+            return 0
 
     engine = make_engine(s.database_url)
     sm = make_sessionmaker(engine)
@@ -61,6 +76,9 @@ async def _run(args: argparse.Namespace) -> int:
                 k = await apikeys.issue(session, u, label=args.label)
                 print(k.plaintext)
                 print("（只显示这一次，请妥善保存）", file=sys.stderr)
+            elif args.cmd == "rebuild":
+                n = await rebuild(session, onto, tenant.id)
+                print(f"已重放 {n} 个事件")
             elif args.cmd == "revoke-key":
                 k = await session.get(ApiKey, args.key_id)
                 if not k:
@@ -88,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
     ik.add_argument("--label", default="")
     rk = sub.add_parser("revoke-key")
     rk.add_argument("key_id")
+    for name in ("ontology", "rebuild"):
+        sp = sub.add_parser(name)
+        sp.add_argument("tenant")
     return asyncio.run(_run(p.parse_args(argv)))
 
 

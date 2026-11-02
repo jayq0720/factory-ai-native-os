@@ -25,7 +25,7 @@ def test_me_resolves_tenant_and_permissions(client, keys):
     body = r.json()
     assert body["tenant_id"] == "luneng"
     assert body["tenant_name"] == "六安绿能"
-    assert body["permissions"] == ["production.record:read", "production.record:write"]
+    assert body["permissions"] == ["production.*:read", "production.record:write"]
 
     r = client.get("/v1/me", headers=_h(keys["other_admin"]))
     assert r.json()["tenant_id"] == "other"

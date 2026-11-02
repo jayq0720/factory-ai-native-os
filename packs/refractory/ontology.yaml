@@ -1,0 +1,117 @@
+# 耐火材料行业包：在核心本体上加窑炉、窑次、配方，并扩展产品与检验指标。
+
+objects:
+  kiln:
+    name: 窑炉
+    domain: production
+    properties:
+      name: {type: string, name: 名称, required: true}
+      kiln_type: {type: enum, name: 窑型, required: true,
+                  values: [tunnel, shuttle, down_draft, roller, rotary, other]}
+      access_path: {type: enum, name: 接入路径, values: [direct, retrofit, manual], required: true}
+      max_temp: {type: number, name: 最高温度, unit: ℃}
+      equipment: {type: ref, target: equipment, name: 对应设备台账}
+
+  recipe:
+    name: 配方
+    domain: rnd
+    description: 配方版本严格受控，只有研发可以发布
+    properties:
+      code: {type: string, name: 配方编号, required: true}
+      version: {type: integer, name: 版本, required: true}
+      product: {type: ref, target: product, name: 产品, required: true}
+      firing_curve: {type: string, name: 烧成制度}
+      note: {type: text, name: 说明}
+
+  kiln_run:
+    name: 窑次
+    domain: production
+    description: 一个窑一次装烧（隧道窑可按班或按窑车段划分）
+    properties:
+      kiln: {type: ref, target: kiln, name: 窑炉, required: true}
+      run_no: {type: string, name: 窑次号, required: true}
+      started_at: {type: datetime, name: 开始时间, required: true}
+      ended_at: {type: datetime, name: 结束时间}
+      max_temp: {type: number, name: 实际最高温度, unit: ℃}
+      deviation: {type: bool, name: 是否有温度偏差}
+      status: {type: enum, name: 状态, values: [firing, finished, aborted]}
+
+extend:
+  product:
+    category: {type: enum, name: 类别,
+               values: [insulating_brick, dense_brick, fiber, castable, mortar, board, other]}
+    classification_temp: {type: number, name: 分类温度, unit: ℃}
+    bulk_density: {type: number, name: 体积密度, unit: g/cm³}
+  production_batch:
+    recipe: {type: ref, target: recipe, name: 配方版本}
+    kiln_run: {type: ref, target: kiln_run, name: 窑次}
+    forming: {type: enum, name: 成型方式, values: [pressing, casting, extrusion, vacuum_forming]}
+  inspection:
+    bulk_density: {type: number, name: 体积密度, unit: g/cm³}
+    cold_crushing_strength: {type: number, name: 常温耐压强度, unit: MPa}
+    thermal_conductivity: {type: number, name: 导热系数, unit: W/(m·K)}
+    permanent_linear_change: {type: number, name: 加热永久线变化, unit: "%"}
+    refractoriness: {type: number, name: 耐火度, unit: ℃}
+    al2o3: {type: number, name: Al₂O₃ 含量, unit: "%"}
+    fe2o3: {type: number, name: Fe₂O₃ 含量, unit: "%"}
+
+events:
+  production.kiln_registered:
+    name: 登记窑炉
+    object: kiln
+    op: create
+    permission: production.kiln:write
+    fields: [name, kiln_type, access_path, max_temp, equipment]
+
+  rnd.recipe_released:
+    name: 发布配方版本
+    object: recipe
+    op: create
+    permission: rnd.recipe:approve
+    evidence: required
+    fields: [code, version, product, firing_curve, note]
+
+  production.kiln_run_started:
+    name: 窑次开始
+    object: kiln_run
+    op: create
+    permission: production.kiln:write
+    fields: [kiln, run_no, started_at, status]
+
+  production.kiln_run_finished:
+    name: 窑次结束
+    object: kiln_run
+    op: update
+    permission: production.kiln:write
+    evidence: required   # 温度曲线或抄表照片
+    fields: [ended_at, max_temp, deviation, status]
+
+  production.batch_formed:
+    name: 配料成型记录
+    object: production_batch
+    op: update
+    permission: production.record:write
+    fields: [recipe, forming]
+
+  production.batch_fired:
+    name: 批次装窑烧成
+    object: production_batch
+    op: update
+    permission: production.record:write
+    fields: [kiln_run]
+
+  quality.final_inspection_recorded:
+    name: 录入理化检验
+    object: inspection
+    op: update
+    permission: quality.inspection:write
+    evidence: required
+    fields: [bulk_density, cold_crushing_strength, thermal_conductivity, permanent_linear_change,
+             refractoriness, al2o3, fe2o3]
+
+  sales.product_specified:
+    name: 补充产品技术参数
+    object: product
+    op: update
+    permission: sales.product:write
+    fields: [category, classification_temp, bulk_density]

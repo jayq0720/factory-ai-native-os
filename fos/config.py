@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     env: str = "dev"
     database_url: str = "postgresql+asyncpg://fos:fos@localhost:5432/fos"
     tenants_dir: Path = Field(default=Path("tenants"))
+    packs_dir: Path = Field(default=Path("packs"))
 
     llm_mode: LLMMode = LLMMode.mock
     litellm_base_url: str = "http://localhost:4000"

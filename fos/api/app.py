@@ -13,10 +13,13 @@ from sqlalchemy import text
 
 from fos import __version__
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
+from fos.api.ledger_routes import router as ledger_router
 from fos.config import Settings, get_settings
 from fos.db.session import make_engine, make_sessionmaker
 from fos.gateway.llm import MODEL_ALIASES, ChatMessage, LLMClient, LLMError
 from fos.governance.principal import Principal
+from fos.ledger import Ledger
+from fos.ontology.loader import load_ontology
 from fos.tenancy import TenantRegistry
 
 
@@ -43,7 +46,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.engine = engine
         app.state.sessionmaker = make_sessionmaker(engine)
-        app.state.registry = TenantRegistry.load(settings.tenants_dir)
+        registry = TenantRegistry.load(settings.tenants_dir)
+        app.state.registry = registry
+        # 启动时加载并校验每个租户的本体；任何一个不合法就拒绝启动
+        app.state.ontologies = {
+            tid: load_ontology(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        app.state.ledger = Ledger(lambda tid: app.state.ontologies[tid])
         app.state.llm = LLMClient.from_settings(settings)
         try:
             yield
@@ -99,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"detail": str(e)}, status_code=502)
         return result.model_dump()
 
+    app.include_router(ledger_router)
     return app
 
 

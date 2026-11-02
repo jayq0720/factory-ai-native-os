@@ -25,12 +25,15 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv venv --python 3.12 && uv pip install -e ".[dev]"
       - run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
-      - run: .venv/bin/pytest -q
       - name: 迁移在 PostgreSQL 上可升可降，且与模型一致
         run: |
           .venv/bin/alembic upgrade head
           .venv/bin/alembic check
           .venv/bin/alembic downgrade base
+      - name: 测试（SQLite）
+        run: .venv/bin/pytest -q
+      - name: 测试（PostgreSQL，含并发追加）
+        run: FOS_TEST_DATABASE_URL=$FOS_DATABASE_URL .venv/bin/pytest -q
       - run: .venv/bin/fos tenants
 
   rust:
