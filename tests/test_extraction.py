@@ -247,3 +247,23 @@ def test_make_ocr_defaults_per_mode(tmp_path):
     assert str(o._http.base_url).startswith("https://dashscope.aliyuncs.com/compatible-mode/v1")
     x = make_ocr(Settings(ocr_mode=OCRMode.xiaomi, packs_dir=tmp_path))
     assert isinstance(x, XiaomiOCR) and x._model == "xiaomi-ocr-0"
+
+
+# ---------------- 部署辅助命令 ----------------
+
+
+async def test_quickstart_is_idempotent_and_ocr_check(tmp_path, tenants_dir, capsys):
+    from fos.quickstart import ocr_check, quickstart
+
+    s = Settings(
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'q.db'}",
+        tenants_dir=tenants_dir,
+        packs_dir=REPO / "packs",
+    )
+    assert await quickstart(s, "luneng", "admin", "管理员") == 0
+    assert "fos_" in capsys.readouterr().out
+    assert await quickstart(s, "luneng", "admin", "管理员") == 0
+    assert "已存在，不再发新 Key" in capsys.readouterr().out
+    assert await quickstart(s, "nope", "admin", "x") == 1
+    assert await ocr_check(s) == 0
+    assert "模拟模式" in capsys.readouterr().out

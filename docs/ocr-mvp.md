@@ -72,18 +72,19 @@ OCR 服务暂时不可用时文档记为"失败"并显示原因，修好后在�
 
 ## 4. 部署（阿里云 ECS + Docker Compose）
 
+完整步骤（选型、安全组、Xiaomi-OCR-0 部署、验收、运维）见 **`docs/deploy-aliyun.md`**。最简流程：
+
 ```bash
-cp deploy/.env.example deploy/.env        # 填数据库密码、LiteLLM 主密钥、OCR 模式与 Key
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
-docker compose -f deploy/docker-compose.yml exec api fos quickstart --login jayq --display-name JayQ
-# 网页：http://<服务器>:8000/app/   接口文档：http://<服务器>:8000/docs
+sudo bash deploy/aliyun/setup-host.sh      # Docker + GPU 运行时
+sudo bash deploy/aliyun/download-model.sh  # 从 ModelScope 下载 Xiaomi-OCR-0
+sudo bash deploy/aliyun/deploy.sh gpu      # 启动 + OCR 自检 + 创建管理员（或 bailian / remote / mock）
 ```
 
-正式环境前面加 HTTPS（SLB 或 Nginx）；原件目前存在 `blobs` 卷里，后续换 OSS。给同事开账号：
+给同事开账号：
 
 ```bash
-docker compose -f deploy/docker-compose.yml exec api fos create-user luneng zhangsan 张三 --roles sales
-docker compose -f deploy/docker-compose.yml exec api fos issue-key luneng zhangsan
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api fos create-user luneng zhangsan 张三 --roles sales
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec api fos issue-key luneng zhangsan
 ```
 
 权限：上传 `doc.document:write`，查看与导出 `doc.document:read`，修改 / 确认字段 `doc.field:write`（luneng 的销售、销售负责人、工程技术、管理员有）。

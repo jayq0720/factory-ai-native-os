@@ -36,9 +36,11 @@ cargo test --workspace           # Rust
 
 ## 用 docker-compose 起一套空系统
 
+阿里云服务器（含 GPU 上部署 Xiaomi-OCR-0）用一键脚本，见 `docs/deploy-aliyun.md`。手动方式：
+
 ```bash
 cp deploy/.env.example deploy/.env      # 填入百炼 / DeepSeek API Key（不提交）
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build   # 默认 db + api；--profile gpu / llm / im 按需加
 docker compose -f deploy/docker-compose.yml exec api fos quickstart --login jayq --display-name JayQ
 # 网页 http://localhost:8000/app/ ，或 curl -H "Authorization: Bearer <上一步输出的 key>" http://localhost:8000/v1/me
 ```

@@ -43,7 +43,10 @@ async def init_db(s: Settings) -> str:
     return "PostgreSQL：已执行 alembic upgrade head"
 
 
-async def quickstart(s: Settings, tenant_id: str, login: str, display_name: str) -> int:
+async def quickstart(
+    s: Settings, tenant_id: str, login: str, display_name: str, *, new_key: bool = False
+) -> int:
+    """可重复执行：用户已存在时只在 new_key=True 时再发一把 Key（部署脚本每次都会调用）。"""
     registry = TenantRegistry.load(s.tenants_dir)
     tenant = registry.get(tenant_id)
     if tenant is None:
@@ -61,12 +64,15 @@ async def quickstart(s: Settings, tenant_id: str, login: str, display_name: str)
                 session.add(u)
                 await session.flush()
                 print(f"已创建用户 {login}（{tenant.name}，角色 admin）")
+            elif not new_key:
+                print(f"用户 {login} 已存在，不再发新 Key（需要新 Key：fos issue-key {tenant_id} {login}）")
+                return 0
             k = await apikeys.issue(session, u, label="quickstart")
     finally:
         await engine.dispose()
     print("\nAPI Key（只显示这一次，请妥善保存）：")
     print(k.plaintext)
-    print("\n下一步：fos serve，然后打开 http://localhost:8000/app/ 用上面的 Key 登录")
+    print("\n下一步：打开网页 /app/ 用上面的 Key 登录（本机试用先执行 fos serve）")
     return 0
 
 
@@ -210,3 +216,65 @@ def write_samples(out: Path) -> list[Path]:
         p.write_bytes(data)
         paths.append(p)
     return paths
+
+
+# ---------------- OCR 连通性自检 ----------------
+
+
+def _test_image() -> bytes:
+    """画一张带文字和表格线的测试图（只用 ASCII，避免依赖中文字体）。"""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (900, 360), "white")
+    d = ImageDraw.Draw(img)
+    lines = [
+        "Technical requirement JS-2026-117",
+        "2.1 Normal working temperature 1250 C, max 1300 C",
+        "2.4 Shell temperature <= 60 C",
+    ]
+    for i, t in enumerate(lines):
+        d.text((40, 30 + 40 * i), t, fill="black", font_size=26)
+    y0 = 170
+    for r in range(4):
+        d.line((40, y0 + 40 * r, 640, y0 + 40 * r), fill="black", width=2)
+    for x in (40, 240, 440, 640):
+        d.line((x, y0, x, y0 + 120), fill="black", width=2)
+    for r, row in enumerate([["Part", "Area", "Unit"], ["Wall", "172.8", "m2"], ["Roof", "100.8", "m2"]]):
+        for c, v in enumerate(row):
+            d.text((55 + 200 * c, y0 + 8 + 40 * r), v, fill="black", font_size=24)
+    import io as _io
+
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def ocr_check(s: Settings, image: Path | None = None) -> int:
+    """对当前配置的 OCR 服务发一张图，打印耗时和识别结果。部署后第一件事就跑它。"""
+    import time
+
+    from fos.perception.ocr import OCRError, make_ocr
+
+    ocr = make_ocr(s)
+    base = getattr(getattr(ocr, "_http", None), "base_url", "")
+    print(f"OCR 模式：{s.ocr_mode.value}  服务：{base or '（不调用）'}  模型：{getattr(ocr, '_model', '-')}")
+    data = image.read_bytes() if image else _test_image()
+    if image and not data.startswith(b"\x89PNG"):
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.open(io.BytesIO(data)).convert("RGB").save(buf, format="PNG")
+        data = buf.getvalue()
+    t0 = time.perf_counter()
+    try:
+        md = await ocr.recognize(data, page=1)
+    except OCRError as e:
+        print(f"失败：{e}", file=sys.stderr)
+        return 1
+    finally:
+        await ocr.aclose()
+    print(f"耗时 {time.perf_counter() - t0:.1f} 秒，data_mode={ocr.data_mode}\n---")
+    print(md)
+    if ocr.data_mode == "mock":
+        print("---\n当前是模拟模式（FOS_OCR_MODE=mock），上面不是真实识别结果。")
+    return 0

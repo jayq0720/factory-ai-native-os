@@ -11,6 +11,7 @@ fos init-db                                          建表（SQLite 直接建�
 fos quickstart [--tenant luneng] [--login admin]     建表 + 建管理员 + 发 API Key（首次试用）
 fos serve [--host 0.0.0.0] [--port 8000]             启动网页与接口，网页在 /app/
 fos samples <目录>                                   生成样例文件（技术要求 / 招标文件 / 工程量清单）
+fos ocr-check [--image 图片]                          对当前配置的 OCR 服务发一张图，看能否识别、耗时多少
 """
 
 from __future__ import annotations
@@ -84,7 +85,13 @@ async def _run(args: argparse.Namespace) -> int:
     if args.cmd == "quickstart":
         from fos.quickstart import quickstart
 
-        return await quickstart(s, args.tenant, args.login, args.display_name)
+        return await quickstart(s, args.tenant, args.login, args.display_name, new_key=args.new_key)
+    if args.cmd == "ocr-check":
+        from pathlib import Path
+
+        from fos.quickstart import ocr_check
+
+        return await ocr_check(s, Path(args.image) if args.image else None)
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
     registry = TenantRegistry.load(s.tenants_dir)
@@ -202,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
     qs.add_argument("--tenant", default="luneng")
     qs.add_argument("--login", default="admin")
     qs.add_argument("--display-name", dest="display_name", default="管理员")
+    qs.add_argument("--new-key", action="store_true", help="用户已存在时也再发一把 Key")
+    oc = sub.add_parser("ocr-check")
+    oc.add_argument("--image", default="")
     sv = sub.add_parser("serve")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)

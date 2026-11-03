@@ -19,7 +19,8 @@
 - `fos/api/ledger_routes.py`：`/v1/ontology`、`/v1/events`、`/v1/objects/...`、`.../trace`
 - `fos/perception/`：文档解析。`parser.py` 管线（PDF 文字层 / 扫描页并发 OCR / 图片 / docx / xlsx），`ocr.py` 的 `MockOCR` / `XiaomiOCR` / `QwenVLOCR`（`FOS_OCR_MODE` 切换），`otsl.py` 表格转换，`jobs.py` 后台解析任务，`blobs.py` 原件存储；API 在 `fos/api/document_routes.py`；说明见 `docs/ocr-mvp.md`
 - `fos/extraction/`：字段抽取。Schema 在 `packs/<pack>/extraction/*.yaml`（按文件 kind 选用），`rules.py` 规则抽取（带页码原文），`llm.py` 模型抽取（片段必须在原文里），`merge.py` 选值 / 冲突 / 缺失，`export.py` Excel / JSON；结果存 `document_fields`
-- `fos/web/static/`：文档解析网页（无构建步骤），挂在 `/app/`；`fos quickstart` / `fos serve` / `fos samples` 本地试用
+- `fos/web/static/`：文档解析网页（无构建步骤），挂在 `/app/`；`fos quickstart` / `fos serve` / `fos samples` 本地试用，`fos ocr-check` 测 OCR 连通
+- `deploy/`：docker-compose（默认 db + api，profile gpu / llm / im）；`deploy/aliyun/*.sh` 阿里云一键部署，说明见 `docs/deploy-aliyun.md`
 - `fos/channels/`：统一信道层。`types.py` 统一消息格式，`cards.py` 卡片 DSL，`dingtalk.py` 钉钉（Stream 收 + OpenAPI 发），`mock.py` 模拟信道；说明见 `docs/channels.md`
 - `fos/triggers/`：`intake.py` Trigger 入口与 Fast Path，`cards.py` 卡片确认（L2，以点击人身份 `Ledger.append()`）；API 在 `fos/api/channel_routes.py`；`fos channels run` 启动长连接
 - `fos/agents/`：`router.py`（分派）、`worker.py`（工具调用循环）、`runtime.py`（接 Trigger、Thread 直通、提议转卡片）；说明见 `docs/agents.md`
