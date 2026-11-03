@@ -7,6 +7,10 @@ fos revoke-key <key_id>
 fos ontology <tenant> | rebuild <tenant>
 fos bind-im <tenant> <login> <channel> <IM 账号 id>   绑定 IM 账号（钉钉为企业内 userid）
 fos channels run [--tenant luneng]                   启动 IM 长连接（钉钉 Stream），收消息进 Trigger 入口
+fos init-db                                          建表（SQLite 直接建表；PostgreSQL 执行迁移）
+fos quickstart [--tenant luneng] [--login admin]     建表 + 建管理员 + 发 API Key（首次试用）
+fos serve [--host 0.0.0.0] [--port 8000]             启动网页与接口，网页在 /app/
+fos samples <目录>                                   生成样例文件（技术要求 / 招标文件 / 工程量清单）
 """
 
 from __future__ import annotations
@@ -72,6 +76,15 @@ async def _run_channels(tenant_ids: list[str]) -> int:
 
 async def _run(args: argparse.Namespace) -> int:
     s = get_settings()
+    if args.cmd == "init-db":
+        from fos.quickstart import init_db
+
+        print(await init_db(s))
+        return 0
+    if args.cmd == "quickstart":
+        from fos.quickstart import quickstart
+
+        return await quickstart(s, args.tenant, args.login, args.display_name)
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
     registry = TenantRegistry.load(s.tenants_dir)
@@ -184,7 +197,32 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("ontology", "rebuild"):
         sp = sub.add_parser(name)
         sp.add_argument("tenant")
-    return asyncio.run(_run(p.parse_args(argv)))
+    sub.add_parser("init-db")
+    qs = sub.add_parser("quickstart")
+    qs.add_argument("--tenant", default="luneng")
+    qs.add_argument("--login", default="admin")
+    qs.add_argument("--display-name", dest="display_name", default="管理员")
+    sv = sub.add_parser("serve")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
+    sm = sub.add_parser("samples")
+    sm.add_argument("out")
+    args = p.parse_args(argv)
+    if args.cmd == "serve":
+        import uvicorn
+
+        print(f"网页：http://{args.host}:{args.port}/app/    接口文档：http://{args.host}:{args.port}/docs")
+        uvicorn.run("fos.api.app:app", host=args.host, port=args.port)
+        return 0
+    if args.cmd == "samples":
+        from pathlib import Path
+
+        from fos.quickstart import write_samples
+
+        for f in write_samples(Path(args.out)):
+            print(f)
+        return 0
+    return asyncio.run(_run(args))
 
 
 if __name__ == "__main__":

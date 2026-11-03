@@ -69,8 +69,7 @@ async def test_xiaomi_provider_request_shape():
         seen["body"] = json.loads(req.content)
         return httpx.Response(200, json={"choices": [{"message": {"content": "| 温度 | 1250 |"}}]})
 
-    ocr = XiaomiOCR("http://vllm/v1", "xiaomi-ocr-0")
-    ocr._http._transport = httpx.MockTransport(handler)
+    ocr = XiaomiOCR("http://vllm/v1", "xiaomi-ocr-0", transport=httpx.MockTransport(handler))
     doc = await parse(samples.pdf([None]), ocr)
     await ocr.aclose()
     assert doc.pages[0].method == "ocr" and doc.data_mode == "real"
@@ -80,8 +79,9 @@ async def test_xiaomi_provider_request_shape():
 
 
 async def test_xiaomi_provider_error():
-    ocr = XiaomiOCR("http://vllm/v1", "m")
-    ocr._http._transport = httpx.MockTransport(lambda r: httpx.Response(500))
+    ocr = XiaomiOCR(
+        "http://vllm/v1", "m", retry_delay_s=0, transport=httpx.MockTransport(lambda r: httpx.Response(500))
+    )
     with pytest.raises(OCRError, match="第 1 页"):
         await parse(samples.png(), ocr)
     await ocr.aclose()

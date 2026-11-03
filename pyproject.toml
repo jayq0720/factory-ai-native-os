@@ -22,13 +22,13 @@ dependencies = [
   "pillow>=10.4",      # MIT-CMU (HPND)
   "python-docx>=1.1",  # MIT
   "openpyxl>=3.1",     # MIT
+  "aiosqlite>=0.20",   # 本地试用（SQLite）；正式环境用 PostgreSQL
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.2",
   "pytest-asyncio>=0.23",
-  "aiosqlite>=0.20",
   "ruff>=0.6",
 ]
 

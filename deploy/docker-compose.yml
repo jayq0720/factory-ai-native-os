@@ -39,10 +39,12 @@ services:
       FOS_LLM_MODE: ${FOS_LLM_MODE:-mock}
       FOS_LITELLM_BASE_URL: http://litellm:4000
       FOS_LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
-      # 文档解析：mock 或 xiaomi（Xiaomi-OCR-0 部署在 PAI-EAS / GPU ECS 上的 vLLM）
+      # 文档解析（docs/ocr-mvp.md）：mock / xiaomi（自建 vLLM，见下方 ocr 服务）/ qwen_vl（百炼）
       FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
-      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
+      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-}
+      FOS_OCR_MODEL: ${FOS_OCR_MODEL:-}
       FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
+      FOS_OCR_CONCURRENCY: ${FOS_OCR_CONCURRENCY:-4}
       # 发卡片（POST /v1/cards）也要用钉钉应用凭据
       FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
       FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
@@ -66,7 +68,8 @@ services:
     environment:
       FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD}@db:5432/fos
       FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
-      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
+      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-}
+      FOS_OCR_MODEL: ${FOS_OCR_MODEL:-}
       FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
       FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
       FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
@@ -75,6 +78,28 @@ services:
     volumes:
       - blobs:/data/blobs
 
+  # 自建 Xiaomi-OCR-0（需要 NVIDIA GPU）。启用：docker compose --profile gpu up -d
+  # 然后在 .env 设 FOS_OCR_MODE=xiaomi、FOS_OCR_BASE_URL=http://ocr:8001/v1
+  ocr:
+    profiles: ["gpu"]
+    # 首次部署跑通后，把 latest 换成当时支持 Qwen3_5ForConditionalGeneration 的具体版本号再固定
+    image: vllm/vllm-openai:latest
+    command:
+      - --model=SeerRay-Lab/Xiaomi-OCR-0
+      - --served-model-name=xiaomi-ocr-0
+      - --port=8001
+      - --max-model-len=16384
+    volumes:
+      - hfcache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 volumes:
+  hfcache:
   pgdata:
   blobs:
