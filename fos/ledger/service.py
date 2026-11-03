@@ -1,6 +1,6 @@
 """事件账本：所有事实以不可篡改的事件记账（方案 5.1 原则 2、7）。
 
-一次 append 在同一事务里完成：权限 → 证据 → 幂等 → 本体校验 → 引用检查 →
+一次 append 在同一事务里完成：权限 → 证据 → 幂等 → 本体校验 → 引用检查 → Policy（红线、审批）→
 分配租户内序号 → 写事件 → 更新投影。任何一步失败，整个事务回滚。
 """
 
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -20,6 +21,7 @@ from fos.db.models import Event, ObjectState, TenantCounter, utcnow
 from fos.governance.principal import Principal
 from fos.ledger.projection import apply_event
 from fos.ontology import Ontology, OntologyError
+from fos.policy.schema import Decision, Policy
 
 
 class LedgerError(Exception):
@@ -40,6 +42,22 @@ class Conflict(LedgerError):
 
 class Invalid(LedgerError):
     pass
+
+
+class ApprovalRequired(LedgerError):
+    """命中审批规则：事件没有写入，需要先走审批（fos.policy.approvals）。"""
+
+    def __init__(self, decision: Decision):
+        self.decision = decision
+        super().__init__("需要审批：" + "；".join(r.name for _, r in decision.rules))
+
+
+@dataclass(frozen=True)
+class ApprovalGrant:
+    """审批通过的凭据。只由审批服务在内部传入，不能从 API 请求里带进来。"""
+
+    approval_id: str
+    rule_ids: frozenset[str]
 
 
 class Evidence(BaseModel):
@@ -82,10 +100,28 @@ class AppendResult(BaseModel):
 
 
 class Ledger:
-    def __init__(self, ontology_for: Callable[[str], Ontology]):
+    def __init__(
+        self,
+        ontology_for: Callable[[str], Ontology],
+        policy_for: Callable[[str], Policy | None] | None = None,
+    ):
         self._ontology_for = ontology_for
+        self._policy_for = policy_for or (lambda _tid: None)
 
-    async def append(self, session: AsyncSession, principal: Principal, req: AppendRequest) -> AppendResult:
+    def evaluate(
+        self, tenant_id: str, event_type: str, payload: dict[str, Any], state: dict | None
+    ) -> Decision:
+        policy = self._policy_for(tenant_id)
+        return policy.evaluate(event_type, payload, state) if policy else Decision("allow")
+
+    async def append(
+        self,
+        session: AsyncSession,
+        principal: Principal,
+        req: AppendRequest,
+        *,
+        approval: ApprovalGrant | None = None,
+    ) -> AppendResult:
         tenant = principal.tenant_id
         onto = self._ontology_for(tenant)
         evdef = onto.events.get(req.type)
@@ -140,6 +176,14 @@ class Ledger:
                 raise Conflict(f"版本冲突：期望 {req.expected_version}，实际 {have}")
 
         await self._check_refs(session, onto, tenant, evdef.object, payload, req.data_mode)
+
+        decision = self.evaluate(tenant, req.type, payload, current.state if current else None)
+        if decision.effect == "deny":
+            raise Forbidden(f"红线：{decision.reason}")
+        if decision.effect == "approve" and not (
+            approval is not None and set(decision.rule_ids) <= approval.rule_ids
+        ):
+            raise ApprovalRequired(decision)
 
         seq = await _next_seq(session, tenant)
         now = utcnow()

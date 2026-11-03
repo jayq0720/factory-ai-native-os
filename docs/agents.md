@@ -28,7 +28,7 @@ Trigger 入口（route=router，事务提交）
 
 工具调用要同时满足：Skill 声明过这个权限，**并且**提问的人自己有这个权限。Agent 不能替人越权。
 工具全部只读；`ledger.propose` 只校验并记下提议，运行结束后变成卡片，由有权限的人确认，
-确认时以确认人的身份写账本（见 `docs/channels.md`）。
+确认时以确认人的身份写账本（见 `docs/channels.md`）；命中审批规则时改为提交审批单（见 `docs/policy-and-inbox.md`）。
 
 ## 模型交互
 
@@ -45,6 +45,5 @@ Token 用量、data_mode。`GET /v1/runs/{id}`（`platform.run:read`），`GET /
 
 ## 还没做（后续 PR）
 
-- Policy 与审批 / 待办收件箱（W8）；
 - Router 批处理、Worker 异步执行与超时、Watchdog 巡检；
 - Skill 评测集（`evals/`）。

@@ -26,6 +26,9 @@ USERS = [
     ("sales", "luneng", ["sales"]),
     ("rnd", "luneng", ["rnd"]),
     ("gm", "luneng", ["gm"]),
+    ("gm2", "luneng", ["gm"]),
+    ("purchaser", "luneng", ["purchaser"]),
+    ("sales_lead", "luneng", ["sales_lead"]),
     ("other_admin", "other", ["admin"]),
 ]
 
@@ -35,9 +38,10 @@ def tenants_dir(tmp_path: Path) -> Path:
     """真实的 luneng 配置 + 一个用于测试隔离的第二租户。"""
     d = tmp_path / "tenants"
     (d / "luneng").mkdir(parents=True)
-    (d / "luneng" / "tenant.yaml").write_text(
-        (REPO / "tenants/luneng/tenant.yaml").read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    for name in ("tenant.yaml", "policy.yaml"):
+        (d / "luneng" / name).write_text(
+            (REPO / "tenants/luneng" / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
     (d / "other").mkdir()
     (d / "other" / "tenant.yaml").write_text(
         textwrap.dedent(

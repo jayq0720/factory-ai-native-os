@@ -261,13 +261,13 @@ def test_conflicts_and_versions(story, post):
     post(
         "gm",
         "quality.lot_dispositioned",
-        {"status": "concession"},
+        {"status": "rejected"},
         object_id="L-KF1019",
         expected_version=1,
         expect=409,
     )
     r = post(
-        "gm", "quality.lot_dispositioned", {"status": "concession"}, object_id="L-KF1019", expected_version=2
+        "gm", "quality.lot_dispositioned", {"status": "rejected"}, object_id="L-KF1019", expected_version=2
     )
     assert r["version"] == 3
 

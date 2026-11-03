@@ -1,0 +1,35 @@
+# 六安绿能（试点）审批规则。只放规则，不放密钥。说明见 docs/policy-and-inbox.md。
+#
+# 规则作用在事件账本上：命中 effect=approve 的事件不会直接入账，而是生成审批单，
+# 按 steps 逐级审批（每级任一合格的人同意即可），全部同意后以申请人身份记账；
+# 命中 effect=deny 的事件直接拒绝（红线）。阈值、审批人等以试点现场确认为准（方案 12 章）。
+#
+# 条件字段取值：事件里有就用事件里的值（变更后的值），否则用对象当前状态。
+# 运算：gt gte lt lte eq ne in not_in exists
+
+rules:
+  purchase_order_large:
+    name: 采购单金额超过 5 万元需总经理审批
+    events: [purchase.order_created]
+    when:
+      - {field: amount, op: gt, value: 50000}
+    steps:
+      - {name: 总经理审批, role: gm}
+
+  sales_order_large:
+    name: 订单金额 50 万元及以上需销售负责人和总经理审批
+    events: [sales.order_created]
+    when:
+      - {field: amount, op: gte, value: 500000}
+    steps:
+      - {name: 销售负责人审批, role: sales_lead}
+      - {name: 总经理审批, role: gm}
+
+  lot_concession:
+    name: 来料让步接收需总经理审批
+    events: [quality.lot_dispositioned]
+    when:
+      - {field: status, op: eq, value: concession}
+    steps:
+      - {name: 总经理审批, role: gm}
+    expires_hours: 48

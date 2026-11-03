@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -29,14 +29,17 @@ from fos.channels.base import ChannelAdapter, ChannelError
 from fos.channels.cards import Card, CardField
 from fos.channels.types import ConversationRef, InboundMessage
 from fos.config import Settings
-from fos.db.models import ChannelIdentity, Thread, Trigger, User, utcnow
+from fos.db.models import CardRecord, ChannelIdentity, Thread, Trigger, User, utcnow
 from fos.governance.principal import Principal, principal_for_user
 from fos.ledger import Ledger
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.ocr import OCRProvider
 from fos.perception.service import IngestError, ingest_document
 from fos.tenancy import TenantRegistry
-from fos.triggers.cards import CODE_ALPHABET, CODE_LEN, act_on_card, find_card
+from fos.triggers.cards import CODE_ALPHABET, CODE_LEN, act_on_card, find_card, send_card_record
+
+if TYPE_CHECKING:
+    from fos.policy.approvals import ApprovalService
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +63,8 @@ class Outcome:
     trigger: Trigger | None  # None：Fast Path 直接丢弃（如群聊未 @）
     duplicate: bool = False
     replies: list[dict[str, Any]] = field(default_factory=list)  # 给调用方看的回复摘要
-    outbox: list[tuple[ConversationRef, str | Card]] = field(default_factory=list)
+    # 文字、临时卡片，或已落库、带按钮的卡片记录（如发给审批人的审批卡片）
+    outbox: list[tuple[ConversationRef, str | Card | CardRecord]] = field(default_factory=list)
 
 
 class TriggerIntake:
@@ -72,9 +76,11 @@ class TriggerIntake:
         ocr: OCRProvider,
         blobs: LocalBlobStore,
         settings: Settings,
+        approvals: ApprovalService | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
+        self.approvals = approvals
         self.ocr = ocr
         self.blobs = blobs
         self.settings = settings
@@ -177,10 +183,24 @@ class TriggerIntake:
         trig = out.trigger
         assert trig is not None
         trig.route = "card_action"
-        res = await act_on_card(session, self.ledger, principal, card, action, channel=msg.channel)
+        res = await act_on_card(
+            session,
+            self.ledger,
+            principal,
+            card,
+            action,
+            channel=msg.channel,
+            approvals=self.approvals,
+            lookup=lambda _t, ch: adapter if ch == adapter.name else None,  # 通知只走当前信道
+        )
         trig.status = "done" if res.status in ("done", "cancelled") else "rejected"
         trig.result = {"card_id": card.id, "outcome": res.status, **res.result}
         await self._reply(adapter, msg, out, res.message)
+        for n in res.notices:
+            if n.card is not None:
+                out.outbox.append((n.to, n.card))
+            elif n.text:
+                out.outbox.append((n.to, n.text))
 
     async def _documents(self, session, adapter, msg, out: Outcome, principal: Principal):
         trig = out.trigger
@@ -262,6 +282,11 @@ async def deliver(adapter: ChannelAdapter, out: Outcome) -> list[str]:
     """事务提交后调用：发出排队的回复。返回发送失败的原因（不影响已落库的结果）。"""
     errors: list[str] = []
     for to, body in out.outbox:
+        if isinstance(body, CardRecord):
+            err = await send_card_record(adapter, body)
+            if err:
+                errors.append(err)
+            continue
         try:
             if isinstance(body, Card):
                 await adapter.send_card(to, body, card_id="", short_code="")

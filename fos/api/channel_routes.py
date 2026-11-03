@@ -56,6 +56,18 @@ def adapter_for(request: Request, tenant_id: str, channel: str) -> ChannelAdapte
     raise HTTPException(501, detail=f"{channel} 适配器还没有实现")
 
 
+def lookup_for(request: Request):
+    """给审批、待办通知用：能用的信道返回适配器，没配置的返回 None（只进收件箱，不推送）。"""
+
+    def _lookup(tenant_id: str, channel: str) -> ChannelAdapter | None:
+        try:
+            return adapter_for(request, tenant_id, channel)
+        except HTTPException:
+            return None
+
+    return _lookup
+
+
 # ---------------- IM 账号绑定 ----------------
 
 

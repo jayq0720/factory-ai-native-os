@@ -1,6 +1,8 @@
 """卡片确认（L2 单步获准，方案 2.7）。
 
-Agent 或业务代码提出一张卡片，附上“确认后要执行的动作”（目前只有：向事件账本追加一个事件）。
+Agent 或业务代码提出一张卡片，附上“确认后要执行的动作”：
+- ledger.append：向事件账本追加一个事件；命中审批规则时改为以点击人名义提交审批单（W8）；
+- approval.decide：审批卡片，同意 / 驳回一张审批单的当前这一级。
 动作以**点击人自己的身份和权限**执行，Agent 本身不获得写权限；一张卡片只生效一次。
 """
 
@@ -10,9 +12,9 @@ import logging
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +25,10 @@ from fos.channels.types import ConversationRef
 from fos.db.models import CardRecord, utcnow
 from fos.governance.principal import Principal
 from fos.ledger import Ledger
-from fos.ledger.service import AppendRequest, Evidence, Forbidden, LedgerError
+from fos.ledger.service import AppendRequest, ApprovalRequired, Evidence, Forbidden, LedgerError
+
+if TYPE_CHECKING:
+    from fos.policy.approvals import AdapterLookup, ApprovalService, Notice
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +40,23 @@ DEFAULT_TTL = timedelta(hours=72)
 class LedgerAppendAction(BaseModel):
     kind: Literal["ledger.append"] = "ledger.append"
     request: AppendRequest
+
+
+class ApprovalDecideAction(BaseModel):
+    kind: Literal["approval.decide"] = "approval.decide"
+    approval_id: str = Field(min_length=1, max_length=36)
+    step: int = Field(ge=0)
+
+
+CardAction = LedgerAppendAction | ApprovalDecideAction
+
+
+def parse_action(data: dict[str, Any] | None) -> CardAction | None:
+    if not data:
+        return None
+    if data.get("kind") == "approval.decide":
+        return ApprovalDecideAction.model_validate(data)
+    return LedgerAppendAction.model_validate(data)
 
 
 def _aware(dt: datetime) -> datetime:
@@ -53,7 +75,7 @@ async def propose_card(
     thread_id: str,
     card: Card,
     created_by: str,
-    action: LedgerAppendAction | None = None,
+    action: CardAction | None = None,
     required_permission: str | None = None,
     allowed_user_id: str | None = None,
     ttl: timedelta = DEFAULT_TTL,
@@ -61,10 +83,13 @@ async def propose_card(
     """记录一张带按钮的卡片。提交事务后用 send_card_record() 发出。"""
     if not card.buttons:
         raise ValueError("需要确认的卡片至少要有一个按钮")
-    if action is not None and card.button("confirm") is None:
-        raise ValueError("带动作的卡片必须有 id 为 confirm 的按钮")
-    if action is not None and action.request.data_mode != card.data_mode:
-        raise ValueError("卡片的 data_mode 必须与要写入的事件一致")
+    if isinstance(action, LedgerAppendAction):
+        if card.button("confirm") is None:
+            raise ValueError("带动作的卡片必须有 id 为 confirm 的按钮")
+        if action.request.data_mode != card.data_mode:
+            raise ValueError("卡片的 data_mode 必须与要写入的事件一致")
+    if isinstance(action, ApprovalDecideAction) and {b.id for b in card.buttons} != {"approve", "reject"}:
+        raise ValueError("审批卡片的按钮必须是 approve 和 reject")
     rec: CardRecord | None = None
     for _ in range(5):
         rec = CardRecord(
@@ -124,6 +149,7 @@ class ActOutcome:
     status: str  # done / cancelled / expired / failed / rejected / already
     message: str  # 回给点击人的话
     result: dict[str, Any] = field(default_factory=dict)
+    notices: list[Notice] = field(default_factory=list)  # 提交后要发的通知（审批卡片、结果通知）
 
 
 async def act_on_card(
@@ -134,6 +160,8 @@ async def act_on_card(
     action_id: str,
     *,
     channel: str,
+    approvals: ApprovalService | None = None,
+    lookup: AdapterLookup | None = None,
 ) -> ActOutcome:
     card = Card.model_validate(rec.card)
     button = card.button(action_id)
@@ -162,7 +190,7 @@ async def act_on_card(
         return ActOutcome("already", "这张卡片已经处理过了")
     await session.refresh(rec)
 
-    outcome = await _execute(session, ledger, principal, rec, button.id, channel)
+    outcome = await _execute(session, ledger, principal, rec, button.id, channel, approvals, lookup)
     if outcome.status == "open":  # 点击人权限不够：卡片保持可用，留给有权限的人
         rec.status = "open"
     else:
@@ -177,14 +205,26 @@ async def act_on_card(
 
 
 async def _execute(
-    session: AsyncSession, ledger: Ledger, principal: Principal, rec: CardRecord, button: str, channel: str
+    session: AsyncSession,
+    ledger: Ledger,
+    principal: Principal,
+    rec: CardRecord,
+    button: str,
+    channel: str,
+    approvals: ApprovalService | None,
+    lookup: AdapterLookup | None,
 ) -> ActOutcome:
+    from fos.policy.approvals import no_channels
+
+    lookup = lookup or no_channels
+    action = parse_action(rec.action)
+    if isinstance(action, ApprovalDecideAction):
+        return await _decide(session, principal, action, button, channel, approvals, lookup)
     if button == "cancel":
         return ActOutcome("cancelled", "已取消，没有写入任何数据")
-    if button != "confirm" or not rec.action:
+    if button != "confirm" or action is None:
         return ActOutcome("done", "已记录你的选择", {"choice": button})
 
-    action = LedgerAppendAction.model_validate(rec.action)
     req = action.request.model_copy(
         update={
             "idempotency_key": action.request.idempotency_key or f"card:{rec.id}",
@@ -200,6 +240,20 @@ async def _execute(
     try:
         async with session.begin_nested():
             res = await ledger.append(session, principal, req)
+    except ApprovalRequired as e:
+        if approvals is None:
+            return ActOutcome("failed", f"没有写入：{e}", {"error": str(e)[:300]})
+        # 点击人就是申请人：以他的名义提交审批单，审批通过后再记账
+        sub = await approvals.submit(
+            session,
+            principal,
+            req,
+            e.decision,
+            source=f"card:{rec.id}",
+            thread_id=rec.thread_id,
+            lookup=lookup,
+        )
+        return ActOutcome("done", sub.message(), {"approval_id": sub.approval.id}, sub.notices)
     except Forbidden as e:
         return ActOutcome("open", f"没有写入：{e}")
     except LedgerError as e:
@@ -212,7 +266,33 @@ async def _execute(
     )
 
 
+async def _decide(
+    session: AsyncSession,
+    principal: Principal,
+    action: ApprovalDecideAction,
+    button: str,
+    channel: str,
+    approvals: ApprovalService | None,
+    lookup: AdapterLookup,
+) -> ActOutcome:
+    from fos.db.models import Approval
+
+    ap = await session.get(Approval, action.approval_id)
+    if approvals is None or ap is None or ap.tenant_id != principal.tenant_id:
+        return ActOutcome("failed", "审批单不存在")
+    if ap.current_step != action.step:
+        return ActOutcome("superseded", "这一级已经有人处理了")
+    r = await approvals.decide(
+        session, principal, ap, "approve" if button == "approve" else "reject", via=channel, lookup=lookup
+    )
+    if r.status == "not_eligible":
+        return ActOutcome("open", r.message)
+    status = "superseded" if r.status == "closed" else "done"
+    return ActOutcome(status, r.message, {"approval_id": ap.id, "approval": r.status}, r.notices)
+
+
 _STATUS_TEXT = {
+    "superseded": "已由他人处理或已失效",
     "done": "已确认",
     "cancelled": "已取消",
     "expired": "已过期",

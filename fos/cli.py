@@ -5,6 +5,7 @@ fos create-user <tenant> <login> <显示名> --roles admin,sales
 fos issue-key <tenant> <login> [--label 说明]
 fos revoke-key <key_id>
 fos ontology <tenant> | rebuild <tenant>
+fos policy <tenant>                 校验并查看审批规则（行业包 + 租户）
 fos bind-im <tenant> <login> <channel> <IM 账号 id>   绑定 IM 账号（钉钉为企业内 userid）
 fos channels run [--tenant luneng]                   启动 IM 长连接（钉钉 Stream），收消息进 Trigger 入口
 """
@@ -24,6 +25,7 @@ from fos.db.session import make_engine, make_sessionmaker
 from fos.governance import apikeys
 from fos.ledger.projection import rebuild
 from fos.ontology.loader import load_ontology
+from fos.policy import load_policy
 from fos.tenancy import TenantRegistry
 
 
@@ -80,6 +82,19 @@ async def _run(args: argparse.Namespace) -> int:
             t = registry.get(tid)
             assert t
             print(f"{t.id}\t{t.name}\tpack={t.industry_pack}\tim={','.join(t.im)}\troles={len(t.roles)}")
+        return 0
+    if args.cmd == "policy":
+        tenant = registry.get(args.tenant)
+        if not tenant:
+            print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+            return 1
+        onto = load_ontology(tenant, packs_dir=s.packs_dir, tenants_dir=s.tenants_dir)
+        pol = load_policy(tenant, packs_dir=s.packs_dir, tenants_dir=s.tenants_dir, ontology=onto)
+        print("层：" + (" → ".join(pol.layers) or "（无规则，全部直接入账）"))
+        for rid, r in pol.rules.items():
+            when = " 且 ".join(c.describe() for c in r.when) or "总是"
+            then = f"拒绝：{r.reason}" if r.effect == "deny" else " → ".join(st.name for st in r.steps)
+            print(f"  {rid:<24} {r.name}\n      事件 {', '.join(r.events)}；条件 {when}；{then}")
         return 0
     if args.cmd in ("ontology", "rebuild"):
         tenant = registry.get(args.tenant)
@@ -181,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     ch = sub.add_parser("channels")
     ch.add_argument("action", choices=["run"])
     ch.add_argument("--tenant", default="")
-    for name in ("ontology", "rebuild"):
+    for name in ("ontology", "rebuild", "policy"):
         sp = sub.add_parser(name)
         sp.add_argument("tenant")
     return asyncio.run(_run(p.parse_args(argv)))

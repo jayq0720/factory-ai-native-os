@@ -5,12 +5,22 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from fos.api.deps import PrincipalDep, SessionDep
 from fos.db.models import Event, ObjectState
 from fos.governance.principal import Principal
-from fos.ledger import AppendRequest, AppendResult, Conflict, Forbidden, Invalid, Ledger, NotFound
+from fos.ledger import (
+    AppendRequest,
+    AppendResult,
+    ApprovalRequired,
+    Conflict,
+    Forbidden,
+    Invalid,
+    Ledger,
+    NotFound,
+)
 from fos.ledger.trace import trace
 from fos.ontology import Ontology
 
@@ -71,13 +81,29 @@ async def get_ontology(request: Request, principal: PrincipalDep) -> dict[str, A
     return _onto(request, principal).describe()
 
 
-@router.post("/events", status_code=201)
+@router.post("/events", status_code=201, responses={202: {"description": "命中审批规则，已提交审批单"}})
 async def append_event(
     body: AppendRequest, request: Request, response: Response, principal: PrincipalDep, session: SessionDep
 ) -> AppendResult:
+    """追加事件。命中审批规则时不写入，改为提交审批单并返回 202（审批通过后自动记账）。"""
+    from fos.api.channel_routes import lookup_for
+    from fos.api.inbox_routes import approval_out
+    from fos.policy.approvals import send_notices
+
     ledger: Ledger = request.app.state.ledger
     try:
         res = await ledger.append(session, principal, body)
+    except ApprovalRequired as e:
+        lookup = lookup_for(request)
+        sub = await request.app.state.approvals.submit(
+            session, principal, body, e.decision, source="api", lookup=lookup
+        )
+        await session.commit()
+        await send_notices(lookup, principal.tenant_id, sub.notices)
+        return JSONResponse(
+            {"status": "pending_approval", "message": sub.message(), "approval": approval_out(sub.approval)},
+            status_code=202,
+        )
     except (Forbidden, NotFound, Conflict, Invalid) as e:
         raise HTTPException(_STATUS[type(e)], detail=str(e)) from e
     if res.duplicate:
