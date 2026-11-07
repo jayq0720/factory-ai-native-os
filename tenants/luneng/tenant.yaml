@@ -15,10 +15,12 @@ roles:
     permissions: ["*.*:read", "*.*:approve", "platform.todo:write"]
   sales:
     name: 销售
-    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read", "doc.document:read", "doc.document:write", "doc.field:write"]
+    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read", "doc.document:read", "doc.document:write", "doc.field:write",
+                  "production.production_batch:read", "quality.inspection:read", "warehouse.shipment:read"]
   sales_lead:
     name: 销售负责人
-    permissions: ["sales.*:*", "eng.*:read", "eng.quote:approve", "doc.*:*"]
+    permissions: ["sales.*:*", "eng.*:read", "eng.quote:approve", "doc.*:*",
+                  "production.production_batch:read", "quality.inspection:read", "warehouse.shipment:read"]
   engineer:
     name: 工程技术
     permissions: ["eng.*:read", "eng.*:write", "kb.*:read", "kb.change:write", "doc.*:read", "doc.*:write", "sales.product:read", "sales.customer:read"]
@@ -27,13 +29,16 @@ roles:
     permissions: ["kb.*:*", "sales.product:read"]
   planner:
     name: 计划员
-    permissions: ["pmc.*:read", "pmc.*:write", "production.*:read", "warehouse.stock:read"]
+    permissions: ["pmc.*:read", "pmc.*:write", "production.*:read", "warehouse.stock:read", "sales.sales_order:read",
+                  "sales.customer:read", "sales.product:read", "warehouse.shipment:read"]
   purchaser:
     name: 采购
     permissions: ["purchase.*:read", "purchase.*:write", "warehouse.stock:read", "doc.document:read", "doc.document:write"]
   warehouse:
     name: 仓管
-    permissions: ["warehouse.*:read", "warehouse.*:write", "doc.document:read", "doc.document:write"]
+    permissions: ["warehouse.*:read", "warehouse.*:write", "doc.document:read", "doc.document:write",
+                  "sales.sales_order:read", "sales.customer:read", "sales.product:read", "sales.contract:read",
+                  "production.production_batch:read", "quality.inspection:read"]
   shift_lead:
     name: 班组长
     permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read", "doc.document:write", "platform.todo:write"]

@@ -8,6 +8,9 @@
 #   发布报价是一条账本事件，受 policy.yaml 审批规则约束（L2）。
 
 extend:
+  contract:
+    eng_project: {type: ref, target: eng_project, name: 工程项目}
+    quote_no: {type: string, name: 报价单号}
   product:
     aliases: {type: string, name: 别名/客户叫法}   # 逗号分隔，例如 JM-26,JM26
     tc_a: {type: number, name: 导热系数常数项 a, unit: W/(m·K)}
@@ -128,3 +131,13 @@ events:
     op: update
     permission: eng.project:write
     fields: [status]
+
+  # 工程报价赢单 → 合同（W14）：合同和工程项目、报价单号直接关联，追溯时能从合同找到方案与计算
+  sales.contract_signed_from_quote:
+    name: 按工程报价登记合同
+    object: contract
+    op: create
+    permission: sales.contract:write
+    evidence: required   # 合同扫描件
+    fields: [contract_no, customer, signed_date, amount, due_date, payment_terms, warranty,
+             delivery_address, note, status, eng_project, quote_no]

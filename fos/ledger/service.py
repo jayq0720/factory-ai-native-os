@@ -1,13 +1,16 @@
 """事件账本：所有事实以不可篡改的事件记账（方案 5.1 原则 2、7）。
 
-一次 append 在同一事务里完成：权限 → 证据 → 幂等 → 本体校验 → 引用检查 → Policy（红线、审批）→
-分配租户内序号 → 写事件 → 更新投影。任何一步失败，整个事务回滚。
+一次 append 在同一事务里完成：权限 → 证据 → 幂等 → 本体校验 → 引用检查 → 守卫（跨对象校验）→
+Policy（红线、审批）→ 分配租户内序号 → 写事件 → 更新投影。任何一步失败，整个事务回滚。
+
+守卫（Guard）给需要看其他对象的硬规则用，例如“出厂检验不合格的批次不能发货”（fos/orders/shipping.py）；
+Policy 只看被写的那一个对象。守卫由各模块按事件类型注册，规则参数仍放在配置里。
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -99,6 +102,10 @@ class AppendResult(BaseModel):
     duplicate: bool = False
 
 
+# 守卫：(会话, 主体, 本体, 规范化后的 payload, 对象当前状态) → 阻断原因列表（空 = 通过）
+Guard = Callable[[AsyncSession, Principal, Ontology, dict[str, Any], dict | None], Awaitable[list[str]]]
+
+
 class Ledger:
     def __init__(
         self,
@@ -107,6 +114,10 @@ class Ledger:
     ):
         self._ontology_for = ontology_for
         self._policy_for = policy_for or (lambda _tid: None)
+        self._guards: dict[str, list[Guard]] = {}
+
+    def add_guard(self, event_type: str, guard: Guard) -> None:
+        self._guards.setdefault(event_type, []).append(guard)
 
     def evaluate(
         self, tenant_id: str, event_type: str, payload: dict[str, Any], state: dict | None
@@ -176,6 +187,10 @@ class Ledger:
                 raise Conflict(f"版本冲突：期望 {req.expected_version}，实际 {have}")
 
         await self._check_refs(session, onto, tenant, evdef.object, payload, req.data_mode)
+        for guard in self._guards.get(req.type, []):
+            problems = await guard(session, principal, onto, payload, current.state if current else None)
+            if problems:
+                raise Invalid(f"不能记录“{evdef.name}”：" + "；".join(problems))
 
         decision = self.evaluate(tenant, req.type, payload, current.state if current else None)
         if decision.effect == "deny":

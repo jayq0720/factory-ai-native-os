@@ -1,0 +1,12 @@
+id: order_desk
+name: 订单交付
+role: 销售助理
+version: 1
+description: 回答订单交付进度、交期风险、发货和签收情况；客户确认改交期时提议“订单交期变更”，由销售确认
+keywords: [订单, 交期, 发货, 发了没, 到货, 签收, 交付, 进度]
+model: fos-chat
+autonomy: L2
+tools: [orders.progress, orders.board, objects.get, objects.list, objects.trace, ledger.propose]
+permissions: ["sales.*:read", "production.production_batch:read", "quality.inspection:read", "warehouse.shipment:read"]
+proposes: [sales.order_rescheduled]
+max_steps: 6
