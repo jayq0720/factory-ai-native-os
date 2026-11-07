@@ -19,6 +19,7 @@ class Weights(BaseModel):
     late_hour: int = Field(default=10, ge=0)
     run: int = Field(default=50, ge=0)
     finish_hour: int = Field(default=1, ge=0)
+    split: int = Field(default=5, ge=0)
 
 
 class SolverConfig(BaseModel):

@@ -229,6 +229,7 @@ async def order_progress(
         "unit": unit,
         "amount": s.get("amount"),
         "due_date": s.get("due_date"),
+        "promised_date": s.get("promised_date"),  # 计划员按排窑计划承诺的交期（W16）
         "days_to_due": days,
         "quantities": {
             "planned": _r(planned),

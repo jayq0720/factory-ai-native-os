@@ -16,6 +16,7 @@ solver:
     late_hour: 10           # 每逾期 1 小时（按订单）
     run: 50                 # 每多开一窑
     finish_hour: 1          # 每个订单完成时间每晚 1 小时
+    split: 5                # 订单每多拆进一个窑次（避免拆出零头）
 
 # 物料需求（MRP）
 materials:

@@ -5,7 +5,7 @@
 - 每个窑次选一个烧成组（同组产品可同窑装烧），时长 = 该组在这个窑上的烧成周期；
 - 需求片段（订单的一部分）可以拆到多个窑次，一个窑次可以装多个同组订单，合计不超过每窑装量；
 - 片段有最早装窑时间（还没开工的量要先配料、成型、干燥）；
-- 目标：排不下的量 ≫ 逾期小时 > 开窑数 > 完成时间（权重在 planning.yaml）。
+- 目标：排不下的量 ≫ 逾期小时 > 开窑数 > 完成时间、拆单（权重在 planning.yaml）。
 
 求解器只给建议；确认后的计划由人提交，再由账本守卫（guard.py）逐行校验装量、窑温和时间。
 """
@@ -98,6 +98,7 @@ def solve(pb: Problem) -> Solution:
     loads_of: dict[str, list] = {p.key: [] for p in pieces}
     slots: list[tuple[KilnIn, int, cp_model.IntVar, cp_model.IntVar, dict, dict]] = []
     used_vars = []
+    split_vars = []
 
     for k in pb.kilns:
         mine = [p for p in pieces if k.id in p.kilns]
@@ -133,6 +134,7 @@ def solve(pb: Problem) -> Solution:
                     m.add(start >= p.release).only_enforce_if(y)
                 m.add(fin[p.order] >= end).only_enforce_if(y)
                 ld[p.key] = q
+                split_vars.append(y)
                 loads_of[p.key].append(q)
             m.add(sum(ld.values()) <= k.capacity)
             slots.append((k, s, start, end, x, ld))
@@ -158,6 +160,7 @@ def solve(pb: Problem) -> Solution:
         + sum(late_terms)
         + w.run * sum(used_vars)
         + w.finish_hour * sum(fin.values())
+        + w.split * sum(split_vars)
     )
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = pb.solver.time_limit_s
