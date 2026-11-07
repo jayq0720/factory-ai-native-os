@@ -82,7 +82,9 @@ class Condition(BaseModel):
         return v not in self.value  # not_in
 
     def describe(self) -> str:
-        return f"{self.field} {OP_TEXT[self.op]} {self.value}" if self.op != "exists" else self.field
+        if self.op == "exists":
+            return f"{self.field} {'已填写' if self.value else '未填写'}"
+        return f"{self.field} {OP_TEXT[self.op]} {self.value}"
 
 
 class Step(BaseModel):

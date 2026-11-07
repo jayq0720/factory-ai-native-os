@@ -55,9 +55,26 @@ objects:
       spec: {type: string, name: 规格}
       unit: {type: string, name: 计量单位, required: true}
 
+  contract:
+    name: 销售合同
+    domain: sales
+    description: 一份合同拆成若干订单行（sales_order.contract）；付款节点、开票在财务模块（M4）
+    properties:
+      contract_no: {type: string, name: 合同编号, required: true}
+      customer: {type: ref, target: customer, name: 客户, required: true}
+      signed_date: {type: date, name: 签订日期, required: true}
+      amount: {type: number, name: 合同金额（含税）, unit: 元, required: true}
+      due_date: {type: date, name: 约定交期}
+      payment_terms: {type: text, name: 付款方式}
+      warranty: {type: text, name: 质保条款}
+      delivery_address: {type: text, name: 交货地点}
+      note: {type: text, name: 备注}
+      status: {type: enum, name: 状态, values: [active, fulfilled, cancelled], required: true}
+
   sales_order:
     name: 销售订单
     domain: sales
+    description: 一个订单 = 一个产品一行；交付进度（计划、完工、入库、发货、签收）由 fos/orders 从关联对象算出
     properties:
       customer: {type: ref, target: customer, name: 客户, required: true}
       product: {type: ref, target: product, name: 产品, required: true}
@@ -66,6 +83,29 @@ objects:
       due_date: {type: date, name: 交期}
       amount: {type: number, name: 金额, unit: 元}
       status: {type: enum, name: 状态, values: [open, in_production, shipped, closed, cancelled]}
+      order_no: {type: string, name: 订单号}
+      contract: {type: ref, target: contract, name: 合同}
+      unit_price: {type: number, name: 单价, unit: 元}
+      note: {type: text, name: 备注}
+
+  shipment:
+    name: 发货
+    domain: warehouse
+    description: 一次发货对应一个订单；发哪些批次、发多少由仓管确认，客户签收或拒收另记一条事件
+    properties:
+      shipment_no: {type: string, name: 发货单号, required: true}
+      order: {type: ref, target: sales_order, name: 订单, required: true}
+      batches: {type: ref, target: production_batch, many: true, name: 发货批次}
+      qty: {type: number, name: 发货数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      shipped_at: {type: datetime, name: 发货时间, required: true}
+      carrier: {type: string, name: 承运方}
+      vehicle_no: {type: string, name: 车牌号}
+      receiver: {type: string, name: 签收人}
+      received_at: {type: datetime, name: 签收时间}
+      received_qty: {type: number, name: 签收数量}
+      status: {type: enum, name: 状态, values: [in_transit, delivered, refused], required: true}
+      note: {type: text, name: 备注}
 
   purchase_order:
     name: 采购单
@@ -159,13 +199,29 @@ events:
     permission: sales.product:write
     fields: [code, name, spec, unit]
 
+  sales.contract_signed:
+    name: 登记销售合同
+    object: contract
+    op: create
+    permission: sales.contract:write
+    evidence: required   # 合同扫描件
+    fields: [contract_no, customer, signed_date, amount, due_date, payment_terms, warranty,
+             delivery_address, note, status]
+
+  sales.contract_status_changed:
+    name: 合同状态变更
+    object: contract
+    op: update
+    permission: sales.contract:write
+    fields: [status, note]
+
   sales.order_created:
     name: 新建订单
     object: sales_order
     op: create
     permission: sales.order:write
     evidence: required   # 合同或客户确认
-    fields: [customer, product, qty, unit, due_date, amount, status]
+    fields: [customer, product, qty, unit, due_date, amount, status, order_no, contract, unit_price, note]
 
   sales.order_status_changed:
     name: 订单状态变更
@@ -173,6 +229,31 @@ events:
     op: update
     permission: sales.order:write
     fields: [status]
+
+  sales.order_rescheduled:
+    name: 订单交期变更
+    object: sales_order
+    op: update
+    permission: sales.order:write
+    evidence: required   # 客户确认（聊天记录、函件）
+    fields: [due_date, note]
+
+  warehouse.shipment_dispatched:
+    name: 发货出库
+    object: shipment
+    op: create
+    permission: warehouse.shipment:write
+    evidence: required   # 发货单 / 装车照片或仓管确认
+    description: 发货前的跨对象校验（批次已入库、出厂检验合格、不超发）在 fos/orders/shipping.py，账本层强制
+    fields: [shipment_no, order, batches, qty, unit, shipped_at, carrier, vehicle_no, status, note]
+
+  sales.shipment_received:
+    name: 客户签收回执
+    object: shipment
+    op: update
+    permission: sales.delivery:write
+    evidence: required   # 签收单照片
+    fields: [status, receiver, received_at, received_qty, note]
 
   purchase.order_created:
     name: 新建采购单

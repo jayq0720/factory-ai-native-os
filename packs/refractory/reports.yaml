@@ -25,5 +25,11 @@ daily:
       noun: 份
       group_by: result
     - {title: 来料处置, events: [quality.lot_dispositioned], measure: count, noun: 批, group_by: status}
+    - title: 合同签订
+      events: [sales.contract_signed, sales.contract_signed_from_quote]
+      measure: amount
+      unit_text: 元
     - {title: 新订单, events: [sales.order_created], measure: amount, unit_text: 元}
+    - {title: 发货, events: [warehouse.shipment_dispatched], measure: qty, unit: unit, group_by: order}
+    - {title: 签收回执, events: [sales.shipment_received], measure: count, noun: 单, group_by: status}
     - {title: 报价发布, events: [eng.quote_issued], measure: count, noun: 份}

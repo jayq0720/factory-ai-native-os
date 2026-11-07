@@ -1,0 +1,22 @@
+# 订单交付（fos/orders/，说明见 docs/orders.md）。全部是占位值，待六安绿能现场确认。
+# 租户可在 tenants/<id>/orders.yaml 里按段覆盖（shipping / risk / unit_aliases）。
+
+# 发货前校验：在账本层强制（warehouse.shipment_dispatched 写入前检查），API、卡片、审批通过后的执行都绕不过去。
+# policy.yaml 的规则只看得到被写的那一个对象，这几条要看批次、检验和已发数量，所以放在这里。
+shipping:
+  require_in_stock: true            # 只能发已入库的批次
+  require_final_inspection: true    # 每个批次要有出厂检验记录且结论合格（红线）
+  allow_conditional: true           # 有条件放行的批次可以发，但提示
+  allow_other_order_batches: false  # 不能把别的订单排产的批次发给这个订单（同产品的无主库存可以）
+  over_ship_pct: 3                  # 超发容差：累计发货 ≤ 订单数量 × (1 + 3%)
+
+# 交期风险（订单看板、IM「交期风险」）
+risk:
+  warn_days: 7    # 距交期 7 天内，排产计划量还不够订单数量
+  stock_days: 2   # 距交期 2 天内，入库量还不够发
+
+# 单位同义词（只归一写法，不做换算；单位不同的数量不合计，会提示）
+unit_aliases:
+  t: [吨, T]
+  m³: [m3, 立方, 方]
+  kg: [公斤, 千克]
