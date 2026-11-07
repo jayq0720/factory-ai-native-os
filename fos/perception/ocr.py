@@ -3,7 +3,8 @@
 - xiaomi：Xiaomi-OCR-0（0.8B，Apache-2.0），部署在 vLLM / SGLang / Ollama 上，走 OpenAI 兼容
   /chat/completions。提示词和解码参数按官方 demo；表格输出为 OTSL，这里转成 HTML 表格。
 - qwen_vl：阿里云百炼 Qwen-VL-OCR（compatible-mode 接口），适合还没有 GPU 的阶段先用云上模型。
-- mock：不调用任何模型。按图片 SHA-256 查预置样例（packs/<pack>/fixtures/ocr/<sha256>.md），
+- mock：不调用任何模型。按图片 SHA-256 查预置样例（packs/<pack>/fixtures/ocr/<sha256>.md，
+  或按像素内容 px-<sha256>.md），
   找不到就返回明确标注的占位文本。结果一律 data_mode=mock。
 
 真实提供方都是"图片 → 每页 Markdown（表格为 HTML）"，后面的抽取、界面、导出不区分来源。
@@ -14,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import io
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -64,15 +66,30 @@ class MockOCR:
         self._dirs = fixtures_dirs or []
 
     async def recognize(self, image_png: bytes, *, page: int) -> str:
-        digest = hashlib.sha256(image_png).hexdigest()
+        # 先按 PNG 字节，再按像素内容（不受 PNG 编码器版本影响，样例照片用这个）
+        digests = [hashlib.sha256(image_png).hexdigest(), pixel_digest(image_png)]
         for d in self._dirs:
-            f = d / f"{digest}.md"
-            if f.exists():
-                return f.read_text(encoding="utf-8")
+            for digest in digests:
+                f = d / f"{digest}.md"
+                if digest and f.exists():
+                    return f.read_text(encoding="utf-8")
         return f"> 【模拟识别】第 {page} 页为扫描件或图片。未部署 OCR 服务，此处不是真实识别结果。\n"
 
     async def aclose(self) -> None:
         return None
+
+
+def pixel_digest(image_png: bytes) -> str:
+    """图片像素内容的 SHA-256（RGB + 尺寸）。读不了的图片返回空串。"""
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        img = Image.open(io.BytesIO(image_png)).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        return ""
+    h = hashlib.sha256(f"{img.width}x{img.height}:".encode())
+    h.update(img.tobytes())
+    return "px-" + h.hexdigest()
 
 
 class OpenAICompatOCR:

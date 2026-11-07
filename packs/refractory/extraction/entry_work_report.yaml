@@ -1,0 +1,18 @@
+# 录单：报工单 / 出窑记录 → 批次完工（合格数量）
+id: entry_work_report
+name: 报工单
+version: 1
+kinds: [receipt]
+detect: [报工单, 完工单, 出窑记录, 完工报告, 生产报工]
+fields:
+  - {key: batch_no, name: 生产批号, group: 报工, labels: [生产批号, 批次号, 批号], exclude_before: [原料, 供方], required: true}
+  - {key: good_qty, name: 合格数量, group: 报工, type: number, labels: [合格数量, 合格数, 合格品, 正品数], required: true}
+  - {key: completed_at, name: 完工日期, group: 报工, type: date, labels: [完工日期, 出窑日期, 日期]}
+entry:
+  event: production.batch_completed
+  object_id: {from: batch_no, lookup: []}
+  occurred_at: completed_at
+  fields:
+    good_qty: {from: good_qty}
+    completed_at: {from: completed_at, default: now}
+    status: {const: completed}

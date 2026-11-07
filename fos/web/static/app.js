@@ -4,7 +4,7 @@
 const $ = (s) => document.querySelector(s);
 const KEY = "fos.apiKey";
 const ACTIVE = ["queued", "parsing", "extracting"];
-const KIND = { tech: "技术文件", tender: "招标文件", drawing: "图纸", boq: "工程量清单", receipt: "单据", report: "报告", other: "其他" };
+const KIND = { receipt: "单据（录单）", tech: "技术文件", tender: "招标文件", drawing: "图纸", boq: "工程量清单", report: "报告", other: "其他" };
 const STATUS = { queued: "排队中", parsing: "解析中", extracting: "抽取中", parsed: "已完成", failed: "失败" };
 const FSTATUS = { extracted: "待核对", missing: "缺失", corrected: "已修改", confirmed: "已确认" };
 const METHOD = { text_layer: "文字层", ocr: "OCR", ocr_mock: "模拟识别", docx: "Word", xlsx: "Excel" };
@@ -58,7 +58,7 @@ async function login(key) {
   state.me = await getJSON("/v1/me");
   store("set", key);
   try { state.ready = await (await fetch("/readyz")).json(); } catch (_) { state.ready = null; }
-  $("#login").hidden = true; $("#app").hidden = false; $("#logout").hidden = false;
+  $("#login").hidden = true; $("#app").hidden = false; $("#logout").hidden = false; $("#b-trace").hidden = false;
   $("#who").textContent = `${state.me.tenant_name} · ${state.me.display_name}`;
   renderModes();
   await loadDocs();
@@ -68,7 +68,7 @@ async function login(key) {
 
 function logout() {
   store("del"); state.key = ""; state.cur = null;
-  $("#app").hidden = true; $("#login").hidden = false; $("#logout").hidden = true; $("#who").textContent = "";
+  $("#app").hidden = true; $("#login").hidden = false; $("#logout").hidden = true; $("#b-trace").hidden = true; $("#who").textContent = "";
   $("#modes").replaceChildren(); $("#mock-banner").hidden = true;
 }
 
@@ -137,6 +137,7 @@ async function openDoc(id) {
   if (d.status === "parsed") {
     state.fields = await getJSON(`/v1/documents/${id}/fields`);
     renderFields();
+    loadEntry();
     if (!same) { state.tab = d.format === "pdf" || d.format === "image" ? "image" : "text"; setTabs(".tabs", state.tab, "tab"); }
     await renderPage();
   } else {
@@ -372,8 +373,63 @@ async function patch(f, body) {
     });
     state.fields = await getJSON(`/v1/documents/${state.cur.id}/fields`);
     renderFields();
+    loadEntry();
     loadDocs();
   } catch (e) { toast(e.message); }
+}
+
+// ---------------- 录单（W9） ----------------
+
+const ROWST = { ok: "", default: "info", missing: "bad", invalid: "bad", not_found: "bad", ambiguous: "warn" };
+
+async function loadEntry() {
+  const box = $("#entry");
+  box.hidden = true;
+  if (!state.cur || state.cur.kind !== "receipt" || !state.fields || !state.fields.schema) return;
+  let d;
+  try { d = await getJSON(`/v1/documents/${state.cur.id}/entry`); } catch (_) { return; }
+  const rows = d.rows.filter((r) => r.display || r.status !== "ok");
+  const head = d.entered
+    ? el("div", { class: "entry-head" }, chip("已入账", "ok"), ` ${d.entered.by} 确认，事件序号 ${d.entered.seq}（${d.entered.object_id}）`)
+    : el("div", { class: "entry-head" }, chip(d.ok ? "可以入账" : "待补全", d.ok ? "ok" : "bad"), ` 确认后记为“${d.event_name}”（需要权限 ${d.permission}）`);
+  const list = el("ul", { class: "entry-rows" }, ...rows.map((r) => el("li", { class: ROWST[r.status] || "" },
+    el("b", {}, r.name), " ", r.status === "ok" || r.status === "default" ? r.display : "", r.note ? el("span", { class: "muted small" }, ` ${r.note}`) : null)));
+  const btn = d.entered ? null : el("button", { class: "btn primary", disabled: !d.ok, onclick: commitEntry }, "提交入账");
+  fill(box, head, list, d.problems.length ? el("p", { class: "muted small" }, "在下面修改字段后会自动重新核对；引用对象（物料、批次、窑次）需要先登记。") : null, btn);
+  box.hidden = false;
+}
+
+async function commitEntry() {
+  try {
+    const r = await api(`/v1/documents/${state.cur.id}/entry`, { method: "POST" });
+    const j = await r.json();
+    toast(r.status === 202 ? j.message : j.duplicate ? "这张单据已经入账过了" : `已入账，事件序号 ${j.seq}`);
+    loadEntry();
+  } catch (e) { toast(e.message); }
+}
+
+// ---------------- 批次追溯 ----------------
+
+async function runTrace(q) {
+  const out = $("#t-out");
+  fill(out, el("p", { class: "muted" }, "查询中…"));
+  try {
+    const j = await getJSON(`/v1/trace?q=${encodeURIComponent(q)}`);
+    if (!j.report) {
+      fill(out, el("p", {}, "对应多条记录，请选一个："), ...j.matches.map((m) => el("button", { class: "btn small", type: "button", onclick: () => runTrace(m.object_id) }, `${m.object_type} ${m.object_id}`)));
+      return;
+    }
+    const rep = j.report; const root = rep.nodes[0];
+    const groups = {};
+    for (const l of rep.lines) (groups[l.group] = groups[l.group] || []).push(l.text);
+    fill(out,
+      el("div", { class: "entry-head" }, el("b", {}, `${root.type_name} ${root.object_id}`), " ",
+        rep.data_mode === "mock" ? chip("模拟数据", "mock") : null,
+        el("span", { class: "muted small" }, ` 共 ${rep.nodes.length} 条记录 · ${rep.elapsed_ms} ms`)),
+      rep.alerts.length ? el("ul", { class: "alerts" }, ...rep.alerts.map((a) => el("li", {}, `⚠ ${a.object_id} ${a.text}`))) : el("p", { class: "muted" }, "没有发现异常"),
+      ...Object.entries(groups).map(([g, lines]) => el("div", { class: "trace-group" }, el("div", { class: "group-title" }, g), el("ul", {}, ...lines.map((t) => el("li", {}, t))))),
+    );
+  } catch (e) { fill(out, el("p", { class: "err" }, e.message)); }
 }
 
 function editField(f) {
@@ -437,6 +493,9 @@ $("#b-xlsx").addEventListener("click", () => download(`/v1/documents/${state.cur
 $("#b-json").addEventListener("click", () => download(`/v1/documents/${state.cur.id}/export?format=json`, "fields.json"));
 $("#b-original").addEventListener("click", () => download(`/v1/documents/${state.cur.id}/original`, state.cur.filename));
 $("#b-extract").addEventListener("click", reExtract);
+$("#b-trace").addEventListener("click", () => { $("#trace-dlg").showModal(); $("#t-q").focus(); });
+$("#t-close").addEventListener("click", () => $("#trace-dlg").close());
+$("#trace-form").addEventListener("submit", (e) => { e.preventDefault(); runTrace($("#t-q").value.trim()); });
 $("#b-retry").addEventListener("click", async () => {
   try { await api(`/v1/documents/${state.cur.id}/retry`, { method: "POST" }); await openDoc(state.cur.id); loadDocs(); } catch (e) { toast(e.message); }
 });

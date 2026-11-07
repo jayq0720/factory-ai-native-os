@@ -13,6 +13,7 @@
   <div class="brand"><span class="logo">文</span><b>文档解析</b><span class="muted">工厂 AI OS</span></div>
   <div class="top-right">
     <span id="modes" class="modes"></span>
+    <button id="b-trace" class="btn small" hidden>批次追溯</button>
     <span id="who" class="muted"></span>
     <button id="logout" class="btn ghost small" hidden>退出</button>
   </div>
@@ -43,6 +44,7 @@
           <option value="tender">招标/询价文件</option>
           <option value="drawing">图纸</option>
           <option value="boq">工程量清单</option>
+          <option value="receipt">生产/仓库单据（拍照录单）</option>
           <option value="other">其他（只做识别）</option>
         </select>
       </div>
@@ -109,6 +111,7 @@
             <button data-filter="missing" class="tab">缺失</button>
             <button data-filter="conflict" class="tab">冲突</button>
           </div>
+          <div id="entry" class="entry" hidden></div>
           <div id="f-list" class="f-list"></div>
           <p id="f-none" class="muted" hidden>这个文件类别没有抽取 Schema，只做了识别。可在上方"重新抽取"里选一份 Schema。</p>
         </div>
@@ -139,6 +142,16 @@
       <button value="cancel" class="btn" formnovalidate>取消</button>
       <button value="ok" class="btn primary">开始抽取</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="trace-dlg" class="dlg wide">
+  <form id="trace-form">
+    <h3>批次追溯</h3>
+    <p class="muted small">输入生产批号、窑次号、原料批号或检验报告编号。只读查询，不调用模型。</p>
+    <div class="row"><input id="t-q" placeholder="如 B261106-01" maxlength="64" required><button class="btn primary">追溯</button></div>
+    <div id="t-out" class="trace-out"></div>
+    <div class="dlg-actions"><button type="button" id="t-close" class="btn">关闭</button></div>
   </form>
 </dialog>
 

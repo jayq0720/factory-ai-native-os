@@ -1,0 +1,27 @@
+# 录单：原料送货单 → 来料入库（方案 3.1 原料进厂）。照片里识别出 detect 词就按这份 Schema 抽取。
+id: entry_delivery_note
+name: 原料送货单
+version: 1
+kinds: [receipt]
+detect: [送货单, 送货清单, 随货同行, 发货清单, 来料单]
+fields:
+  - {key: supplier_name, name: 供货单位, group: 来料, labels: [供货单位, 供应商, 发货单位, 送货单位, 供方], required: true}
+  - {key: material_name, name: 品名, group: 来料, labels: [品名, 物料名称, 货物名称, 产品名称, 名称], exclude_before: [单位, 产品], required: true}
+  - {key: spec, name: 规格, group: 来料, labels: [规格型号, 规格, 型号]}
+  - {key: lot_no, name: 供方批号, group: 来料, labels: [供方批号, 批号, 批次号, 炉号]}
+  - {key: qty, name: 数量, group: 来料, type: number, unit: t, labels: [实收数量, 数量, 净重, 重量], required: true}
+  - {key: date, name: 送货日期, group: 来料, type: date, labels: [送货日期, 到货日期, 发货日期, 日期]}
+  - {key: po_no, name: 采购单号, group: 来料, labels: [采购单号, 订单号, 合同号]}
+entry:
+  event: warehouse.lot_received
+  object_id: {auto: L}
+  occurred_at: received_at
+  fields:
+    material: {from: material_name, lookup: [name]}
+    supplier: {from: supplier_name, lookup: [name]}
+    supplier_lot_no: {from: lot_no}
+    qty: {from: qty}
+    unit: {from: qty, part: unit, default: t}
+    received_at: {from: date, default: now}
+    purchase_order: {from: po_no}
+    status: {const: pending_inspection}

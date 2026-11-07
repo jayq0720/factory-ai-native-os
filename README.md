@@ -13,6 +13,7 @@
   .venv/bin/fos quickstart && .venv/bin/fos samples ./samples && .venv/bin/fos serve
   # 打开 http://127.0.0.1:8000/app/
   ```
+- **拍照录单与批次追溯（M1）**：`docs/production-entry.md`。演示：`fos production-demo ./samples/production` 登记模拟主数据并导出五张单据照片。
 
 ## 目录
 

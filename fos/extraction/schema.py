@@ -14,6 +14,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from fos.entry.spec import EntrySpec
 from fos.tenancy.config import TenantConfig
 
 FieldType = Literal["text", "number", "temperature", "date", "money", "enum", "list"]
@@ -62,6 +63,8 @@ class ExtractionSchema(BaseModel):
     version: int = 1
     kinds: list[str]  # 适用的文件类别（上传时的 kind）
     fields: list[FieldDef]
+    detect: list[str] = Field(default_factory=list)  # 同一类别有多份 Schema 时，按原文里的这些词自动选
+    entry: EntrySpec | None = None  # 录单：确认后写哪个事件（fos/entry/spec.py）
     source: str = ""
 
     @model_validator(mode="after")
@@ -102,3 +105,26 @@ def load_schemas(tenant: TenantConfig, *, packs_dir: Path, tenants_dir: Path) ->
 
 def schema_for_kind(schemas: dict[str, ExtractionSchema], kind: str) -> ExtractionSchema | None:
     return next((s for s in schemas.values() if kind in s.kinds), None)
+
+
+def detect_scores(schemas: dict[str, ExtractionSchema], kind: str | None, text: str) -> list[tuple[int, str]]:
+    """按 detect 词在原文里出现的次数给 Schema 打分（零模型成本），高分在前。"""
+    t = re.sub(r"\s+", "", text)
+    out = []
+    for s in schemas.values():
+        if not s.detect or (kind is not None and kind not in s.kinds):
+            continue
+        n = sum(t.count(w) for w in s.detect)
+        if n:
+            out.append((n, s.id))
+    return sorted(out, key=lambda x: (-x[0], x[1]))
+
+
+def detect_schema(
+    schemas: dict[str, ExtractionSchema], kind: str | None, text: str
+) -> ExtractionSchema | None:
+    """原文最像哪种单据。两份 Schema 同分时不猜，返回 None。"""
+    scores = detect_scores(schemas, kind, text)
+    if not scores or (len(scores) > 1 and scores[0][0] == scores[1][0]):
+        return None
+    return schemas[scores[0][1]]
