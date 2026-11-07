@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
 from fos.db.session import make_engine, make_sessionmaker
+from fos.engineering.config import EngineeringConfig, check_engineering, load_engineering
 from fos.entry.spec import check_entry
 from fos.extraction.schema import ExtractionSchema, load_schemas
 from fos.extraction.service import Extractor
@@ -50,6 +51,7 @@ class Services:
     extractor: Extractor
     jobs: DocumentJobs
     traces: dict[str, TraceConfig]
+    engineering: dict[str, EngineeringConfig | None]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -90,6 +92,15 @@ class Services:
             if (t := registry.get(tid)) is not None
         }
         check_configs(ontologies, schemas, traces)
+        # 工程模块：衬里模板与选材参数（没有的租户不开工程模块）
+        engineering = {
+            tid: load_engineering(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        for tid, cfg in engineering.items():
+            if cfg is not None:
+                check_engineering(tid, cfg, ontologies[tid])
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -123,6 +134,7 @@ class Services:
             extractor=extractor,
             jobs=DocumentJobs(sessionmaker, ocr, blobs, extractor, settings),
             traces=traces,
+            engineering=engineering,
         )
 
     async def aclose(self) -> None:

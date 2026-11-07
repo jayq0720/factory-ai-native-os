@@ -16,12 +16,18 @@ def _read(path: Path) -> OntologyLayer:
 
 
 def load_ontology(tenant: TenantConfig, *, packs_dir: Path, tenants_dir: Path) -> Ontology:
-    """核心 → 行业包 → 租户，三层合并并整体校验。"""
+    """核心 → 行业包 → 租户，三层合并并整体校验。
+
+    行业包可以把本体拆成多个文件：`ontology.yaml` 之后再按文件名顺序加载 `ontology/*.yaml`
+    （例如工程模块 `ontology/engineering.yaml`），每个文件是一层，规则相同。
+    """
     onto = Ontology()
     onto.add_layer("core", _read(CORE))
     pack = packs_dir / tenant.industry_pack / "ontology.yaml"
     if pack.exists():
         onto.add_layer(f"pack:{tenant.industry_pack}", _read(pack))
+    for extra in sorted((packs_dir / tenant.industry_pack / "ontology").glob("*.yaml")):
+        onto.add_layer(f"pack:{tenant.industry_pack}/{extra.stem}", _read(extra))
     own = tenants_dir / tenant.id / "ontology.yaml"
     if own.exists():
         onto.add_layer(f"tenant:{tenant.id}", _read(own))

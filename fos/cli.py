@@ -13,6 +13,7 @@ fos quickstart [--tenant luneng] [--login admin]     建表 + 建管理员 + 发
 fos serve [--host 0.0.0.0] [--port 8000]             启动网页与接口，网页在 /app/
 fos samples <目录>                                   生成样例文件（技术要求 / 招标文件 / 工程量清单）
 fos production-demo [目录]                         拍照录单演示：登记模拟主数据 + 导出五张单据照片
+fos eng-demo                                       工程演示：写入演示知识库（模拟数据）
 fos ocr-check [--image 图片]                          对当前配置的 OCR 服务发一张图，看能否识别、耗时多少
 """
 
@@ -105,6 +106,13 @@ async def _run(args: argparse.Namespace) -> int:
             for f in write_photos(Path(args.out)):
                 print(f"照片：{f}")
             print("在 IM（或模拟信道）依次发这五张照片，确认卡片后发“追溯 B261106-01”。")
+        return rc
+    if args.cmd == "eng-demo":
+        from fos.engineering.samples import seed_kb
+
+        rc = await seed_kb(s, args.tenant, args.login)
+        if rc == 0:
+            print("打开 /app/eng.html：上传 fos samples 生成的技术要求 → 核对字段 → 建工程项目 → 匹配方案。")
         return rc
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
@@ -213,6 +221,9 @@ def main(argv: list[str] | None = None) -> int:
     pd.add_argument("out", nargs="?", default="samples/production")
     pd.add_argument("--tenant", default="luneng")
     pd.add_argument("--login", default="admin")
+    ed = sub.add_parser("eng-demo", help="工程演示：写入演示知识库（模拟数据）")
+    ed.add_argument("--tenant", default="luneng")
+    ed.add_argument("--login", default="admin")
     cu = sub.add_parser("create-user")
     cu.add_argument("tenant")
     cu.add_argument("login")

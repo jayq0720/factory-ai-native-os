@@ -1,0 +1,38 @@
+/* 工程方案页：在 app.css 基础上补充 */
+.eng-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.eng-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.sec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; margin-bottom: 16px; min-width: 0; }
+.sec h3 { font-size: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kv { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 4px 10px; font-size: 13px; }
+.kv input { width: 100%; padding: 3px 6px; }
+.kv .k { color: var(--muted); padding-top: 3px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); padding: 4px 6px; white-space: nowrap; }
+.tbl td { border-bottom: 1px solid var(--line); padding: 4px 6px; vertical-align: top; }
+.tbl td.num, .tbl th.num { text-align: right; font-family: var(--f-mono); white-space: nowrap; }
+.tbl tr.sum td { font-weight: 700; border-bottom: none; }
+.tbl input, .tbl select { padding: 2px 4px; max-width: 100%; }
+.tbl input[type=number] { width: 80px; text-align: right; }
+.scroll { overflow-x: auto; }
+.dtabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.dtab { font: inherit; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 8px 12px; cursor: pointer; min-width: 150px; color: var(--fg); }
+.dtab.on { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+.dtab .t { font-weight: 700; }
+.dtab .m { font-size: 12px; color: var(--muted); font-family: var(--f-mono); }
+.checks { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; display: grid; gap: 3px; }
+.checks li::before { content: "✔ "; color: var(--ok); }
+.checks li.no::before { content: "✘ "; color: var(--bad); }
+.review li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.review { list-style: none; margin: 0; padding: 0; }
+.review .msg { font-size: 13px; }
+.review .sug { font-size: 12px; color: var(--muted); }
+.opts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 13px; margin: 8px 0; }
+.opts input { width: 90px; }
+.profile { width: 100%; height: 170px; }
+.profile text { font-size: 11px; fill: var(--muted); font-family: var(--f-mono); }
+.profile .curve { fill: none; stroke: var(--bad); stroke-width: 2; }
+.reasons { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+@media (max-width: 1100px) { .eng-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .kv { grid-template-columns: 110px minmax(0, 1fr); } }
+.tbl td:first-child { white-space: nowrap; }
+.tbl select { width: 100%; min-width: 160px; }

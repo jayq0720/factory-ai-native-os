@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工程方案 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="eng.css">
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据：方案用到了模拟识别结果或演示知识库，只能演示，不能发布报价、不能导出正式文件</div>
+
+<header class="top">
+  <div class="brand"><span class="logo">工</span><b>工程方案</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <a class="btn small" href="./">文档解析</a>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入 API Key（和文档解析页共用，只保存在本机浏览器）。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="layout" hidden>
+  <aside class="side">
+    <form id="new-proj" class="card upload">
+      <b>从技术文件建工程项目</b>
+      <select id="doc-pick" required><option value="">选择已解析的技术文件…</option></select>
+      <p class="muted small">关键工况（温度、气氛、外壁温度、面积、厚度）要先在<a href="./">文档解析</a>页确认或改正。</p>
+      <button class="btn primary" type="submit">建项目</button>
+    </form>
+    <div class="list-head"><b>工程项目</b><span id="p-count" class="muted small"></span></div>
+    <ul id="projects" class="docs"></ul>
+  </aside>
+
+  <section id="detail" class="detail">
+    <div id="empty" class="empty">
+      <h2>工程方案：技术文件 → 选材 → 方案 / BOM / 报价 → 审核 → 发布</h2>
+      <ol class="muted">
+        <li>在文档解析页上传客户技术要求，核对字段（每个字段带原文页码）。</li>
+        <li>回到这里选择文件建项目：工况以账本事件记录，证据是原文页码。</li>
+        <li>点“匹配方案”：按衬里模板和硬约束（分类温度余量、外壁温度、厚度、气氛）给出 2–3 个备选方案。</li>
+        <li>改厚度、换产品、改折扣 → 传热、用量、报价全部由代码重算，生成新版本。</li>
+        <li>逐条处理审核清单后发布报价，按审批规则送销售负责人（必要时总经理）确认。</li>
+      </ol>
+      <p class="muted small">温度、用量、金额都由确定性代码计算，模型不参与估算。</p>
+    </div>
+    <div id="proj" hidden></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="eng.js"></script>
+</body>
+</html>

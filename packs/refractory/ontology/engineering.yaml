@@ -1,0 +1,130 @@
+# 工程模块（方案第 4 章，W10–W12）：工程知识库 + 工程项目 + 报价。
+#
+# - 知识库：产品的热工参数挂在产品对象上（kb.product_*），价格是单独的对象（kb.price_*）；
+#   每次修改都是一条事件，“版本”就是对象版本号，报价记录引用的价格对象和版本。
+# - 衬里结构模板在 packs/refractory/engineering/linings.yaml（资深工程师维护）。
+# - 工程项目从人工核对过的文件字段创建，证据是每个字段的原文页码与片段。
+# - 方案 / BOM / 报价草稿是 L1（只建议，存在 eng_designs 表，可反复修改）；
+#   发布报价是一条账本事件，受 policy.yaml 审批规则约束（L2）。
+
+extend:
+  product:
+    aliases: {type: string, name: 别名/客户叫法}   # 逗号分隔，例如 JM-26,JM26
+    tc_a: {type: number, name: 导热系数常数项 a, unit: W/(m·K)}
+    tc_b: {type: number, name: 导热系数温度项 b, unit: W/(m·K²)}
+    piece_volume: {type: number, name: 单件体积, unit: m³}
+    loss_rate: {type: number, name: 施工损耗率, unit: "%"}
+    unsuitable_atmospheres: {type: string, name: 不适用气氛}   # 逗号分隔，例如 还原,含氢
+    kb_note: {type: text, name: 选材说明}
+
+objects:
+  price_item:
+    name: 价格
+    domain: kb
+    description: 一个产品对一类客户的单价；调价是 kb.price_changed 事件，报价引用对象 id 与版本
+    properties:
+      product: {type: ref, target: product, name: 产品, required: true}
+      price: {type: number, name: 单价, unit: 元, required: true}
+      unit: {type: string, name: 计价单位, required: true}
+      cost: {type: number, name: 成本价, unit: 元}
+      customer_class: {type: string, name: 客户类别}
+      effective_from: {type: date, name: 生效日期, required: true}
+      valid_until: {type: date, name: 有效期至}
+
+  eng_project:
+    name: 工程项目
+    domain: eng
+    description: 客户技术文件 → 工况 → 方案 / BOM / 报价 的业务对象
+    properties:
+      name: {type: string, name: 项目名称, required: true}
+      customer: {type: ref, target: customer, name: 客户}
+      customer_name: {type: string, name: 客户名称}
+      location: {type: string, name: 项目地点}
+      furnace_type: {type: string, name: 炉型}
+      positions: {type: string, name: 部位}
+      normal_temp: {type: number, name: 正常工作温度, unit: ℃}
+      max_temp: {type: number, name: 最高温度, unit: ℃}
+      atmosphere: {type: string, name: 气氛}
+      shell_temp: {type: number, name: 外壁温度要求, unit: ℃}
+      ambient_temp: {type: number, name: 环境温度, unit: ℃}
+      area: {type: number, name: 衬里面积, unit: m²}
+      thickness_limit: {type: number, name: 总厚度要求, unit: mm}
+      thickness_rule: {type: enum, name: 总厚度要求类型, values: [min, max, ref]}
+      lining_spec: {type: text, name: 客户要求的衬里}
+      standards: {type: text, name: 执行标准}
+      delivery_period: {type: string, name: 交货期}
+      payment_terms: {type: text, name: 付款方式}
+      quote_validity: {type: string, name: 报价有效期}
+      tax_rate: {type: number, name: 税率, unit: "%"}
+      source_documents: {type: string, name: 来源文件}
+      status: {type: enum, name: 状态, values: [open, quoted, won, lost, cancelled], required: true}
+      quote_no: {type: string, name: 报价单号}
+      quote_amount: {type: number, name: 报价金额（含税）, unit: 元}
+      gross_margin_pct: {type: number, name: 材料毛利率, unit: "%"}
+      quote_design: {type: string, name: 报价方案版本}
+      quote_prices: {type: text, name: 引用的价格版本}
+
+events:
+  kb.product_registered:
+    name: 知识库新增产品
+    object: product
+    op: create
+    permission: kb.product:write
+    fields: [code, name, spec, unit, category, classification_temp, bulk_density, aliases, tc_a, tc_b,
+             piece_volume, loss_rate, unsuitable_atmospheres, kb_note]
+
+  kb.product_specified:
+    name: 更新产品热工参数
+    object: product
+    op: update
+    permission: kb.product:write
+    fields: [spec, classification_temp, bulk_density, aliases, tc_a, tc_b, piece_volume, loss_rate,
+             unsuitable_atmospheres, kb_note]
+
+  kb.price_set:
+    name: 新增价格
+    object: price_item
+    op: create
+    permission: kb.price:write
+    fields: [product, price, unit, cost, customer_class, effective_from, valid_until]
+
+  kb.price_changed:
+    name: 调整价格
+    object: price_item
+    op: update
+    permission: kb.price:write
+    fields: [price, cost, effective_from, valid_until]
+
+  eng.project_created:
+    name: 创建工程项目
+    object: eng_project
+    op: create
+    permission: eng.project:write
+    evidence: required   # 字段原文页码
+    fields: [name, customer, customer_name, location, furnace_type, positions, normal_temp, max_temp,
+             atmosphere, shell_temp, ambient_temp, area, thickness_limit, thickness_rule, lining_spec,
+             standards, delivery_period, payment_terms, quote_validity, tax_rate, source_documents, status]
+
+  eng.project_updated:
+    name: 修改工程工况
+    object: eng_project
+    op: update
+    permission: eng.project:write
+    fields: [name, customer, customer_name, location, furnace_type, positions, normal_temp, max_temp,
+             atmosphere, shell_temp, ambient_temp, area, thickness_limit, thickness_rule, lining_spec,
+             standards, delivery_period, payment_terms, quote_validity, tax_rate]
+
+  eng.quote_issued:
+    name: 发布工程报价
+    object: eng_project
+    op: update
+    permission: eng.quote:write
+    evidence: required   # 方案版本（计算）与价格版本
+    fields: [status, quote_no, quote_amount, gross_margin_pct, quote_design, quote_prices]
+
+  eng.project_closed:
+    name: 工程项目结果
+    object: eng_project
+    op: update
+    permission: eng.project:write
+    fields: [status]

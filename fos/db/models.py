@@ -1,5 +1,5 @@
 """数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）、Agent 运行（W7）、
-审批与待办（W8）。
+审批与待办（W8）、工程方案（W10–W12）。
 
 约定：
 - 每张业务表都有 tenant_id，所有查询必须按 tenant_id 过滤（由 repository 层保证）。
@@ -432,3 +432,40 @@ class Todo(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------- 工程方案草稿（W10–W12） ----------------
+
+
+class EngDesign(Base):
+    """工程方案草稿的一个版本：衬里 + 传热计算 + BOM + 报价 + 审核清单（方案 4.2 第 5–8 步）。
+
+    草稿是 L1（只建议），不是业务事实，所以不走账本；每次修改生成新版本（旧版本标 superseded），
+    所有版本保留可查。发布报价时才以 eng.quote_issued 事件写入账本，引用这里的版本 id。
+    """
+
+    __tablename__ = "eng_designs"
+    __table_args__ = (
+        Index("ix_eng_designs_project", "tenant_id", "project_id", "created_at"),
+        UniqueConstraint("tenant_id", "project_id", "label", "version", name="uq_eng_designs_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    project_id: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(32))  # 方案 A / 方案 B / 客户方案
+    title: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer)
+    parent_id: Mapped[str | None] = mapped_column(String(36), nullable=True)  # 上一版本
+    status: Mapped[str] = mapped_column(String(16))  # draft / submitted / published / superseded
+    data_mode: Mapped[str] = mapped_column(String(8))
+    inputs: Mapped[dict] = mapped_column(JSON)  # {layers, options, template_id}：重算只需要这些
+    data: Mapped[dict] = mapped_column(JSON)  # 计算结果：传热、校核、BOM、报价、选材理由
+    review: Mapped[list] = mapped_column(JSON, default=list)  # 审核条目（含处理结果）
+    project_version: Mapped[int] = mapped_column(Integer)  # 计算时工程项目的版本
+    approval_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[str] = mapped_column(String(36))
+    created_by_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

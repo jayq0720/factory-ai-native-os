@@ -1,0 +1,43 @@
+# 演示知识库（数值为示例，不是六安绿能真实牌号与价格）。
+# `fos eng-demo <租户>` 以模拟数据（data_mode=mock）写入账本；真实知识库由知识库管理员维护（kb.* 事件）。
+# 导热系数 k(T) = tc_a + tc_b·T（W/(m·K)，T 为平均温度 ℃）；体积密度 g/cm³（= t/m³）；损耗率 %。
+products:
+  - {code: LN-ML26, name: 莫来石轻质隔热砖, spec: 230×114×65, unit: t, category: insulating_brick,
+     classification_temp: 1430, bulk_density: 0.80, tc_a: 0.18, tc_b: 0.00020, piece_volume: 0.0017043,
+     loss_rate: 5, aliases: "JM-26,JM26"}
+  - {code: LN-ML23, name: 莫来石轻质隔热砖, spec: 230×114×65, unit: t, category: insulating_brick,
+     classification_temp: 1260, bulk_density: 0.60, tc_a: 0.12, tc_b: 0.00018, piece_volume: 0.0017043,
+     loss_rate: 5, aliases: "JM-23,JM23"}
+  - {code: LN-GL13, name: 高铝聚轻砖, spec: 230×114×65, unit: t, category: insulating_brick,
+     classification_temp: 1350, bulk_density: 1.00, tc_a: 0.28, tc_b: 0.00022, piece_volume: 0.0017043,
+     loss_rate: 5}
+  - {code: LN-GZ75, name: 高铝重质砖, spec: 230×114×65, unit: t, category: dense_brick,
+     classification_temp: 1550, bulk_density: 2.45, tc_a: 1.10, tc_b: 0.00040, piece_volume: 0.0017043,
+     loss_rate: 3}
+  - {code: LN-FB1260, name: 硅酸铝纤维板, spec: 1000×600, unit: t, category: fiber,
+     classification_temp: 1260, bulk_density: 0.32, tc_a: 0.035, tc_b: 0.00015, loss_rate: 8,
+     aliases: "LN-1260", unsuitable_atmospheres: "含氢"}
+  - {code: LN-FB1430, name: 含锆纤维板, spec: 1000×600, unit: t, category: fiber,
+     classification_temp: 1430, bulk_density: 0.32, tc_a: 0.040, tc_b: 0.00014, loss_rate: 8,
+     aliases: "LN-1430"}
+  - {code: LN-MK1430, name: 含锆纤维模块, spec: 300×300×250, unit: t, category: fiber,
+     classification_temp: 1430, bulk_density: 0.22, tc_a: 0.045, tc_b: 0.00018, loss_rate: 5}
+  - {code: LN-GG10, name: 硅酸钙板, spec: 1000×500, unit: t, category: board,
+     classification_temp: 1000, bulk_density: 0.24, tc_a: 0.050, tc_b: 0.00011, loss_rate: 8}
+  - {code: LN-NM10, name: 纳米微孔隔热板, spec: 1000×500, unit: t, category: board,
+     classification_temp: 1000, bulk_density: 0.40, tc_a: 0.020, tc_b: 0.000025, loss_rate: 8}
+  - {code: LN-NJ14, name: 轻质耐火泥浆, spec: 25 kg/袋, unit: t, category: mortar,
+     classification_temp: 1400, bulk_density: 1.6, loss_rate: 0}
+
+# 单价 元/计价单位；cost 为成本价（算毛利率用）
+prices:
+  - {code: LN-ML26, price: 4200, unit: t, cost: 3300, effective_from: "2026-10-01"}
+  - {code: LN-ML23, price: 3600, unit: t, cost: 2800, effective_from: "2026-10-01"}
+  - {code: LN-GL13, price: 2600, unit: t, cost: 2050, effective_from: "2026-10-01"}
+  - {code: LN-GZ75, price: 3100, unit: t, cost: 2500, effective_from: "2026-10-01"}
+  - {code: LN-FB1260, price: 8000, unit: t, cost: 6100, effective_from: "2026-10-01"}
+  - {code: LN-FB1430, price: 14000, unit: t, cost: 10800, effective_from: "2026-10-01"}
+  - {code: LN-MK1430, price: 15500, unit: t, cost: 12000, effective_from: "2026-10-01"}
+  - {code: LN-GG10, price: 5200, unit: t, cost: 4000, effective_from: "2026-10-01"}
+  - {code: LN-NM10, price: 68000, unit: t, cost: 52000, effective_from: "2026-10-01"}
+  - {code: LN-NJ14, price: 2200, unit: t, cost: 1600, effective_from: "2026-10-01"}
