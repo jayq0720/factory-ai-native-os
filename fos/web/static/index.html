@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文档解析 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据，非真实识别结果：当前文档有页面由模拟 OCR 生成，不能导出正式文件</div>
+
+<header class="top">
+  <div class="brand"><span class="logo">文</span><b>文档解析</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <span id="modes" class="modes"></span>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入管理员发给你的 API Key（管理员用 <code>fos issue-key</code> 生成）。Key 只保存在本机浏览器。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="layout" hidden>
+  <aside class="side">
+    <form id="upload" class="card upload">
+      <label id="drop" class="drop">
+        <input id="file" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.docx,.xlsx" hidden>
+        <b>拖入文件或点击选择</b>
+        <span class="muted">PDF、扫描件、图片、Word、Excel</span>
+      </label>
+      <div class="row">
+        <label class="muted" for="kind">文件类别</label>
+        <select id="kind">
+          <option value="tech">技术文件</option>
+          <option value="tender">招标/询价文件</option>
+          <option value="drawing">图纸</option>
+          <option value="boq">工程量清单</option>
+          <option value="other">其他（只做识别）</option>
+        </select>
+      </div>
+      <p id="upload-msg" class="muted small" hidden></p>
+    </form>
+    <div class="list-head"><b>文档</b><span id="doc-count" class="muted small"></span></div>
+    <ul id="docs" class="docs"></ul>
+  </aside>
+
+  <section id="detail" class="detail">
+    <div id="empty" class="empty">
+      <h2>上传一份文件开始</h2>
+      <ol class="muted">
+        <li>有文字层的 PDF、Word、Excel 直接取字；扫描件和图片逐页 OCR。</li>
+        <li>按文件类别抽取字段，每个字段都标出原文页码和片段，点一下就能对照原文。</li>
+        <li>核对：修改、确认；缺失和冲突单独标出。</li>
+        <li>导出 Excel（字段表 + 逐页原文）或 JSON。</li>
+      </ol>
+    </div>
+
+    <div id="doc" hidden>
+      <div class="doc-head">
+        <div class="doc-title">
+          <h2 id="d-name"></h2>
+          <div id="d-meta" class="muted small"></div>
+        </div>
+        <div class="actions">
+          <button id="b-retry" class="btn" hidden>重新解析</button>
+          <button id="b-extract" class="btn">重新抽取</button>
+          <button id="b-original" class="btn">下载原件</button>
+          <button id="b-json" class="btn">导出 JSON</button>
+          <button id="b-xlsx" class="btn primary">导出 Excel</button>
+        </div>
+      </div>
+      <div id="d-progress" class="progress" hidden><div class="bar"><i id="d-bar"></i></div><span id="d-ptext" class="small"></span></div>
+      <p id="d-error" class="err" hidden></p>
+
+      <div class="panes">
+        <div class="pane source">
+          <div class="pane-head">
+            <div class="pager">
+              <button id="p-prev" class="btn small" aria-label="上一页">‹</button>
+              <span id="p-label"></span>
+              <button id="p-next" class="btn small" aria-label="下一页">›</button>
+            </div>
+            <span id="p-method" class="chip"></span>
+            <div class="tabs">
+              <button data-tab="text" class="tab on">识别文本</button>
+              <button data-tab="image" class="tab">原文版面</button>
+            </div>
+          </div>
+          <div id="p-text" class="page-text"></div>
+          <div id="p-image" class="page-image" hidden><img id="p-img" alt="原文页面"></div>
+        </div>
+
+        <div class="pane fields">
+          <div class="pane-head">
+            <b id="f-schema"></b>
+            <div id="f-summary" class="summary"></div>
+          </div>
+          <div class="filters">
+            <button data-filter="all" class="tab on">全部</button>
+            <button data-filter="todo" class="tab">待核对</button>
+            <button data-filter="missing" class="tab">缺失</button>
+            <button data-filter="conflict" class="tab">冲突</button>
+          </div>
+          <div id="f-list" class="f-list"></div>
+          <p id="f-none" class="muted" hidden>这个文件类别没有抽取 Schema，只做了识别。可在上方"重新抽取"里选一份 Schema。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="edit-dlg" class="dlg">
+  <form method="dialog" id="edit-form">
+    <h3 id="e-title"></h3>
+    <label>值<textarea id="e-value" rows="3" required></textarea></label>
+    <label>单位<input id="e-unit" maxlength="16"></label>
+    <label>备注（可选，记入修改记录）<input id="e-note" maxlength="200"></label>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn" formnovalidate>取消</button>
+      <button value="ok" class="btn primary">保存修改</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="schema-dlg" class="dlg">
+  <form method="dialog">
+    <h3>重新抽取</h3>
+    <p class="muted small">人工修改和确认过的字段会保留。换 Schema 会清空当前字段后重新抽取。</p>
+    <label>抽取 Schema<select id="s-select"></select></label>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn" formnovalidate>取消</button>
+      <button value="ok" class="btn primary">开始抽取</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

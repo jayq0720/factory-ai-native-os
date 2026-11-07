@@ -10,7 +10,13 @@ def test_healthz(client):
 
 def test_readyz(client):
     r = client.get("/readyz")
-    assert r.json() == {"status": "ready", "tenants": 2, "llm_mode": "mock", "ocr_mode": "mock"}
+    assert r.json() == {
+        "status": "ready",
+        "tenants": 2,
+        "llm_mode": "mock",
+        "ocr_mode": "mock",
+        "llm_extraction": False,
+    }
 
 
 def test_me_requires_key(client):

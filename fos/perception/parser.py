@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import io
 import zipfile
+from collections.abc import Awaitable, Callable
 
 import pypdfium2 as pdfium
 from PIL import Image, UnidentifiedImageError
@@ -45,14 +47,24 @@ def sniff(data: bytes) -> DocFormat:
     raise ParseError("不支持的文件格式（支持 PDF、PNG、JPEG、TIFF、DOCX、XLSX）")
 
 
+ProgressFn = Callable[[int, int], Awaitable[None]]
+
+
 async def parse(
-    data: bytes, ocr: OCRProvider, *, max_pages: int = 300, render_scale: float = 2.0
+    data: bytes,
+    ocr: OCRProvider,
+    *,
+    max_pages: int = 300,
+    render_scale: float = 2.0,
+    concurrency: int = 4,
+    on_progress: ProgressFn | None = None,
 ) -> ParsedDocument:
+    """on_progress(已完成页数, 总页数)：每完成一页回调一次，后台任务用来更新进度。"""
     fmt = sniff(data)
     if fmt == "pdf":
-        pages = await _parse_pdf(data, ocr, max_pages, render_scale)
+        pages = await _parse_pdf(data, ocr, max_pages, render_scale, concurrency, on_progress)
     elif fmt == "image":
-        pages = await _parse_image(data, ocr, max_pages)
+        pages = await _parse_image(data, ocr, max_pages, concurrency, on_progress)
     elif fmt == "docx":
         pages = [_parse_docx(data)]
     else:
@@ -60,11 +72,59 @@ async def parse(
     return ParsedDocument(format=fmt, pages=pages)
 
 
+def count_pages(data: bytes) -> int:
+    """不解析，只数页数（后台任务显示进度用）。docx 记 1 页，xlsx 按工作表。"""
+    fmt = sniff(data)
+    try:
+        if fmt == "pdf":
+            pdf = pdfium.PdfDocument(data)
+            try:
+                return len(pdf)
+            finally:
+                pdf.close()
+        if fmt == "image":
+            return getattr(Image.open(io.BytesIO(data)), "n_frames", 1)
+        if fmt == "xlsx":
+            from openpyxl import load_workbook
+
+            wb = load_workbook(io.BytesIO(data), read_only=True)
+            try:
+                return len(wb.sheetnames)
+            finally:
+                wb.close()
+    except Exception:  # 数不出来就交给 parse 报具体错误
+        return 0
+    return 1
+
+
 def _ocr_method(ocr: OCRProvider) -> str:
     return "ocr_mock" if ocr.data_mode == "mock" else "ocr"
 
 
-async def _parse_pdf(data: bytes, ocr: OCRProvider, max_pages: int, scale: float) -> list[PageResult]:
+async def _run_all(jobs: list[Callable[[], Awaitable[None]]], concurrency: int) -> None:
+    """并发执行，任何一页失败就取消其余页并抛出第一个错误。"""
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def one(job: Callable[[], Awaitable[None]]) -> None:
+        async with sem:
+            await job()
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            for j in jobs:
+                tg.create_task(one(j))
+    except ExceptionGroup as eg:
+        raise eg.exceptions[0] from None
+
+
+async def _parse_pdf(
+    data: bytes,
+    ocr: OCRProvider,
+    max_pages: int,
+    scale: float,
+    concurrency: int,
+    on_progress: ProgressFn | None,
+) -> list[PageResult]:
     try:
         pdf = pdfium.PdfDocument(data)
     except pdfium.PdfiumError as e:
@@ -73,43 +133,53 @@ async def _parse_pdf(data: bytes, ocr: OCRProvider, max_pages: int, scale: float
         n = len(pdf)
         if n > max_pages:
             raise ParseError(f"PDF 共 {n} 页，超过上限 {max_pages} 页")
-        out: list[PageResult] = []
+        out: list[PageResult | None] = [None] * n
+        scanned: list[int] = []
         for i in range(n):
             page = pdf[i]
             try:
                 tp = page.get_textpage()
                 text = tp.get_text_range().replace("\r\n", "\n").replace("\r", "\n")
                 tp.close()
-                if sum(not c.isspace() for c in text) >= TEXT_LAYER_MIN_CHARS:
-                    out.append(
-                        PageResult(
-                            page=i + 1,
-                            method="text_layer",
-                            markdown=text.strip(),
-                            data_mode="real",
-                            chars=len(text),
-                        )
-                    )
-                    continue
-                img = page.render(scale=scale).to_pil()
-                md = await ocr.recognize(_png(img), page=i + 1)
-                out.append(
-                    PageResult(
-                        page=i + 1,
-                        method=_ocr_method(ocr),
-                        markdown=md,
-                        data_mode=ocr.data_mode,
-                        chars=len(md),
-                    )
-                )
             finally:
                 page.close()
-        return out
+            if sum(not c.isspace() for c in text) >= TEXT_LAYER_MIN_CHARS:
+                out[i] = PageResult(
+                    page=i + 1, method="text_layer", markdown=text.strip(), data_mode="real", chars=len(text)
+                )
+            else:
+                scanned.append(i)
+        done = n - len(scanned)
+        if on_progress:
+            await on_progress(done, n)
+
+        def job(i: int) -> Callable[[], Awaitable[None]]:
+            async def run() -> None:
+                nonlocal done
+                page = pdf[i]  # 渲染是同步调用，在事件循环里串行执行，pdfium 不会被并发访问
+                try:
+                    png = _png(page.render(scale=scale).to_pil())
+                finally:
+                    page.close()
+                md = await ocr.recognize(png, page=i + 1)
+                out[i] = PageResult(
+                    page=i + 1, method=_ocr_method(ocr), markdown=md, data_mode=ocr.data_mode, chars=len(md)
+                )
+                done += 1
+                if on_progress:
+                    await on_progress(done, n)
+
+            return run
+
+        await _run_all([job(i) for i in scanned], concurrency)
+        return [p for p in out if p is not None]
     finally:
         pdf.close()
 
 
-async def _parse_image(data: bytes, ocr: OCRProvider, max_pages: int) -> list[PageResult]:
+async def _parse_image(
+    data: bytes, ocr: OCRProvider, max_pages: int, concurrency: int, on_progress: ProgressFn | None
+) -> list[PageResult]:
     try:
         img = Image.open(io.BytesIO(data))
     except (UnidentifiedImageError, Image.DecompressionBombError) as e:
@@ -117,16 +187,52 @@ async def _parse_image(data: bytes, ocr: OCRProvider, max_pages: int) -> list[Pa
     frames = getattr(img, "n_frames", 1)
     if frames > max_pages:
         raise ParseError(f"图片共 {frames} 帧，超过上限 {max_pages}")
-    out: list[PageResult] = []
+    pngs: list[bytes] = []
     for i in range(frames):
         img.seek(i)
-        md = await ocr.recognize(_png(img), page=i + 1)
-        out.append(
-            PageResult(
+        pngs.append(_png(img))
+    out: list[PageResult | None] = [None] * frames
+    done = 0
+
+    def job(i: int) -> Callable[[], Awaitable[None]]:
+        async def run() -> None:
+            nonlocal done
+            md = await ocr.recognize(pngs[i], page=i + 1)
+            out[i] = PageResult(
                 page=i + 1, method=_ocr_method(ocr), markdown=md, data_mode=ocr.data_mode, chars=len(md)
             )
-        )
-    return out
+            done += 1
+            if on_progress:
+                await on_progress(done, frames)
+
+        return run
+
+    await _run_all([job(i) for i in range(frames)], concurrency)
+    return [p for p in out if p is not None]
+
+
+def render_page_png(data: bytes, page: int, *, scale: float = 1.5) -> bytes | None:
+    """原件第 page 页的预览图（界面左侧原文对照用）。docx / xlsx 没有版面，返回 None。"""
+    fmt = sniff(data)
+    if fmt == "pdf":
+        pdf = pdfium.PdfDocument(data)
+        try:
+            if not 1 <= page <= len(pdf):
+                return None
+            p = pdf[page - 1]
+            try:
+                return _png(p.render(scale=scale).to_pil())
+            finally:
+                p.close()
+        finally:
+            pdf.close()
+    if fmt == "image":
+        img = Image.open(io.BytesIO(data))
+        if not 1 <= page <= getattr(img, "n_frames", 1):
+            return None
+        img.seek(page - 1)
+        return _png(img)
+    return None
 
 
 def _png(img: Image.Image) -> bytes:

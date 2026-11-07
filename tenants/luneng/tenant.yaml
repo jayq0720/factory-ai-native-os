@@ -15,7 +15,7 @@ roles:
     permissions: ["*.*:read", "*.*:approve", "platform.todo:write"]
   sales:
     name: 销售
-    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read", "doc.document:read", "doc.document:write"]
+    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read", "doc.document:read", "doc.document:write", "doc.field:write"]
   sales_lead:
     name: 销售负责人
     permissions: ["sales.*:*", "eng.*:read", "eng.quote:approve", "doc.*:*"]

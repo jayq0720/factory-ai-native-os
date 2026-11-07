@@ -15,7 +15,9 @@ from datetime import UTC, datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -192,10 +194,12 @@ class Document(Base):
     kind: Mapped[str] = mapped_column(
         String(16), default="other"
     )  # tech / tender / drawing / boq / receipt / other
-    status: Mapped[str] = mapped_column(String(16))  # parsed / failed
+    status: Mapped[str] = mapped_column(String(16))  # queued / parsing / extracting / parsed / failed
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     data_mode: Mapped[str] = mapped_column(String(8))
     page_count: Mapped[int] = mapped_column(Integer, default=0)
+    progress: Mapped[int] = mapped_column(Integer, default=0)  # 解析中：已完成页数
+    schema_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # 用哪份抽取 Schema
     uploaded_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -209,6 +213,34 @@ class DocumentPage(Base):
     data_mode: Mapped[str] = mapped_column(String(8))
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
     markdown: Mapped[str] = mapped_column(Text)
+
+
+class DocumentField(Base):
+    """从文档里抽取的字段（感知层结果，可重新抽取）。人工修改与确认记在 history 里留痕；
+    字段进入工程项目、报价等业务对象时再经 Ledger.append() 记账。"""
+
+    __tablename__ = "document_fields"
+
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    group_name: Mapped[str] = mapped_column(String(32))
+    type: Mapped[str] = mapped_column(String(16))
+    required: Mapped[bool] = mapped_column(Boolean, default=False)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))  # extracted / missing / corrected / confirmed
+    method: Mapped[str] = mapped_column(String(16))  # rule / llm / rule+llm / manual / none
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    conflict: Mapped[bool] = mapped_column(Boolean, default=False)  # 不同页给出了不一致的值
+    sources: Mapped[list] = mapped_column(JSON, default=list)  # [{page, quote, highlight}]
+    candidates: Mapped[list] = mapped_column(JSON, default=list)  # 全部候选值（含被选中的）
+    data_mode: Mapped[str] = mapped_column(String(8))
+    history: Mapped[list] = mapped_column(
+        JSON, default=list
+    )  # [{at, by, by_name, action, value, unit, note}]
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 # ---------------- 信道、Trigger、卡片（W5–W6） ----------------

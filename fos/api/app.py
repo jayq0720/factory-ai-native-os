@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -51,6 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.registry, st.ontologies, st.ledger = svc.registry, svc.ontologies, svc.ledger
         st.policies, st.approvals = svc.policies, svc.approvals
         st.llm, st.ocr, st.blobs, st.intake = svc.llm, svc.ocr, svc.blobs, svc.intake
+        st.extractor, st.jobs = svc.extractor, svc.jobs
+        await svc.jobs.recover()  # 上次没跑完的解析任务接着跑
         st.mock_channel = MockChannel()  # 模拟信道（非 prod 环境），见 channel_routes
         st.adapters = {}  # 按租户缓存的真实信道适配器（发卡片用）
         try:
@@ -82,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tenants": len(registry.ids()),
             "llm_mode": settings.llm_mode.value,
             "ocr_mode": settings.ocr_mode.value,
+            "llm_extraction": settings.extract_with_llm and settings.llm_mode.value == "litellm",
         }
 
     @app.get("/v1/me", response_model=MeOut)
@@ -112,6 +117,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except LLMError as e:
             return JSONResponse({"detail": str(e)}, status_code=502)
         return result.model_dump()
+
+    @app.get("/", include_in_schema=False)
+    async def index() -> RedirectResponse:
+        return RedirectResponse("/app/")
+
+    # 文档解析网页（静态文件，无构建步骤）；所有数据仍走 /v1 接口与 API Key
+    static = Path(__file__).parent.parent / "web" / "static"
+    app.mount("/app", StaticFiles(directory=static, html=True), name="web")
 
     app.include_router(ledger_router)
     app.include_router(document_router)

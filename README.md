@@ -5,6 +5,14 @@
 - 开发方案：`docs/development-plan.md`
 - 演示页面：`demo/index.html`（全部模拟数据）
 - 开发约定：`CLAUDE.md`
+- **文档解析（OCR）MVP**：`docs/ocr-mvp.md`。本机试用：
+
+  ```bash
+  uv venv && uv pip install -e .
+  export FOS_DATABASE_URL=sqlite+aiosqlite:///var/fos.db
+  .venv/bin/fos quickstart && .venv/bin/fos samples ./samples && .venv/bin/fos serve
+  # 打开 http://127.0.0.1:8000/app/
+  ```
 
 ## 目录
 
@@ -28,13 +36,13 @@ cargo test --workspace           # Rust
 
 ## 用 docker-compose 起一套空系统
 
+阿里云服务器（含 GPU 上部署 Xiaomi-OCR-0）用一键脚本，见 `docs/deploy-aliyun.md`。手动方式：
+
 ```bash
 cp deploy/.env.example deploy/.env      # 填入百炼 / DeepSeek API Key（不提交）
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
-docker compose -f deploy/docker-compose.yml exec api alembic upgrade head
-docker compose -f deploy/docker-compose.yml exec api fos create-user luneng jayq JayQ --roles admin
-docker compose -f deploy/docker-compose.yml exec api fos issue-key luneng jayq --label 本机调试
-curl -H "Authorization: Bearer <上一步输出的 key>" http://localhost:8000/v1/me
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build   # 默认 db + api；--profile gpu / llm / im 按需加
+docker compose -f deploy/docker-compose.yml exec api fos quickstart --login jayq --display-name JayQ
+# 网页 http://localhost:8000/app/ ，或 curl -H "Authorization: Bearer <上一步输出的 key>" http://localhost:8000/v1/me
 ```
 
 默认 `FOS_LLM_MODE=mock`，不调用任何模型；把它改成 `litellm` 后经 LiteLLM 调用百炼上的 DeepSeek / Qwen，百炼故障时切 DeepSeek 官方 API。

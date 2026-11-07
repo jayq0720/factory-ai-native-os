@@ -17,7 +17,8 @@ class LLMMode(StrEnum):
 
 class OCRMode(StrEnum):
     mock = "mock"  # 返回预置或占位结果，结果标记 data_mode=mock
-    xiaomi = "xiaomi"  # 调用 vLLM / SGLang 上部署的 Xiaomi-OCR-0（OpenAI 兼容接口）
+    xiaomi = "xiaomi"  # 调用 vLLM / SGLang / Ollama 上部署的 Xiaomi-OCR-0（OpenAI 兼容接口）
+    qwen_vl = "qwen_vl"  # 阿里云百炼 Qwen-VL-OCR（OpenAI 兼容接口，需要百炼 API Key）
 
 
 class Settings(BaseSettings):
@@ -36,13 +37,19 @@ class Settings(BaseSettings):
     # 文档解析
     blob_dir: Path = Field(default=Path("var/blobs"))  # 本地原件存储；生产换 OSS
     ocr_mode: OCRMode = OCRMode.mock
-    ocr_base_url: str = "http://localhost:8001/v1"
-    ocr_api_key: str = ""
-    ocr_model: str = "xiaomi-ocr-0"  # vLLM --served-model-name
+    ocr_base_url: str = ""  # 留空按模式取默认：xiaomi → http://localhost:8001/v1，qwen_vl → 百炼
+    ocr_api_key: str = ""  # qwen_vl 填百炼 API Key；本地 vLLM 一般不需要
+    ocr_model: str = ""  # 留空按模式取默认：xiaomi-ocr-0（vLLM --served-model-name）/ qwen-vl-ocr-latest
     ocr_timeout_s: float = 120.0
+    ocr_max_tokens: int = 4096  # 单页输出上限（Xiaomi-OCR-0 上下文 16384）
+    ocr_retries: int = 2  # 超时 / 5xx / 429 时重试次数
+    ocr_concurrency: int = 4  # 同一份文档同时识别的页数
     ocr_render_scale: float = 2.0  # PDF 扫描页渲染倍率（72 dpi × 2 ≈ 144 dpi）
     max_upload_mb: int = 50
     max_pages: int = 300
+    # 字段抽取：规则抽取总是运行；FOS_LLM_MODE=litellm 时再用模型补充（结果必须能在原文里找到）
+    extract_with_llm: bool = True
+    extract_chunk_chars: int = 6000
 
     # Agent 运行预算（方案 2.6 Budget Lease）：单次运行的上限
     agent_max_tokens: int = 40_000
