@@ -1,4 +1,5 @@
-"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）、Agent 运行（W7）。
+"""数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）、Agent 运行（W7）、
+审批与待办（W8）。
 
 约定：
 - 每张业务表都有 tenant_id，所有查询必须按 tenant_id 过滤（由 repository 层保证）。
@@ -360,3 +361,74 @@ class Run(Base):
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------- 审批与待办（W8） ----------------
+
+
+class Approval(Base):
+    """一张审批单：一个被 Policy 拦下、等人审批后才写入账本的事件。
+
+    审批单本身是治理记录，不是业务事实；审批通过后以申请人身份 Ledger.append()，
+    审批单作为事件的证据（evidence kind=approval）。
+    """
+
+    __tablename__ = "approvals"
+    __table_args__ = (
+        Index("ix_approvals_status", "tenant_id", "status", "created_at"),
+        Index("ix_approvals_requester", "tenant_id", "requester_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(80))
+    request: Mapped[dict] = mapped_column(JSON)  # 审批通过后要追加的 AppendRequest
+    rules: Mapped[list] = mapped_column(JSON)  # 命中的规则 [{id, name}]
+    steps: Mapped[list] = mapped_column(JSON)  # 审批步骤快照 [{name, role, permission, login, rule}]
+    current_step: Mapped[int] = mapped_column(Integer, default=0)
+    allow_self: Mapped[bool] = mapped_column(default=False)
+    decisions: Mapped[list] = mapped_column(
+        JSON, default=list
+    )  # [{step, user_id, name, decision, comment, at, via}]
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending"
+    )  # pending / approved / rejected / cancelled / expired / failed
+    requester_id: Mapped[str] = mapped_column(String(36))
+    requester_name: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(64))  # api / card:<id>
+    thread_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    data_mode: Mapped[str] = mapped_column(String(8))
+    notified_cards: Mapped[list] = mapped_column(JSON, default=list)  # 发给审批人的卡片 id
+    result: Mapped[dict] = mapped_column(JSON, default=dict)  # 记账结果或失败原因
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Todo(Base):
+    """待办：提醒、整改、复查之类“需要某人去做”的事。指派给某个人或某个角色。"""
+
+    __tablename__ = "todos"
+    __table_args__ = (
+        Index("ix_todos_user", "tenant_id", "assignee_user_id", "status"),
+        Index("ix_todos_role", "tenant_id", "assignee_role", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(80))
+    body: Mapped[str] = mapped_column(Text, default="")
+    assignee_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    assignee_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    object_type: Mapped[str | None] = mapped_column(String(48), nullable=True)  # 关联对象
+    object_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open / done / dismissed
+    source: Mapped[str] = mapped_column(String(64))  # api / agent:<skill> / system
+    data_mode: Mapped[str] = mapped_column(String(8), default="real")
+    created_by: Mapped[str] = mapped_column(String(64))
+    closed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

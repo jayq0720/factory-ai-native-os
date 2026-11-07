@@ -18,6 +18,7 @@ from fos.api.agent_routes import router as agent_router
 from fos.api.channel_routes import router as channel_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
 from fos.api.document_routes import router as document_router
+from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
 from fos.channels.mock import MockChannel
 from fos.config import Settings, get_settings
@@ -50,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.services = svc
         st.settings, st.engine, st.sessionmaker = settings, svc.engine, svc.sessionmaker
         st.registry, st.ontologies, st.ledger = svc.registry, svc.ontologies, svc.ledger
+        st.policies, st.approvals = svc.policies, svc.approvals
         st.llm, st.ocr, st.blobs, st.intake = svc.llm, svc.ocr, svc.blobs, svc.intake
         st.extractor, st.jobs = svc.extractor, svc.jobs
         await svc.jobs.recover()  # 上次没跑完的解析任务接着跑
@@ -128,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(document_router)
     app.include_router(channel_router)
     app.include_router(agent_router)
+    app.include_router(inbox_router)
     return app
 
 

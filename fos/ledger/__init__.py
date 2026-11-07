@@ -1,6 +1,8 @@
 from fos.ledger.service import (
     AppendRequest,
     AppendResult,
+    ApprovalGrant,
+    ApprovalRequired,
     Conflict,
     Evidence,
     Forbidden,
@@ -13,6 +15,8 @@ from fos.ledger.service import (
 __all__ = [
     "AppendRequest",
     "AppendResult",
+    "ApprovalGrant",
+    "ApprovalRequired",
     "Conflict",
     "Evidence",
     "Forbidden",

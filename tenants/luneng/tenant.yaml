@@ -12,7 +12,7 @@ roles:
     permissions: ["*.*:*"]
   gm:
     name: 总经理
-    permissions: ["*.*:read", "*.*:approve"]
+    permissions: ["*.*:read", "*.*:approve", "platform.todo:write"]
   sales:
     name: 销售
     permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read", "doc.document:read", "doc.document:write", "doc.field:write"]
@@ -36,7 +36,7 @@ roles:
     permissions: ["warehouse.*:read", "warehouse.*:write", "doc.document:read", "doc.document:write"]
   shift_lead:
     name: 班组长
-    permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read", "doc.document:write"]
+    permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read", "doc.document:write", "platform.todo:write"]
   worker:
     name: 工人
     permissions: ["production.record:write", "production.*:read", "doc.document:write"]

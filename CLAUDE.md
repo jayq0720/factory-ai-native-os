@@ -25,6 +25,7 @@
 - `fos/triggers/`：`intake.py` Trigger 入口与 Fast Path，`cards.py` 卡片确认（L2，以点击人身份 `Ledger.append()`）；API 在 `fos/api/channel_routes.py`；`fos channels run` 启动长连接
 - `fos/agents/`：`router.py`（分派）、`worker.py`（工具调用循环）、`runtime.py`（接 Trigger、Thread 直通、提议转卡片）；说明见 `docs/agents.md`
 - `fos/skills/` + `packs/<pack>/skills/<id>/{skill.yaml,SKILL.md}`：Skill 包；`fos/tools/`：Agent 工具（只读 + `ledger.propose`），权限 = Skill 上限 ∩ 提问人
+- `fos/policy/`：审批规则与红线（`schema.py`，`packs/<pack>/policy.yaml` + `tenants/<id>/policy.yaml`，作用在 `Ledger.append()`）、审批单（`approvals.py`）；API 在 `fos/api/inbox_routes.py`（`/v1/inbox`、`/v1/approvals`、`/v1/todos`、`/v1/policy`）；说明见 `docs/policy-and-inbox.md`
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 
@@ -36,6 +37,7 @@
 4. **模拟与真实不混用**：模拟结果带 `data_mode="mock"`，不能发布或导出正式文件。
 5. **业务事实只通过 `Ledger.append()` 写入**：不要直接改 `objects` / `object_links`（它们是投影，可随时重建），`events` 表数据库层禁止改删。新业务 = 在本体 YAML 里加对象类型和事件类型，一般不需要写 Python。
 6. **写操作只在人确认之后**：IM 消息是不可信输入，Agent 只提出卡片，确认时以点击人的权限执行；回复在事务提交后再发。
+   审批阈值和红线写在 policy.yaml，不要写进 Python 或 Skill；审批通过后以申请人身份入账。
 7. 厂端只执行白名单只读命令，协议里不存在写设备的命令。
 8. 文档、注释、界面文案用中文；标识符用英文。
 
@@ -46,6 +48,7 @@ uv venv && uv pip install -e ".[dev]"
 .venv/bin/pytest -q                                   # SQLite + 模拟 LLM
 FOS_TEST_DATABASE_URL=postgresql+asyncpg://... .venv/bin/pytest -q   # 真实 PostgreSQL（含并发测试）
 .venv/bin/fos ontology luneng                         # 校验并查看合并后的本体
+.venv/bin/fos policy luneng                           # 校验并查看审批规则
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 FOS_DATABASE_URL=postgresql+asyncpg://... .venv/bin/alembic upgrade head && .venv/bin/alembic check

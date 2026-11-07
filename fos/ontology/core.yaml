@@ -67,6 +67,18 @@ objects:
       amount: {type: number, name: 金额, unit: 元}
       status: {type: enum, name: 状态, values: [open, in_production, shipped, closed, cancelled]}
 
+  purchase_order:
+    name: 采购单
+    domain: purchase
+    properties:
+      supplier: {type: ref, target: supplier, name: 供应商, required: true}
+      material: {type: ref, target: material, name: 物料, required: true}
+      qty: {type: number, name: 数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      amount: {type: number, name: 金额, unit: 元, required: true}
+      due_date: {type: date, name: 交期}
+      status: {type: enum, name: 状态, values: [open, received, closed, cancelled]}
+
   production_batch:
     name: 生产批次
     domain: production
@@ -160,6 +172,21 @@ events:
     object: sales_order
     op: update
     permission: sales.order:write
+    fields: [status]
+
+  purchase.order_created:
+    name: 新建采购单
+    object: purchase_order
+    op: create
+    permission: purchase.order:write
+    description: 金额阈值的审批由 Policy 声明（tenants/<id>/policy.yaml），不写在这里
+    fields: [supplier, material, qty, unit, amount, due_date, status]
+
+  purchase.order_status_changed:
+    name: 采购单状态变更
+    object: purchase_order
+    op: update
+    permission: purchase.order:write
     fields: [status]
 
   production.batch_started:

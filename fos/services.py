@@ -18,6 +18,8 @@ from fos.ontology.loader import load_ontology
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.jobs import DocumentJobs
 from fos.perception.ocr import OCRProvider, make_ocr
+from fos.policy import Policy, load_policy
+from fos.policy.approvals import ApprovalService
 from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
 from fos.tenancy import TenantRegistry
@@ -33,7 +35,9 @@ class Services:
     sessionmaker: async_sessionmaker
     registry: TenantRegistry
     ontologies: dict[str, Ontology]
+    policies: dict[str, Policy]
     ledger: Ledger
+    approvals: ApprovalService
     llm: LLMClient
     ocr: OCRProvider
     blobs: LocalBlobStore
@@ -54,7 +58,16 @@ class Services:
             for tid in registry.ids()
             if (t := registry.get(tid)) is not None
         }
-        ledger = Ledger(lambda tid: ontologies[tid])
+        # 审批规则同样启动时校验（事件、字段、角色必须存在）
+        policies = {
+            tid: load_policy(
+                t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir, ontology=ontologies[tid]
+            )
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        ledger = Ledger(lambda tid: ontologies[tid], lambda tid: policies.get(tid))
+        approvals = ApprovalService(registry=registry, ontologies=ontologies, ledger=ledger)
         skills = {
             tid: load_skills(t, packs_dir=settings.packs_dir, ontology=ontologies[tid], tools=set(REGISTRY))
             for tid in registry.ids()
@@ -76,11 +89,15 @@ class Services:
             sessionmaker=sessionmaker,
             registry=registry,
             ontologies=ontologies,
+            policies=policies,
             ledger=ledger,
+            approvals=approvals,
             llm=llm,
             ocr=ocr,
             blobs=blobs,
-            intake=TriggerIntake(registry=registry, ledger=ledger, ocr=ocr, blobs=blobs, settings=settings),
+            intake=TriggerIntake(
+                registry=registry, ledger=ledger, ocr=ocr, blobs=blobs, settings=settings, approvals=approvals
+            ),
             skills=skills,
             runtime=AgentRuntime(
                 registry=registry, ontologies=ontologies, skills=skills, llm=llm, settings=settings
