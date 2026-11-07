@@ -1,0 +1,119 @@
+# 计划与排窑（W16，fos/planning/，说明见 docs/planning.md）。
+# 排窑建议由求解器（OR-Tools CP-SAT）算，人确认后才入账；确认的排窑计划 = 一版 kiln_plan + 若干计划装窑行。
+
+objects:
+  kiln_plan:
+    name: 排窑计划
+    domain: pmc
+    description: 计划员确认的一版排窑计划；新确认的版本把旧版本标为“已替代”。明细见计划装窑行（planned_run）
+    properties:
+      plan_no: {type: string, name: 计划编号, required: true}
+      horizon_start: {type: datetime, name: 计划开始, required: true}
+      horizon_end: {type: datetime, name: 计划结束, required: true}
+      status: {type: enum, name: 状态, values: [confirmed, superseded], required: true}
+      solver_status: {type: string, name: 求解结果}
+      note: {type: text, name: 说明}
+
+  planned_run:
+    name: 计划装窑行
+    domain: pmc
+    description: 一个计划窑次里给一个订单装多少；同一窑次装多个订单时有多行（窑次号、时间相同）
+    properties:
+      plan: {type: ref, target: kiln_plan, name: 排窑计划, required: true}
+      kiln: {type: ref, target: kiln, name: 窑炉, required: true}
+      run_no: {type: string, name: 计划窑次号, required: true}
+      start_at: {type: datetime, name: 装窑时间, required: true}
+      end_at: {type: datetime, name: 出窑时间, required: true}
+      product: {type: ref, target: product, name: 产品, required: true}
+      order: {type: ref, target: sales_order, name: 订单}
+      qty: {type: number, name: 装窑数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      ready_date: {type: date, name: 预计可发货日期}
+
+  recipe_material:
+    name: 配方用量
+    domain: rnd
+    description: 某配方版本每单位产品（产品计量单位）用多少某物料；计划员按它算物料需求
+    properties:
+      recipe: {type: ref, target: recipe, name: 配方版本, required: true}
+      material: {type: ref, target: material, name: 物料, required: true}
+      qty_per_unit: {type: number, name: 单位产品用量, required: true}
+      unit: {type: string, name: 用量单位, required: true}
+      loss_pct: {type: number, name: 损耗率, unit: "%"}
+
+extend:
+  kiln:
+    capacity: {type: number, name: 每窑装量}
+    capacity_unit: {type: string, name: 装量单位}
+    cycle_hours: {type: number, name: 烧成周期, unit: h}
+    plan_status: {type: enum, name: 排产状态, values: [available, maintenance, stopped]}
+  product:
+    firing_temp: {type: number, name: 烧成温度, unit: ℃}
+    firing_hours: {type: number, name: 产品烧成周期, unit: h}
+    firing_group: {type: string, name: 烧成组}
+  sales_order:
+    promised_date: {type: date, name: 承诺交期}
+
+events:
+  pmc.kiln_capacity_set:
+    name: 设置窑炉产能
+    description: 每窑装量、烧成周期（含装出窑、冷却）、能否排产；排窑求解器按这里算
+    object: kiln
+    op: update
+    permission: pmc.capacity:write
+    fields: [capacity, capacity_unit, cycle_hours, plan_status]
+
+  pmc.product_firing_set:
+    name: 设置产品烧成参数
+    description: 烧成温度（不能超过窑炉最高温度）、烧成周期（不填按窑炉周期）、烧成组（同组产品可以同窑装烧）
+    object: product
+    op: update
+    permission: pmc.capacity:write
+    fields: [firing_temp, firing_hours, firing_group]
+
+  pmc.kiln_plan_confirmed:
+    name: 确认排窑计划
+    object: kiln_plan
+    op: create
+    permission: pmc.plan:write
+    evidence: required   # 求解结果（calculation）+ 计划员确认
+    fields: [plan_no, horizon_start, horizon_end, status, solver_status, note]
+
+  pmc.kiln_plan_superseded:
+    name: 排窑计划被替代
+    object: kiln_plan
+    op: update
+    permission: pmc.plan:write
+    fields: [status]
+
+  pmc.run_planned:
+    name: 计划装窑
+    description: 装量、窑温、时间重叠等跨对象校验在 fos/planning/guard.py，账本层强制
+    object: planned_run
+    op: create
+    permission: pmc.plan:write
+    fields: [plan, kiln, run_no, start_at, end_at, product, order, qty, unit, ready_date]
+
+  pmc.delivery_promised:
+    name: 承诺交期
+    description: 计划员按确认的排窑计划给订单承诺交期（客户要求的交期仍是 due_date）
+    object: sales_order
+    op: update
+    permission: pmc.promise:write
+    evidence: required   # 排窑计划
+    fields: [promised_date]
+
+  rnd.recipe_material_set:
+    name: 登记配方用量
+    object: recipe_material
+    op: create
+    permission: rnd.recipe:approve
+    fields: [recipe, material, qty_per_unit, unit, loss_pct]
+
+  rnd.recipe_material_changed:
+    name: 修改配方用量
+    object: recipe_material
+    op: update
+    permission: rnd.recipe:approve
+    evidence: required
+    fields: [qty_per_unit, unit, loss_pct]

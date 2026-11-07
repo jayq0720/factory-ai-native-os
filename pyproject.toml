@@ -23,6 +23,7 @@ dependencies = [
   "python-docx>=1.1",  # MIT
   "openpyxl>=3.1",     # MIT
   "aiosqlite>=0.20",   # 本地试用（SQLite）；正式环境用 PostgreSQL
+  "ortools>=9.10",     # Apache-2.0；排窑求解（CP-SAT）
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,33 @@
+# 计划与排窑（fos/planning/，说明见 docs/planning.md）。全部是占位值，待六安绿能现场确认。
+# 租户可在 tenants/<id>/planning.yaml 里按段覆盖。窑炉装量、烧成周期是主数据（pmc.kiln_capacity_set），不在这里。
+
+horizon_days: 14            # 排多少天
+pre_firing_hours: 48        # 还没开工的量：配料、成型、干燥到能装窑要多久
+post_firing_hours: 48       # 出窑到能发货：冷却、出厂检验、包装
+default_cycle_hours: 48     # 窑炉没填烧成周期时用这个（会提示）
+max_runs_per_kiln: 60       # 每个窑在计划期内最多排多少窑次（求解规模上限）
+
+solver:
+  time_limit_s: 10          # 求解时间上限；到点返回目前最好的可行解（会标明不是最优）
+  workers: 8
+  # 目标权重：先保证排得下，再少逾期，再少开窑（装满）、再尽量早
+  weights:
+    shortfall: 1000         # 每排不下 1 个单位
+    late_hour: 10           # 每逾期 1 小时（按订单）
+    run: 50                 # 每多开一窑
+    finish_hour: 1          # 每个订单完成时间每晚 1 小时
+
+# 物料需求（MRP）
+materials:
+  stock_statuses: [accepted, concession]   # 算作现存的原料批次状态（W17 仓储上线前：到货批次合计，未扣领用）
+  incoming_statuses: [pending_inspection]  # 已到货待检：算作在途
+  po_statuses: [open]                      # 未到货的采购单：按交期算作在途
+
+# 新订单到来时自动评估交期（`fos channels run` 进程里轮询），推给这些角色的人
+watch:
+  poll_minutes: 5
+  lookback_hours: 24        # 只评估这么久之内新建的订单（进程重启不会把老订单全推一遍）
+  notify_roles: [planner]
+
+# 确认排窑计划后有缺料，推给这些角色的人
+shortage_notify_roles: [purchaser]
