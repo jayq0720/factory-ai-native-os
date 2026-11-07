@@ -1,10 +1,42 @@
-# 全云形态的最小部署：ECS + Docker Compose（方案 7.1）。
+# 全云形态的部署：ECS + Docker Compose（方案 7.1；阿里云步骤见 docs/deploy-aliyun.md）。
+#
+# 默认只起 db + api（网页在 http://<服务器>:${FOS_HTTP_PORT}/app/）。按需加 profile：
+#   --profile gpu   本机 GPU 上跑 Xiaomi-OCR-0（vLLM），配合 FOS_OCR_MODE=xiaomi
+#   --profile llm   LiteLLM 网关（百炼 DeepSeek / Qwen），配合 FOS_LLM_MODE=litellm
+#   --profile im    IM 长连接（钉钉 Stream），需要钉钉应用凭据
 # 生产数据库用 RDS PostgreSQL 时，去掉 db 服务并把 FOS_DATABASE_URL 指向 RDS。
+# 国内拉镜像慢时，用 *_IMAGE 变量换成阿里云 ACR 镜像加速地址或自建仓库。
 name: fos
+
+x-fos-env: &fos-env
+  FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD:?请在 deploy/.env 设置}@db:5432/fos
+  FOS_LLM_MODE: ${FOS_LLM_MODE:-mock}
+  FOS_LITELLM_BASE_URL: http://litellm:4000
+  FOS_LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-}
+  # 文档解析（docs/ocr-mvp.md）：mock / xiaomi（本机或另一台 GPU 机上的 vLLM）/ qwen_vl（百炼）
+  FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
+  FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-}
+  FOS_OCR_MODEL: ${FOS_OCR_MODEL:-}
+  FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
+  FOS_OCR_CONCURRENCY: ${FOS_OCR_CONCURRENCY:-4}
+  FOS_OCR_TIMEOUT_S: ${FOS_OCR_TIMEOUT_S:-120}
+  # 钉钉企业内部应用（发卡片、Stream 收消息）
+  FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
+  FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
+  FOS_DINGTALK_LUNENG_ROBOT_CODE: ${FOS_DINGTALK_LUNENG_ROBOT_CODE:-}
+  FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID: ${FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID:-}
+
+x-fos-build: &fos-build
+  context: ..
+  dockerfile: Dockerfile
+  args:
+    BASE_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+    PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: ${PG_IMAGE:-pgvector/pgvector:pg16}
+    restart: unless-stopped
     environment:
       POSTGRES_USER: fos
       POSTGRES_DB: fos
@@ -14,11 +46,63 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fos -d fos"]
       interval: 5s
-      retries: 10
+      retries: 20
+
+  api:
+    build: *fos-build
+    image: fos-api:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *fos-env
+    volumes:
+      - blobs:/data/blobs   # 原件；生产换 OSS
+    ports:
+      - "${FOS_HTTP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      retries: 12
+
+  # Xiaomi-OCR-0（0.8B）。权重先用 deploy/aliyun/download-model.sh 从 ModelScope 下载到 OCR_MODEL_DIR。
+  # 只在本机内网暴露，api 用 http://ocr:8001/v1 访问；不要在安全组里开放 8001。
+  ocr:
+    profiles: ["gpu"]
+    # 跑通后把 latest 换成当时验证过的具体版本号（需要支持 Qwen3_5ForConditionalGeneration）
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+    restart: unless-stopped
+    ipc: host
+    command:
+      - --model=/models/Xiaomi-OCR-0
+      - --served-model-name=xiaomi-ocr-0
+      - --host=0.0.0.0
+      - --port=8001
+      - --max-model-len=16384
+      - --gpu-memory-utilization=${OCR_GPU_MEMORY_UTILIZATION:-0.6}
+      - --max-num-seqs=${OCR_MAX_NUM_SEQS:-16}
+    volumes:
+      - ${OCR_MODEL_DIR:-/data/models/Xiaomi-OCR-0}:/models/Xiaomi-OCR-0:ro
+    environment:
+      HF_HUB_OFFLINE: "1"   # 只用本地权重，不连 Hugging Face
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8001/v1/models || python3 -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/v1/models')\""]
+      interval: 15s
+      start_period: 300s
+      retries: 20
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   litellm:
+    profiles: ["llm"]
     # 首次部署跑通后，把 main-stable 换成当时的具体版本号再固定
-    image: ghcr.io/berriai/litellm:main-stable
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-stable}
+    restart: unless-stopped
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
@@ -27,51 +111,17 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
 
-  api:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD}@db:5432/fos
-      FOS_LLM_MODE: ${FOS_LLM_MODE:-mock}
-      FOS_LITELLM_BASE_URL: http://litellm:4000
-      FOS_LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
-      # 文档解析：mock 或 xiaomi（Xiaomi-OCR-0 部署在 PAI-EAS / GPU ECS 上的 vLLM）
-      FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
-      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
-      FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
-      # 发卡片（POST /v1/cards）也要用钉钉应用凭据
-      FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
-      FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
-      FOS_DINGTALK_LUNENG_ROBOT_CODE: ${FOS_DINGTALK_LUNENG_ROBOT_CODE:-}
-      FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID: ${FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID:-}
-    volumes:
-      - blobs:/data/blobs   # 生产换 OSS
-    ports:
-      - "8000:8000"
-
   # IM 长连接（钉钉 Stream 不需要公网回调地址）。凭据只从 .env / KMS 注入。
   channels:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    profiles: ["im"]
+    build: *fos-build
+    image: fos-api:local
     command: ["fos", "channels", "run"]
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD}@db:5432/fos
-      FOS_OCR_MODE: ${FOS_OCR_MODE:-mock}
-      FOS_OCR_BASE_URL: ${FOS_OCR_BASE_URL:-http://ocr:8001/v1}
-      FOS_OCR_API_KEY: ${FOS_OCR_API_KEY:-}
-      FOS_DINGTALK_LUNENG_CLIENT_ID: ${FOS_DINGTALK_LUNENG_CLIENT_ID:-}
-      FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
-      FOS_DINGTALK_LUNENG_ROBOT_CODE: ${FOS_DINGTALK_LUNENG_ROBOT_CODE:-}
-      FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID: ${FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID:-}
+    environment: *fos-env
     volumes:
       - blobs:/data/blobs
 

@@ -9,11 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
 from fos.db.session import make_engine, make_sessionmaker
+from fos.extraction.schema import ExtractionSchema, load_schemas
+from fos.extraction.service import Extractor
 from fos.gateway.llm import LLMClient
 from fos.ledger import Ledger
 from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
 from fos.perception.blobs import LocalBlobStore
+from fos.perception.jobs import DocumentJobs
 from fos.perception.ocr import OCRProvider, make_ocr
 from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
@@ -37,6 +40,9 @@ class Services:
     intake: TriggerIntake
     skills: dict[str, dict[str, SkillDef]]
     runtime: AgentRuntime
+    schemas: dict[str, dict[str, ExtractionSchema]]
+    extractor: Extractor
+    jobs: DocumentJobs
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -57,10 +63,17 @@ class Services:
         llm = LLMClient.from_settings(settings)
         ocr = make_ocr(settings)
         blobs = LocalBlobStore(settings.blob_dir)
+        schemas = {
+            tid: load_schemas(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        extractor = Extractor(schemas, llm, settings)
+        sessionmaker = make_sessionmaker(engine)
         return cls(
             settings=settings,
             engine=engine,
-            sessionmaker=make_sessionmaker(engine),
+            sessionmaker=sessionmaker,
             registry=registry,
             ontologies=ontologies,
             ledger=ledger,
@@ -72,9 +85,13 @@ class Services:
             runtime=AgentRuntime(
                 registry=registry, ontologies=ontologies, skills=skills, llm=llm, settings=settings
             ),
+            schemas=schemas,
+            extractor=extractor,
+            jobs=DocumentJobs(sessionmaker, ocr, blobs, extractor, settings),
         )
 
     async def aclose(self) -> None:
+        await self.jobs.aclose()
         await self.ocr.aclose()
         await self.llm.aclose()
         await self.engine.dispose()

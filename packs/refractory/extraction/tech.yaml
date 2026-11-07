@@ -1,0 +1,98 @@
+# 技术文件字段（方案 4.2 工程字段 Schema 初版）。叫法（labels）按现场拿到的真实文件持续补充。
+# 字段类型：text / number / temperature / date / money / enum / list
+id: tech
+name: 技术文件字段
+version: 1
+kinds: [tech, drawing, boq]
+fields:
+  # ---------- 项目 ----------
+  - {key: customer_name, name: 客户名称, group: 项目, labels: [客户名称, 业主单位, 建设单位, 甲方, 需方, 客户]}
+  - {key: project_name, name: 项目名称, group: 项目, labels: [项目名称, 工程名称, 项目, Project]}
+  - {key: project_location, name: 项目地点, group: 项目, labels: [项目地点, 建设地点, 工程地点, 施工地点]}
+  - {key: delivery_period, name: 交货期/工期, group: 项目, labels: [交货期, 工期, 供货期, 交付时间, 完工时间]}
+  - {key: delivery_terms, name: 交货方式, group: 项目, labels: [交货方式, 交货条件, 运输方式]}
+
+  # ---------- 设备与部位 ----------
+  - key: furnace_type
+    name: 炉型
+    group: 设备与部位
+    type: enum
+    labels: [炉型, 窑型, 窑炉类型, 设备名称]
+    enum: [隧道窑, 梭式窑, 辊道窑, 回转窑, 推板窑, 钟罩窑, 台车炉, 加热炉, 热处理炉, 焚烧炉, 电炉, 退火炉, 锻造炉, 熔铝炉, 裂解炉]
+    scan_all: true
+    required: true
+  - key: position
+    name: 部位
+    group: 设备与部位
+    type: enum
+    labels: [部位, 施工部位, 改造部位, 使用部位]
+    enum: [炉顶, 炉墙, 侧墙, 端墙, 炉底, 炉门, 烟道, 窑车, 拱顶, 烧嘴砖, 烧成带, 预热带, 冷却带]
+    scan_all: true
+    multi: true
+    required: true
+  - {key: dimensions, name: 几何尺寸, group: 设备与部位, labels: [炉膛尺寸, 内腔尺寸, 有效尺寸, 外形尺寸, 尺寸, 规格]}
+
+  # ---------- 工况 ----------
+  - key: normal_temp
+    name: 正常工作温度
+    group: 工况
+    type: temperature
+    unit: ℃
+    labels: [正常工作温度, 工作温度, 使用温度, 操作温度, 烧成温度, working temperature]
+    exclude_before: [最高, 最低, 外壁, 炉壳, max]
+    required: true
+  - key: max_temp
+    name: 最高温度
+    group: 工况
+    type: temperature
+    unit: ℃
+    labels: [最高工作温度, 最高使用温度, 最高温度, 设计温度, 峰值温度, max]
+    required: true
+  - {key: thermal_cycle, name: 升降温制度/热震, group: 工况, labels: [升降温制度, 升温速率, 升温曲线, 烧成周期, 热震, 急冷急热, 冷热交替]}
+  - key: atmosphere
+    name: 气氛
+    group: 工况
+    type: enum
+    labels: [炉内气氛, 工作气氛, 气氛]
+    enum: [氧化, 弱还原, 还原, 中性, 含碱, 含硫, 含氢, 含氯, 真空, 保护气氛]
+    multi: true
+    required: true
+  - {key: corrosion, name: 介质侵蚀, group: 工况, labels: [侵蚀介质, 介质侵蚀, 腐蚀, 熔渣, 碱蒸汽]}
+  - {key: load_wear, name: 荷载与磨损, group: 工况, labels: [荷载, 承重, 磨损, 冲刷, 机械冲击]}
+  - key: shell_temp
+    name: 外壁温度要求
+    group: 工况
+    type: temperature
+    unit: ℃
+    labels: [外壁温度, 炉壳温度, 外表面温度, 壳体温度, 表面温度]
+    required: true
+  - {key: heat_loss, name: 热损失要求, group: 工况, type: number, unit: W/m², labels: [热损失, 散热损失, 热流密度]}
+
+  # ---------- 衬里 ----------
+  - {key: lining_structure, name: 衬里结构, group: 衬里, labels: [衬里结构, 炉衬结构, 内衬结构, 砌筑结构, 衬里型式]}
+  - {key: hot_face, name: 工作层, group: 衬里, labels: [工作层, 热面层, 耐火层]}
+  - {key: insulation_layer, name: 隔热/保温层, group: 衬里, labels: [隔热层, 保温层, 背衬层]}
+  - {key: total_thickness, name: 衬里总厚度, group: 衬里, type: number, unit: mm, labels: [总厚度, 衬里厚度, 炉衬厚度, 炉墙厚度]}
+  - {key: anchoring, name: 锚固方式, group: 衬里, labels: [锚固方式, 锚固件, 锚固]}
+
+  # ---------- 标准与验收 ----------
+  - key: standards
+    name: 执行标准
+    group: 标准与验收
+    type: list
+    labels: [执行标准, 验收标准, 施工标准, 参照标准]
+    patterns: ['(?:GB/T|GB|YB/T|JC/T|HG/T|SH/T|DL/T|JB/T)\s?\d{3,6}(?:\.\d+)?(?:[-—]\d{4})?']
+    required: true
+  - {key: inspection, name: 检测要求, group: 标准与验收, labels: [检测要求, 检验要求, 试验要求, 理化指标, 检测]}
+  - {key: warranty, name: 质保期, group: 标准与验收, labels: [质保期, 保修期, 质量保证期]}
+
+  # ---------- 工程量 ----------
+  - {key: area, name: 面积, group: 工程量, type: number, unit: m², multi: true, labels: [砌筑面积, 施工面积, 衬里面积, 面积]}
+  - {key: volume, name: 体积, group: 工程量, type: number, unit: m³, multi: true, labels: [体积, 方量, 浇注量]}
+  - {key: weight, name: 重量, group: 工程量, type: number, unit: t, multi: true, labels: [总重量, 重量, 总重, 吨位]}
+
+  # ---------- 商务 ----------
+  - {key: quote_validity, name: 报价有效期, group: 商务, labels: [报价有效期, 有效期]}
+  - {key: payment_terms, name: 付款方式, group: 商务, labels: [付款方式, 支付方式, 结算方式, 付款条件]}
+  - {key: tax_rate, name: 税率, group: 商务, type: number, unit: '%', labels: [税率, 增值税]}
+  - {key: packaging, name: 包装运输要求, group: 商务, labels: [包装要求, 包装, 运输要求]}
