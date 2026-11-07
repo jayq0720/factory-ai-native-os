@@ -32,6 +32,17 @@ class RoleDef(BaseModel):
         return v
 
 
+class DailyReportSchedule(BaseModel):
+    """每天定时推送生产日报（fos/reports/schedule.py）。"""
+
+    at: str = Field(default="19:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # 工厂时区的钟点
+    to: list[str] = Field(default_factory=list)  # 收报人登录名；各自按自己的权限出报告，发到绑定的 IM 单聊
+
+
+class ReportsConfig(BaseModel):
+    daily: DailyReportSchedule | None = None
+
+
 class TenantConfig(BaseModel):
     id: str
     name: str
@@ -41,6 +52,7 @@ class TenantConfig(BaseModel):
     roles: dict[str, RoleDef]
     # 自治级别上限：某类动作 Agent 最多能做到 L 几（方案 2.7）
     autonomy: dict[str, Literal["L0", "L1", "L2", "L3"]] = Field(default_factory=dict)
+    reports: ReportsConfig = Field(default_factory=ReportsConfig)
 
     @field_validator("id")
     @classmethod

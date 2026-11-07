@@ -9,6 +9,7 @@
    - 卡片按钮 / 文字指令「确认 K7Q2M」→ 卡片确认（L2）；
    - 图片、文件 → 直接进文档解析；认出是哪种单据（送货单、报工单……）就生成录单卡片（L2）；
    - 「追溯 批号」→ 直接查引用图回追溯报告（只读，零模型成本）；
+   - 「日报」「昨天日报」「日报 11-06」→ 直接从账本统计回生产日报（只读，零模型成本）；
    - 其他文字 → 交给 Router（fos.agents.runtime，事务提交后执行）。
 
 IM 消息是不可信输入：这里不把消息内容交给模型，也不据此执行任何写操作；写操作只发生在卡片确认，
@@ -41,6 +42,8 @@ from fos.ontology import Ontology
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.ocr import OCRProvider
 from fos.perception.service import IngestError, IngestResult, ingest_document
+from fos.reports.daily import DAILY, DailyConfig, daily_report, parse_day
+from fos.reports.daily import report_card as daily_card
 from fos.tenancy import TenantRegistry
 from fos.triggers.cards import (
     CODE_ALPHABET,
@@ -97,6 +100,7 @@ class TriggerIntake:
         extractor: Extractor | None = None,
         ontologies: dict[str, Ontology] | None = None,
         traces: dict[str, TraceConfig] | None = None,
+        dailies: dict[str, DailyConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -107,6 +111,7 @@ class TriggerIntake:
         self.extractor = extractor
         self.ontologies = ontologies or {}
         self.traces = traces or {}
+        self.dailies = dailies or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -188,6 +193,8 @@ class TriggerIntake:
                 await self._documents(session, adapter, msg, out, principal)
             elif msg.kind == "text" and (m := TRACE.match(msg.text.strip())) and self._can_trace(msg):
                 await self._trace(session, adapter, msg, out, principal, m.group(1))
+            elif msg.kind == "text" and msg.tenant_id in self.dailies and (d := self._daily_day(msg)):
+                await self._daily(session, msg, out, principal, d)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -385,6 +392,35 @@ class TriggerIntake:
             "elapsed_ms": report["elapsed_ms"],
         }
         await self._reply(adapter, msg, out, report_card(onto, cfg, report))
+
+    # ---------------- 日报（只读 Fast Path） ----------------
+
+    def _daily_day(self, msg: InboundMessage):
+        m = DAILY.match(msg.text.strip())
+        tenant = self.registry.get(msg.tenant_id)
+        if not m or tenant is None:
+            return None
+        today = msg.received_at.astimezone(ZoneInfo(tenant.timezone)).date()
+        return parse_day(m.group(1), m.group(2), today)
+
+    async def _daily(self, session, msg: InboundMessage, out: Outcome, principal: Principal, day):
+        trig = out.trigger
+        assert trig is not None
+        trig.route = "daily_report"
+        tenant = self.registry.get(msg.tenant_id)
+        assert tenant is not None
+        rep = await daily_report(
+            session,
+            onto=self.ontologies[msg.tenant_id],
+            cfg=self.dailies[msg.tenant_id],
+            trace=self.traces.get(msg.tenant_id),
+            principal=principal,
+            tz=ZoneInfo(tenant.timezone),
+            day=day,
+        )
+        trig.status = "done"
+        trig.result = {"date": rep["date"], "events": rep["events"], "alerts": len(rep["alerts"])}
+        await self._reply(None, msg, out, daily_card(rep))
 
     # ---------------- 工具 ----------------
 

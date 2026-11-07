@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>试点上线 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .pilot { max-width: 1100px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
+  .pilot > .card { padding: 16px 20px; }
+  .pilot h3 { margin: 14px 0 4px; font-size: 15px; }
+  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+  .pilot .row > * { flex: 0 0 auto; width: auto; }
+  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .pilot .bad { color: #b91c1c; }
+  .pilot .ok { color: #15803d; }
+  .pilot ul.lines { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据：这一天只有模拟（演示）记录</div>
+<header class="top">
+  <div class="brand"><span class="logo">工</span><b>试点上线</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <a class="btn small" href="./">文档解析</a>
+    <a class="btn small" href="eng.html">工程方案</a>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入 API Key（和其他页面共用，只保存在本机浏览器）。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="pilot" hidden>
+  <section class="card">
+    <h2>主数据导入</h2>
+    <p class="muted small">供应商、客户、物料、产品、设备、窑炉一次导入。先下载模板填好，点“预览”看每一行的结果；没有任何错误才能“入账”，入账以你的身份逐条写入账本，证据是这份文件和行号。已存在的会跳过，重复导入是安全的。</p>
+    <div class="row">
+      <button id="b-tpl" class="btn small">下载模板</button>
+      <input id="file" type="file" accept=".xlsx">
+      <button id="b-preview" class="btn small">预览</button>
+      <button id="b-commit" class="btn primary small" disabled>入账</button>
+    </div>
+    <div id="imp"></div>
+  </section>
+  <section class="card">
+    <h2>生产日报</h2>
+    <p class="muted small">由账本确定性统计（不经模型），只含你有权查看的内容。IM 里发“日报”“昨天日报”“日报 11-06”也可以。</p>
+    <div class="row">
+      <input id="day" type="date">
+      <button id="b-daily" class="btn small">查看</button>
+    </div>
+    <div id="daily"></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script src="pilot.js"></script>
+</body>
+</html>

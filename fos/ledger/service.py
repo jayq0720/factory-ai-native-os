@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -199,7 +199,8 @@ class Ledger:
             actor_id=principal.subject_id,
             actor_name=principal.display_name,
             data_mode=req.data_mode,
-            occurred_at=req.occurred_at or now,
+            # 统一存 UTC：PostgreSQL 本来如此；SQLite 不存时区，不转换会按各自时区的钟点混存
+            occurred_at=(req.occurred_at or now).astimezone(UTC),
             recorded_at=now,
             idempotency_key=req.idempotency_key,
             causation_id=req.causation_id,
