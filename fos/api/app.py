@@ -21,6 +21,7 @@ from fos.api.document_routes import router as document_router
 from fos.api.eng_routes import router as eng_router
 from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
+from fos.api.pilot_routes import router as pilot_router
 from fos.api.production_routes import router as production_router
 from fos.channels.mock import MockChannel
 from fos.config import Settings, get_settings
@@ -56,6 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.policies, st.approvals = svc.policies, svc.approvals
         st.llm, st.ocr, st.blobs, st.intake = svc.llm, svc.ocr, svc.blobs, svc.intake
         st.extractor, st.jobs, st.traces = svc.extractor, svc.jobs, svc.traces
+        st.dailies, st.imports = svc.dailies, svc.imports
         await svc.jobs.recover()  # 上次没跑完的解析任务接着跑
         st.mock_channel = MockChannel()  # 模拟信道（非 prod 环境），见 channel_routes
         st.adapters = {}  # 按租户缓存的真实信道适配器（发卡片用）
@@ -135,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inbox_router)
     app.include_router(eng_router)
     app.include_router(production_router)
+    app.include_router(pilot_router)
     return app
 
 

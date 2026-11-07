@@ -29,6 +29,7 @@
 - `fos/entry/`：拍照录单。`spec.py`（抽取 Schema 的 `entry:` 映射）、`draft.py`（字段 → 事件草稿、查已有对象、录单卡片）、`samples.py`（演示照片与主数据）；单据 Schema 在 `packs/<pack>/extraction/entry_*.yaml`；说明见 `docs/production-entry.md`
 - `fos/engineering/`：工程方案报价。`heat.py` 多层传热、`design.py` 用量 / BOM / 报价、`match.py` 衬里模板 + 硬约束选材、`review.py` 审核清单、`service.py` 建项目 / 方案版本 / 发布、`export.py` Word / Excel；本体 `packs/<pack>/ontology/engineering.yaml`，衬里模板 `packs/<pack>/engineering/linings.yaml`；API 在 `fos/api/eng_routes.py`，网页 `/app/eng.html`；说明见 `docs/engineering.md`
 - `fos/ledger/report.py`：批次追溯报告（上游 / 下游 / 关联 + 告警），配置 `packs/<pack>/trace.yaml`；IM「追溯 批号」走 Fast Path；API 在 `fos/api/production_routes.py`
+- `fos/onboarding/`：试点上线（W13）。`importer.py` 主数据 Excel 导入（模板 → 预览 → 全有或全无入账，配置 `packs/<pack>/import.yaml`），`check.py` 上线检查 `fos pilot-check`；`fos/reports/daily.py` 生产日报（配置 `packs/<pack>/reports.yaml`，IM「日报」走 Fast Path），`schedule.py` 定时推送（`tenant.yaml` 的 `reports.daily`）；API 在 `fos/api/pilot_routes.py`，网页 `/app/pilot.html`；说明见 `docs/pilot-go-live.md`
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 

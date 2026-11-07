@@ -1,0 +1,40 @@
+# 主数据批量导入（fos/onboarding/importer.py，说明见 docs/pilot-go-live.md）。
+# 一张工作表一类主数据，按这里的顺序导入：被引用的放前面（设备在窑炉前面）。
+# 列 = 事件字段的中文名（必填列带 *），第一列“编号”可留空（系统自动编号）。
+# key：判断“已经存在”和被其他表引用时按哪个属性查找（名称、牌号……）。
+# 一行按 events 顺序追加事件：第一个必须是创建事件，后面的更新事件只在这一行填了它的字段时追加。
+# 租户可在 tenants/<id>/import.yaml 追加工作表或覆盖枚举中文。
+
+sheets:
+  - {id: supplier, name: 供应商, events: [purchase.supplier_registered], key: name}
+  - {id: customer, name: 客户, events: [sales.customer_registered], key: name}
+  - {id: material, name: 物料, events: [warehouse.material_defined], key: name}
+  - {id: product, name: 产品, events: [sales.product_defined, sales.product_specified], key: code}
+  - {id: equipment, name: 设备, events: [eam.equipment_registered], key: name}
+  - {id: kiln, name: 窑炉, events: [production.kiln_registered], key: name}
+
+# 枚举值的中文（导入时中文和英文代码都认；模板批注里列出中文选项）
+value_names:
+  raw: 原料
+  auxiliary: 辅料
+  packaging: 包材
+  spare_part: 备件
+  insulating_brick: 隔热砖
+  dense_brick: 重质砖
+  fiber: 纤维制品
+  castable: 浇注料
+  mortar: 耐火泥浆
+  board: 板材
+  other: 其他
+  tunnel: 隧道窑
+  shuttle: 梭式窑
+  down_draft: 倒焰窑
+  roller: 辊道窑
+  rotary: 回转窑
+  direct: 直连
+  retrofit: 加装采集
+  manual: 人工抄表
+  running: 运行
+  idle: 停用
+  maintenance: 维修
+  retired: 报废

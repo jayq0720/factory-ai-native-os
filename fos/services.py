@@ -16,6 +16,7 @@ from fos.extraction.service import Extractor
 from fos.gateway.llm import LLMClient
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, load_trace_config
+from fos.onboarding.config import ImportConfig, load_import_config
 from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
 from fos.perception.blobs import LocalBlobStore
@@ -23,6 +24,7 @@ from fos.perception.jobs import DocumentJobs
 from fos.perception.ocr import OCRProvider, make_ocr
 from fos.policy import Policy, load_policy
 from fos.policy.approvals import ApprovalService
+from fos.reports.daily import DailyConfig, load_daily_config
 from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
 from fos.tenancy import TenantRegistry
@@ -52,6 +54,8 @@ class Services:
     jobs: DocumentJobs
     traces: dict[str, TraceConfig]
     engineering: dict[str, EngineeringConfig | None]
+    dailies: dict[str, DailyConfig]
+    imports: dict[str, ImportConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -91,7 +95,18 @@ class Services:
             for tid in registry.ids()
             if (t := registry.get(tid)) is not None
         }
-        check_configs(ontologies, schemas, traces)
+        # 试点上线（W13）：生产日报统计项、主数据导入工作表
+        dailies = {
+            tid: load_daily_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        imports = {
+            tid: load_import_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        check_configs(ontologies, schemas, traces, dailies, imports)
         # 工程模块：衬里模板与选材参数（没有的租户不开工程模块）
         engineering = {
             tid: load_engineering(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
@@ -125,6 +140,7 @@ class Services:
                 ontologies=ontologies,
                 traces=traces,
                 approvals=approvals,
+                dailies=dailies,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -135,6 +151,8 @@ class Services:
             jobs=DocumentJobs(sessionmaker, ocr, blobs, extractor, settings),
             traces=traces,
             engineering=engineering,
+            dailies=dailies,
+            imports=imports,
         )
 
     async def aclose(self) -> None:
@@ -148,13 +166,19 @@ def check_configs(
     ontologies: dict[str, Ontology],
     schemas: dict[str, dict[str, ExtractionSchema]],
     traces: dict[str, TraceConfig],
+    dailies: dict[str, DailyConfig] | None = None,
+    imports: dict[str, ImportConfig] | None = None,
 ) -> None:
-    """录单映射、追溯配置对照本体检查；有问题拒绝启动（和本体校验一样，越早发现越好）。"""
+    """录单映射、追溯、日报、导入配置对照本体检查；有问题拒绝启动（和本体校验一样，越早发现越好）。"""
     errs: list[str] = []
     for tid, onto in ontologies.items():
         for s in schemas.get(tid, {}).values():
             if s.entry is not None:
                 errs += [f"[{tid}] {e}" for e in check_entry(s.id, {f.key for f in s.fields}, s.entry, onto)]
         errs += [f"[{tid}] {e}" for e in traces[tid].check(onto)]
+        if dailies and tid in dailies:
+            errs += [f"[{tid}] {e}" for e in dailies[tid].check(onto)]
+        if imports and tid in imports:
+            errs += [f"[{tid}] {e}" for e in imports[tid].check(onto)]
     if errs:
         raise ValueError("配置与本体不一致：\n" + "\n".join(errs))

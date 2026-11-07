@@ -1,0 +1,29 @@
+# 生产日报（fos/reports/daily.py，说明见 docs/pilot-go-live.md）。
+# 全部由账本事件确定性统计，不调用模型。按业务发生时间（occurred_at）落在工厂时区的那一天统计。
+# 每一项：
+#   events    统计哪些事件
+#   measure   count（事件数）或某个数值字段（先取事件里的值，没有再取对象当前值）
+#   unit      单位取自哪个字段（不同单位分开合计，不混加）
+#   group_by  按哪个字段分组（引用显示对象名称，枚举显示中文；中文见 trace.yaml 的 value_names）
+#   noun      计数的量词
+# 收报人只看到自己有读权限的项（对象读权限 <域>.<对象>:read）。
+# 告警沿用 trace.yaml 的 alerts，作用在当天有事件的对象上（检验不合格、来料判退、烧成偏差……）。
+# 租户可在 tenants/<id>/reports.yaml 里整体替换 daily.items。
+
+daily:
+  items:
+    - {title: 来料入库, events: [warehouse.lot_received], measure: qty, unit: unit, group_by: material}
+    - {title: 批次开工, events: [production.batch_started], measure: count, noun: 批, group_by: product}
+    - {title: 装窑, events: [production.batch_fired], measure: count, noun: 批, group_by: kiln_run}
+    - {title: 完工合格, events: [production.batch_completed], measure: good_qty, unit: unit, group_by: product}
+    - {title: 成品入库, events: [warehouse.batch_stocked], measure: count, noun: 批}
+    - {title: 窑次开始, events: [production.kiln_run_started], measure: count, noun: 次, group_by: kiln}
+    - {title: 窑次结束, events: [production.kiln_run_finished], measure: count, noun: 次, group_by: kiln}
+    - title: 检验
+      events: [quality.inspection_recorded, quality.batch_inspection_recorded]
+      measure: count
+      noun: 份
+      group_by: result
+    - {title: 来料处置, events: [quality.lot_dispositioned], measure: count, noun: 批, group_by: status}
+    - {title: 新订单, events: [sales.order_created], measure: amount, unit_text: 元}
+    - {title: 报价发布, events: [eng.quote_issued], measure: count, noun: 份}

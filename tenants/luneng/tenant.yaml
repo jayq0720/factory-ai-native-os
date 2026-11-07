@@ -57,3 +57,10 @@ autonomy:
   eng.quote: L2             # 报价发布：人确认
   kb.change: L2             # 知识库修改：管理员确认
   purchase.order: L2
+
+# 定时报表（W13）。收报人填登录名，上线时与现场确认（总经理、生产负责人……）；
+# 各自按自己的权限出报告，发到绑定的 IM 单聊。由 `fos channels run` 进程按点推送。
+reports:
+  daily:
+    at: "19:00"
+    to: []

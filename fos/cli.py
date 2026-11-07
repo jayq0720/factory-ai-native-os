@@ -15,6 +15,10 @@ fos samples <目录>                                   生成样例文件（技�
 fos production-demo [目录]                         拍照录单演示：登记模拟主数据 + 导出五张单据照片
 fos eng-demo                                       工程演示：写入演示知识库（模拟数据）
 fos ocr-check [--image 图片]                          对当前配置的 OCR 服务发一张图，看能否识别、耗时多少
+fos pilot-check <tenant>                              上线检查：逐项列出试点上线前还差什么（只读）
+fos import-template <tenant> <out.xlsx>               生成主数据导入模板（按本体）
+fos import <tenant> <file.xlsx> [--login admin] [--commit]   主数据导入：默认只预览，--commit 才入账
+fos daily-report <tenant> [--date 2026-11-07] [--login admin] [--send]   生产日报；--send 推送给收报人
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ from fos.tenancy import TenantRegistry
 async def _run_channels(tenant_ids: list[str]) -> int:
     from fos.channels.dingtalk import DingTalkAdapter, DingTalkApp, DingTalkStream
     from fos.channels.types import InboundMessage
+    from fos.reports.schedule import daily_loop
     from fos.services import Services
     from fos.triggers.intake import deliver
 
@@ -68,6 +73,10 @@ async def _run_channels(tenant_ids: list[str]) -> int:
 
         runs.append(DingTalkStream(app, handle).run_forever())
         print(f"{tid}: 钉钉 Stream 启动")
+        sched = tenant.reports.daily
+        if sched is not None and sched.to:
+            runs.append(daily_loop(svc, tid, adapter))
+            print(f"{tid}: 每天 {sched.at} 推送生产日报给 {'、'.join(sched.to)}")
     if not runs:
         print("没有可启动的信道", file=sys.stderr)
         await svc.aclose()
@@ -114,6 +123,18 @@ async def _run(args: argparse.Namespace) -> int:
         if rc == 0:
             print("打开 /app/eng.html：上传 fos samples 生成的技术要求 → 核对字段 → 建工程项目 → 匹配方案。")
         return rc
+    if args.cmd in ("pilot-check", "import-template", "import", "daily-report"):
+        from pathlib import Path
+
+        from fos.onboarding import commands
+
+        if args.cmd == "pilot-check":
+            return await commands.check(s, args.tenant)
+        if args.cmd == "import-template":
+            return await commands.import_template(s, args.tenant, Path(args.out))
+        if args.cmd == "import":
+            return await commands.import_file(s, args.tenant, args.login, Path(args.file), commit=args.commit)
+        return await commands.daily(s, args.tenant, args.login, args.date, send=args.send)
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
     registry = TenantRegistry.load(s.tenants_dir)
@@ -254,6 +275,21 @@ def main(argv: list[str] | None = None) -> int:
     qs.add_argument("--new-key", action="store_true", help="用户已存在时也再发一把 Key")
     oc = sub.add_parser("ocr-check")
     oc.add_argument("--image", default="")
+    pc = sub.add_parser("pilot-check", help="上线检查（只读）")
+    pc.add_argument("tenant")
+    it = sub.add_parser("import-template", help="生成主数据导入模板")
+    it.add_argument("tenant")
+    it.add_argument("out")
+    im = sub.add_parser("import", help="主数据导入：默认只预览")
+    im.add_argument("tenant")
+    im.add_argument("file")
+    im.add_argument("--login", default="admin")
+    im.add_argument("--commit", action="store_true", help="没有错误时入账")
+    dr = sub.add_parser("daily-report", help="生产日报")
+    dr.add_argument("tenant")
+    dr.add_argument("--date", default="")
+    dr.add_argument("--login", default="admin", help="按谁的权限出报告（不推送时）")
+    dr.add_argument("--send", action="store_true", help="推送给 tenant.yaml 里的收报人（同一天只推一次）")
     sv = sub.add_parser("serve")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
