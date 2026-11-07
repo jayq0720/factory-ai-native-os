@@ -298,7 +298,10 @@ async def build_draft(
             value: Any = v.const
             row.status, row.note = "default", "固定值"
         elif raw is not None:
+            shown = raw
             raw = v.map.get(raw, v.map.get(norm(raw), raw))
+            if raw != shown:
+                row.display = shown  # 给人看单据上的原话（合格），写入的是枚举值（pass）
             if p.type == "ref":
                 value = await _resolve_ref(session, onto, doc, p, raw, v.lookup or [], row)
             else:
@@ -322,6 +325,10 @@ async def build_draft(
             payload[key] = value
             if not row.display:
                 row.display = _display(value)
+                if p.type == "datetime":
+                    row.display = row.display[:16].replace("T", " ").removesuffix(" 00:00")
+                if p.unit and p.type == "number":
+                    row.display += f" {p.unit}"
         draft.rows.append(row)
 
     for r in draft.rows:

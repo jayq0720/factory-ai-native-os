@@ -26,6 +26,8 @@
 - `fos/agents/`：`router.py`（分派）、`worker.py`（工具调用循环）、`runtime.py`（接 Trigger、Thread 直通、提议转卡片）；说明见 `docs/agents.md`
 - `fos/skills/` + `packs/<pack>/skills/<id>/{skill.yaml,SKILL.md}`：Skill 包；`fos/tools/`：Agent 工具（只读 + `ledger.propose`），权限 = Skill 上限 ∩ 提问人
 - `fos/policy/`：审批规则与红线（`schema.py`，`packs/<pack>/policy.yaml` + `tenants/<id>/policy.yaml`，作用在 `Ledger.append()`）、审批单（`approvals.py`）；API 在 `fos/api/inbox_routes.py`（`/v1/inbox`、`/v1/approvals`、`/v1/todos`、`/v1/policy`）；说明见 `docs/policy-and-inbox.md`
+- `fos/entry/`：拍照录单。`spec.py`（抽取 Schema 的 `entry:` 映射）、`draft.py`（字段 → 事件草稿、查已有对象、录单卡片）、`samples.py`（演示照片与主数据）；单据 Schema 在 `packs/<pack>/extraction/entry_*.yaml`；说明见 `docs/production-entry.md`
+- `fos/ledger/report.py`：批次追溯报告（上游 / 下游 / 关联 + 告警），配置 `packs/<pack>/trace.yaml`；IM「追溯 批号」走 Fast Path；API 在 `fos/api/production_routes.py`
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 

@@ -222,7 +222,9 @@ def _fmt(onto: Ontology, cfg: TraceConfig, t: str, k: str, v: Any, labels: dict[
     if isinstance(v, str) and p.type == "datetime":
         v = v[:16].replace("T", " ")
     s = cfg.value_names.get(str(v), str(v))
-    return f"{s}{p.unit}" if p.unit and p.type == "number" else s
+    if p.type in ("number", "integer"):
+        return f"{p.name} {s}{p.unit or ''}"
+    return s
 
 
 def node_label(n: dict[str, Any]) -> str:
@@ -237,9 +239,14 @@ def describe_node(onto: Ontology, cfg: TraceConfig, n: dict[str, Any], labels) -
     s = n["state"] or {}
     t = n["object_type"]
     keys = cfg.show.get(t) or [k for k in onto.objects[t].properties][:3]
-    parts = [_fmt(onto, cfg, t, k, s[k], labels) for k in keys if s.get(k) not in (None, "", [])]
+    label = node_label(n)
+    parts = [
+        _fmt(onto, cfg, t, k, s[k], labels)
+        for k in keys
+        if s.get(k) not in (None, "", []) and not (isinstance(s[k], str) and s[k] in label)
+    ]
     head = "⚠" + "、".join(n["alerts"]) + " " if n["alerts"] else ""
-    return f"{head}{node_label(n)}" + (f" {' / '.join(parts)}" if parts else "")
+    return f"{head}{label}" + (f" {' / '.join(parts)}" if parts else "")
 
 
 def report_lines(onto: Ontology, cfg: TraceConfig, report: dict[str, Any]) -> list[tuple[str, str]]:

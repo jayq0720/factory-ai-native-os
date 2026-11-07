@@ -12,6 +12,7 @@ fos init-db                                          建表（SQLite 直接建�
 fos quickstart [--tenant luneng] [--login admin]     建表 + 建管理员 + 发 API Key（首次试用）
 fos serve [--host 0.0.0.0] [--port 8000]             启动网页与接口，网页在 /app/
 fos samples <目录>                                   生成样例文件（技术要求 / 招标文件 / 工程量清单）
+fos production-demo [目录]                         拍照录单演示：登记模拟主数据 + 导出五张单据照片
 fos ocr-check [--image 图片]                          对当前配置的 OCR 服务发一张图，看能否识别、耗时多少
 """
 
@@ -94,6 +95,17 @@ async def _run(args: argparse.Namespace) -> int:
         from fos.quickstart import ocr_check
 
         return await ocr_check(s, Path(args.image) if args.image else None)
+    if args.cmd == "production-demo":
+        from pathlib import Path
+
+        from fos.entry.samples import seed_master, write_photos
+
+        rc = await seed_master(s, args.tenant, args.login)
+        if rc == 0:
+            for f in write_photos(Path(args.out)):
+                print(f"照片：{f}")
+            print("在 IM（或模拟信道）依次发这五张照片，确认卡片后发“追溯 B261106-01”。")
+        return rc
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
     registry = TenantRegistry.load(s.tenants_dir)
@@ -197,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="fos")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("tenants")
+    pd = sub.add_parser("production-demo", help="拍照录单演示：登记模拟主数据并导出五张单据照片")
+    pd.add_argument("out", nargs="?", default="samples/production")
+    pd.add_argument("--tenant", default="luneng")
+    pd.add_argument("--login", default="admin")
     cu = sub.add_parser("create-user")
     cu.add_argument("tenant")
     cu.add_argument("login")
