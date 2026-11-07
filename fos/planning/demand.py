@@ -181,7 +181,9 @@ async def load_context(
         ks = k.state
         name = ks.get("name") or k.object_id
         if ks.get("plan_status") in UNAVAILABLE:
-            ctx.warnings.append(f"窑炉 {name} 在{'维修' if ks['plan_status'] == 'maintenance' else '停用'}，不排")
+            ctx.warnings.append(
+                f"窑炉 {name} 在{'维修' if ks['plan_status'] == 'maintenance' else '停用'}，不排"
+            )
             continue
         if num(ks.get("capacity")) <= 0 or not ks.get("capacity_unit"):
             ctx.warnings.append(f"窑炉 {name} 没有设置每窑装量和单位，不排")

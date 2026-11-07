@@ -26,6 +26,9 @@ from fos.orders.shipping import SHIP_EVENT, ShipmentGuard
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.jobs import DocumentJobs
 from fos.perception.ocr import OCRProvider, make_ocr
+from fos.planning import tools as planning_tools  # noqa: F401  注册计划排窑工具
+from fos.planning.config import PlanningConfig, load_planning_config
+from fos.planning.guard import RUN_EVENT, PlannedRunGuard
 from fos.policy import Policy, load_policy
 from fos.policy.approvals import ApprovalService
 from fos.reports.daily import DailyConfig, load_daily_config
@@ -61,6 +64,7 @@ class Services:
     dailies: dict[str, DailyConfig]
     imports: dict[str, ImportConfig]
     orders: dict[str, OrdersConfig]
+    planning: dict[str, PlanningConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -88,6 +92,13 @@ class Services:
             if (t := registry.get(tid)) is not None
         }
         ledger.add_guard(SHIP_EVENT, ShipmentGuard(orders))
+        # 计划排窑（W16）：只给本体里有窑炉和排窑计划的租户开
+        planning = {
+            tid: load_planning_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None and "kiln_plan" in ontologies[tid].objects
+        }
+        ledger.add_guard(RUN_EVENT, PlannedRunGuard(orders))
         approvals = ApprovalService(registry=registry, ontologies=ontologies, ledger=ledger)
         skills = {
             tid: load_skills(t, packs_dir=settings.packs_dir, ontology=ontologies[tid], tools=set(REGISTRY))
@@ -154,6 +165,7 @@ class Services:
                 approvals=approvals,
                 dailies=dailies,
                 orders=orders,
+                planning=planning,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -163,7 +175,7 @@ class Services:
                 llm=llm,
                 settings=settings,
                 tool_extras={
-                    tid: {"orders": orders[tid], "tz": ZoneInfo(t.timezone)}
+                    tid: {"orders": orders[tid], "planning": planning.get(tid), "tz": ZoneInfo(t.timezone)}
                     for tid in registry.ids()
                     if (t := registry.get(tid)) is not None
                 },
@@ -176,6 +188,7 @@ class Services:
             dailies=dailies,
             imports=imports,
             orders=orders,
+            planning=planning,
         )
 
     async def aclose(self) -> None:

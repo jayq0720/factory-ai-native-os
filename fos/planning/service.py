@@ -25,7 +25,17 @@ from fos.orders.data import get, num, referrers
 from fos.orders.progress import CLOSED
 from fos.orders.service import new_id
 from fos.planning.config import PlanningConfig
-from fos.planning.demand import NEW, Context, Demand, _all, add_demand, kiln_inputs, load_context, order_demand, pieces
+from fos.planning.demand import (
+    NEW,
+    Context,
+    Demand,
+    _all,
+    add_demand,
+    kiln_inputs,
+    load_context,
+    order_demand,
+    pieces,
+)
 from fos.planning.materials import material_plan
 from fos.planning.solver import Problem, Solution, solve, to_qty
 
@@ -205,7 +215,9 @@ async def draft_plan(session: AsyncSession, ctx: Context) -> dict[str, Any]:
     out = await summarize(session, ctx, runs_from_solution(ctx, sol))
     out["solver"] = {"status": sol.status, "seconds": sol.seconds}
     if sol.status == "feasible":
-        out["warnings"].insert(0, f"求解到时限（{ctx.cfg.solver.time_limit_s:g} 秒）还不是最优，可以再算一次或人工调整")
+        out["warnings"].insert(
+            0, f"求解到时限（{ctx.cfg.solver.time_limit_s:g} 秒）还不是最优，可以再算一次或人工调整"
+        )
     return out
 
 
@@ -213,7 +225,9 @@ async def draft_plan(session: AsyncSession, ctx: Context) -> dict[str, Any]:
 
 
 async def current_plan_obj(session: AsyncSession, tenant: str, mode: str):
-    plans = [p for p in await _all(session, tenant, "kiln_plan", mode) if p.state.get("status") == "confirmed"]
+    plans = [
+        p for p in await _all(session, tenant, "kiln_plan", mode) if p.state.get("status") == "confirmed"
+    ]
     return plans[-1] if plans else None
 
 
@@ -512,7 +526,9 @@ async def evaluate(
     label = row["order_no"]
     shortages = [m for m in plan["materials"]["shortages"] if label in m["orders"]]
     if row["short"] > EPS:
-        verdict = f"按现有窑炉和在手订单，{cfg.horizon_days} 天内排不下：还差 {row['short']:g} {row['unit']}。"
+        verdict = (
+            f"按现有窑炉和在手订单，{cfg.horizon_days} 天内排不下：还差 {row['short']:g} {row['unit']}。"
+        )
         ok = False
     elif row["late_days"]:
         verdict = f"预计 {row['ready_date']} 可发货，比交期 {row['due_date']} 晚 {row['late_days']} 天。"

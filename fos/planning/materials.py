@@ -1,6 +1,7 @@
 """物料需求（MRP）：按排窑计划算每种物料什么时候要多少，和现存、在途比，找出缺口。确定性计算。
 
-- 需求：每个计划装窑行里还没开工的量 × 当前配方版本的单位用量 × (1 + 损耗率)，在装窑前 pre_firing_hours 要到位；
+- 需求：每个计划装窑行里还没开工的量 × 当前配方版本的单位用量 × (1 + 损耗率)，
+  在装窑前 pre_firing_hours 要到位；
   订单里已开工的批次先抵扣（原料已经领走了）；
 - 现存：状态在 materials.stock_statuses 的原料批次合计（W17 仓储上线前没有领用记录，未扣领用，会偏多）；
 - 在途：已到货待检的批次（现在可用）+ 未到货采购单（按采购单交期到位，没交期的不计入时间线，单列）。
@@ -64,7 +65,8 @@ async def material_plan(session: AsyncSession, ctx: Context, runs: list[dict[str
                 continue
             if not ctx.ocfg.same_unit(d.unit, d.product.state.get("unit")):
                 warnings.append(
-                    f"订单 {d.order_no} 单位 {d.unit} 和产品计量单位 {d.product.state.get('unit')} 不同，未算物料"
+                    f"订单 {d.order_no} 单位 {d.unit} 和产品计量单位 "
+                    f"{d.product.state.get('unit')} 不同，未算物料"
                 )
                 continue
             lines = await _recipe_lines(session, ctx, d.product.object_id, cache)
@@ -78,7 +80,9 @@ async def material_plan(session: AsyncSession, ctx: Context, runs: list[dict[str
                 if m is None:
                     continue
                 if not ctx.ocfg.same_unit(ls.get("unit"), m.state.get("unit")):
-                    warnings.append(f"配方用量单位 {ls.get('unit')} 和物料 {m.state.get('name')} 的单位不同，未算")
+                    warnings.append(
+                        f"配方用量单位 {ls.get('unit')} 和物料 {m.state.get('name')} 的单位不同，未算"
+                    )
                     continue
                 q = new * num(ls.get("qty_per_unit")) * (1 + num(ls.get("loss_pct")) / 100)
                 mm = mats.setdefault(m.object_id, _Mat(m))

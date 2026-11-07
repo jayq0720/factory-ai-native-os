@@ -50,10 +50,6 @@ class PlanningConfig(BaseModel):
     watch: WatchConfig = Field(default_factory=WatchConfig)
     shortage_notify_roles: list[str] = Field(default_factory=lambda: ["purchaser"])
 
-    def check(self, roles: set[str]) -> list[str]:
-        bad = [r for r in [*self.watch.notify_roles, *self.shortage_notify_roles] if r not in roles]
-        return [f"planning.yaml 引用了不存在的角色：{'、'.join(bad)}"] if bad else []
-
 
 def _read(path: Path) -> dict[str, Any]:
     return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
