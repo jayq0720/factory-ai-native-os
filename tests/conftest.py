@@ -29,6 +29,8 @@ USERS = [
     ("gm2", "luneng", ["gm"]),
     ("purchaser", "luneng", ["purchaser"]),
     ("sales_lead", "luneng", ["sales_lead"]),
+    ("engineer", "luneng", ["engineer"]),
+    ("kb_admin", "luneng", ["kb_admin"]),
     ("other_admin", "other", ["admin"]),
 ]
 

@@ -33,3 +33,28 @@ rules:
     steps:
       - {name: 总经理审批, role: gm}
     expires_hours: 48
+
+  # ---------- 工程报价（方案 4.2 第 8 步：报价需销售负责人二次确认）----------
+  # 毛利率 = (材料净价 - 材料成本) / 材料净价，由报价代码确定性计算后写在事件里。
+  # 15% 与“低于成本不能报价”都是占位值，待试点确认。
+  eng_quote_confirm:
+    name: 工程报价需销售负责人确认
+    events: [eng.quote_issued]
+    steps:
+      - {name: 销售负责人确认, role: sales_lead}
+
+  eng_quote_low_margin:
+    name: 材料毛利率低于 15% 加总经理审批
+    events: [eng.quote_issued]
+    when:
+      - {field: gross_margin_pct, op: lt, value: 15}
+    steps:
+      - {name: 总经理审批, role: gm}
+
+  eng_quote_below_cost:
+    name: 报价低于材料成本不能发布
+    events: [eng.quote_issued]
+    effect: deny
+    reason: 报价低于材料成本，请调整折扣或价格
+    when:
+      - {field: gross_margin_pct, op: lt, value: 0}

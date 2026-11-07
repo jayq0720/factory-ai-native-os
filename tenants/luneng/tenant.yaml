@@ -21,10 +21,10 @@ roles:
     permissions: ["sales.*:*", "eng.*:read", "eng.quote:approve", "doc.*:*"]
   engineer:
     name: 工程技术
-    permissions: ["eng.*:read", "eng.*:write", "kb.*:read", "kb.change:write", "doc.*:read", "doc.*:write"]
+    permissions: ["eng.*:read", "eng.*:write", "kb.*:read", "kb.change:write", "doc.*:read", "doc.*:write", "sales.product:read", "sales.customer:read"]
   kb_admin:
     name: 知识库管理员
-    permissions: ["kb.*:*"]
+    permissions: ["kb.*:*", "sales.product:read"]
   planner:
     name: 计划员
     permissions: ["pmc.*:read", "pmc.*:write", "production.*:read", "warehouse.stock:read"]

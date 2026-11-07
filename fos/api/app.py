@@ -18,6 +18,7 @@ from fos.api.agent_routes import router as agent_router
 from fos.api.channel_routes import router as channel_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
 from fos.api.document_routes import router as document_router
+from fos.api.eng_routes import router as eng_router
 from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
 from fos.api.production_routes import router as production_router
@@ -132,6 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(channel_router)
     app.include_router(agent_router)
     app.include_router(inbox_router)
+    app.include_router(eng_router)
     app.include_router(production_router)
     return app
 

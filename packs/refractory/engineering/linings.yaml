@@ -1,0 +1,69 @@
+# 衬里结构模板与选材参数（方案 4.4“衬里结构模板”、4.2 第 5–7 步）。
+# 由资深工程师维护；租户可以用 tenants/<id>/engineering/linings.yaml 整体替换。
+# 所有数字只给确定性代码用（fos/engineering/），模型不参与计算。
+
+version: 1
+
+# 硬约束
+safety_margin: 100     # 工作层：分类温度 ≥ 最高温度 + 余量（℃）
+backup_margin: 50      # 后续各层：分类温度 ≥ 该层热面温度（最高温度工况）+ 余量（℃）
+default_shell_temp: 80 # 文件没给外壁温度要求时的默认目标（审核清单里会提示）
+default_ambient: 25    # 环境温度（℃）
+
+# 外表面换热：自然对流 h_c = C·ΔT^(1/3) + 辐射 h_r = εσ(Ts⁴−Ta⁴)/(Ts−Ta)
+surface:
+  emissivity: 0.8
+  convection: {wall: 1.31, roof: 1.52, floor: 0.64}
+
+# 报价默认值（可在方案里逐项修改）
+quote:
+  tax_rate: 13           # 文件没给税率时用
+  freight_per_t: 150     # 运费 元/t（按材料总重）
+  install_per_m2: 0      # 施工费 元/m²，0 表示只供料
+  low_margin_pct: 15     # 低于此毛利率在审核清单里提示（审批规则见 policy.yaml）
+
+# 辅料：砖砌体按体积配泥浆
+auxiliaries:
+  - {name: 耐火泥浆, category: mortar, per: brick_volume, rate: 0.12, unit: t}   # 每 m³ 砖用泥浆 0.12 t
+
+# 模板：炉型 + 部位 + 温度区间 → 分层结构与可选厚度。
+# thickness 列出可选厚度（mm），0 表示这一层可以不要；categories 是产品类别（本体 product.category）。
+templates:
+  - id: brick_fiber_board
+    name: 轻质砖 + 纤维板 + 隔热板
+    furnace_types: [隧道窑, 辊道窑, 梭式窑, 推板窑, 钟罩窑, 退火炉, 加热炉, 热处理炉]
+    positions: [炉墙, 侧墙, 端墙, 炉顶, 拱顶, 烧成带, 预热带, 冷却带]
+    temp_range: [900, 1500]
+    layers:
+      - {role: 工作层, categories: [insulating_brick, dense_brick], thickness: [114, 230]}
+      - {role: 隔热层, categories: [fiber, board], thickness: [50, 75, 100, 125]}
+      - {role: 保温层, categories: [board], thickness: [0, 30, 45, 60, 75]}
+    notes:
+      - 轻质砖采用配套耐火泥浆砌筑，灰缝不大于 2 mm，错缝砌筑。
+      - 纤维板、隔热板错缝铺设，接缝处用纤维毯塞实。
+      - 炉顶结构形式与锚固方案按客户图纸确认后补充。
+
+  - id: dense_brick_board
+    name: 重质砖 + 轻质砖 + 隔热板（高荷载 / 磨损部位）
+    furnace_types: []
+    positions: [炉底, 窑车, 烧嘴砖]
+    temp_range: [900, 1600]
+    layers:
+      - {role: 工作层, categories: [dense_brick], thickness: [114, 230]}
+      - {role: 隔热层, categories: [insulating_brick], thickness: [65, 114]}
+      - {role: 保温层, categories: [board], thickness: [0, 30, 45, 60]}
+    notes:
+      - 工作层重质砖湿砌，灰缝不大于 2 mm。
+      - 承重部位隔热层只用轻质砖，不用纤维制品。
+
+  - id: full_fiber
+    name: 全纤维内衬
+    furnace_types: [梭式窑, 台车炉, 热处理炉, 退火炉, 钟罩窑]
+    positions: [炉墙, 侧墙, 端墙, 炉顶, 炉门]
+    temp_range: [600, 1350]
+    layers:
+      - {role: 工作层, categories: [fiber], thickness: [100, 150, 200, 250]}
+      - {role: 背衬层, categories: [board], thickness: [0, 30, 50]}
+    notes:
+      - 纤维模块按顺排或人字排安装，预压缩量不小于 15%。
+      - 锚固件材质按热面温度选取（耐热钢 / 陶瓷锚固件）。
