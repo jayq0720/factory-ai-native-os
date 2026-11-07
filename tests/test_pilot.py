@@ -274,7 +274,9 @@ def test_daily_report_counts_from_ledger(client, h):
     assert all(a["object_type"] == "production_batch" for a in rep["alerts"])
 
     # 租户隔离：另一家工厂看不到
-    assert client.get("/v1/reports/daily", params={"date": DAY}, headers=h("other_admin")).json()["events"] == 0
+    assert (
+        client.get("/v1/reports/daily", params={"date": DAY}, headers=h("other_admin")).json()["events"] == 0
+    )
 
     nxt = client.get("/v1/reports/daily", params={"date": "2026-11-07"}, headers=h("admin")).json()
     assert {it["title"]: it for it in nxt["items"]}["来料入库"]["totals"] == [{"value": 100.0, "unit": "t"}]
