@@ -115,3 +115,14 @@ events:
     op: update
     permission: sales.product:write
     fields: [category, classification_temp, bulk_density]
+
+  quality.batch_inspection_recorded:
+    name: 录入批次理化检验
+    description: 一张检验报告一次录完：结论 + 各项理化指标（拍照录单用）
+    object: inspection
+    op: create
+    permission: quality.inspection:write
+    evidence: required   # 检验报告照片
+    fields: [kind, batch, material_lot, inspected_at, result, report_no, note, bulk_density,
+             cold_crushing_strength, thermal_conductivity, permanent_linear_change, refractoriness,
+             al2o3, fe2o3]

@@ -1,0 +1,41 @@
+# 录单：理化检验报告 → 批次出厂检验（结论 + 指标一次录完）。结论由报告给出，系统不替质检判定。
+id: entry_inspection_report
+name: 理化检验报告
+version: 1
+kinds: [receipt]
+detect: [检验报告, 检测报告, 理化性能, 理化指标, 检验单]
+fields:
+  - {key: report_no, name: 报告编号, group: 报告, labels: [报告编号, 检验编号, 报告号], required: true}
+  - {key: batch_no, name: 生产批号, group: 报告, labels: [生产批号, 样品批号, 批次号, 批号], exclude_before: [原料, 供方], required: true}
+  - {key: inspected_at, name: 检验日期, group: 报告, type: date, labels: [检验日期, 报告日期, 检测日期, 日期]}
+  - key: result
+    name: 检验结论
+    group: 报告
+    type: enum
+    labels: [检验结论, 结论, 判定, 综合判定]
+    enum: [不合格, 合格, 让步放行]
+    required: true
+  - {key: bulk_density, name: 体积密度, group: 指标, type: number, unit: g/cm³, labels: [体积密度]}
+  - {key: cold_crushing_strength, name: 常温耐压强度, group: 指标, type: number, unit: MPa, labels: [常温耐压强度, 耐压强度]}
+  - {key: thermal_conductivity, name: 导热系数, group: 指标, type: number, unit: W/(m·K), labels: [导热系数]}
+  - {key: permanent_linear_change, name: 加热永久线变化, group: 指标, type: number, unit: "%", labels: [加热永久线变化, 重烧线变化, 永久线变化]}
+  - {key: refractoriness, name: 耐火度, group: 指标, type: number, unit: ℃, labels: [耐火度]}
+  - {key: al2o3, name: Al₂O₃, group: 指标, type: number, unit: "%", labels: [Al2O3, Al₂O₃, 氧化铝]}
+  - {key: fe2o3, name: Fe₂O₃, group: 指标, type: number, unit: "%", labels: [Fe2O3, Fe₂O₃, 氧化铁]}
+entry:
+  event: quality.batch_inspection_recorded
+  object_id: {from: report_no}
+  occurred_at: inspected_at
+  fields:
+    kind: {const: final}
+    batch: {from: batch_no, lookup: []}
+    inspected_at: {from: inspected_at, default: now}
+    result: {from: result, map: {合格: pass, 不合格: fail, 让步放行: conditional}}
+    report_no: {from: report_no}
+    bulk_density: {from: bulk_density}
+    cold_crushing_strength: {from: cold_crushing_strength}
+    thermal_conductivity: {from: thermal_conductivity}
+    permanent_linear_change: {from: permanent_linear_change}
+    refractoriness: {from: refractoriness}
+    al2o3: {from: al2o3}
+    fe2o3: {from: fe2o3}

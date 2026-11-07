@@ -1,0 +1,25 @@
+# 录单：生产任务单 / 配料单 → 批次开工（记下用了哪几批原料，追溯的起点）
+id: entry_batch_start
+name: 生产任务单
+version: 1
+kinds: [receipt]
+detect: [生产任务单, 配料单, 投料单, 生产指令单, 配料记录]
+fields:
+  - {key: batch_no, name: 生产批号, group: 批次, labels: [生产批号, 批次号, 批号], exclude_before: [原料, 供方], required: true}
+  - {key: product, name: 产品, group: 批次, labels: [产品牌号, 牌号, 产品名称, 产品], required: true}
+  - {key: material_lots, name: 原料批号, group: 用料, labels: [原料批号, 原料批次, 所用原料, 投料批号], required: true}
+  - {key: planned_qty, name: 计划数量, group: 批次, type: number, labels: [计划数量, 计划产量, 投产数量]}
+  - {key: order_no, name: 订单号, group: 批次, labels: [订单号, 销售订单]}
+  - {key: started_at, name: 开工日期, group: 批次, type: date, labels: [开工日期, 生产日期, 投料日期, 日期]}
+entry:
+  event: production.batch_started
+  object_id: {from: batch_no}
+  occurred_at: started_at
+  fields:
+    product: {from: product, lookup: [code, name]}
+    material_lots: {from: material_lots, lookup: [supplier_lot_no]}
+    planned_qty: {from: planned_qty}
+    unit: {from: planned_qty, part: unit, default: 块}
+    order: {from: order_no, lookup: []}
+    started_at: {from: started_at, default: now}
+    status: {const: in_progress}

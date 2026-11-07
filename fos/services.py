@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
 from fos.db.session import make_engine, make_sessionmaker
+from fos.entry.spec import check_entry
 from fos.extraction.schema import ExtractionSchema, load_schemas
 from fos.extraction.service import Extractor
 from fos.gateway.llm import LLMClient
 from fos.ledger import Ledger
+from fos.ledger.report import TraceConfig, load_trace_config
 from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
 from fos.perception.blobs import LocalBlobStore
@@ -47,6 +49,7 @@ class Services:
     schemas: dict[str, dict[str, ExtractionSchema]]
     extractor: Extractor
     jobs: DocumentJobs
+    traces: dict[str, TraceConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -81,6 +84,12 @@ class Services:
             for tid in registry.ids()
             if (t := registry.get(tid)) is not None
         }
+        traces = {
+            tid: load_trace_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        check_configs(ontologies, schemas, traces)
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -96,7 +105,15 @@ class Services:
             ocr=ocr,
             blobs=blobs,
             intake=TriggerIntake(
-                registry=registry, ledger=ledger, ocr=ocr, blobs=blobs, settings=settings, approvals=approvals
+                registry=registry,
+                ledger=ledger,
+                ocr=ocr,
+                blobs=blobs,
+                settings=settings,
+                extractor=extractor,
+                ontologies=ontologies,
+                traces=traces,
+                approvals=approvals,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -105,6 +122,7 @@ class Services:
             schemas=schemas,
             extractor=extractor,
             jobs=DocumentJobs(sessionmaker, ocr, blobs, extractor, settings),
+            traces=traces,
         )
 
     async def aclose(self) -> None:
@@ -112,3 +130,19 @@ class Services:
         await self.ocr.aclose()
         await self.llm.aclose()
         await self.engine.dispose()
+
+
+def check_configs(
+    ontologies: dict[str, Ontology],
+    schemas: dict[str, dict[str, ExtractionSchema]],
+    traces: dict[str, TraceConfig],
+) -> None:
+    """录单映射、追溯配置对照本体检查；有问题拒绝启动（和本体校验一样，越早发现越好）。"""
+    errs: list[str] = []
+    for tid, onto in ontologies.items():
+        for s in schemas.get(tid, {}).values():
+            if s.entry is not None:
+                errs += [f"[{tid}] {e}" for e in check_entry(s.id, {f.key for f in s.fields}, s.entry, onto)]
+        errs += [f"[{tid}] {e}" for e in traces[tid].check(onto)]
+    if errs:
+        raise ValueError("配置与本体不一致：\n" + "\n".join(errs))

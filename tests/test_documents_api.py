@@ -198,7 +198,8 @@ def test_other_kind_has_no_fields_and_schema_switch(client, keys):
     r = client.post(f"/v1/documents/{doc_id}/extract", json={"schema_id": "tender"}, headers=_h(k)).json()
     assert r["schema_id"] == "tender" and r["summary"]["extracted"] > 10
     schemas = client.get("/v1/extraction/schemas", headers=_h(k)).json()["items"]
-    assert {s["id"] for s in schemas} == {"tech", "tender"}
+    assert {"tech", "tender"} <= {s["id"] for s in schemas}
+    assert {s["id"] for s in schemas if "receipt" in s["kinds"]} >= {"entry_delivery_note", "entry_work_report"}
 
 
 def test_failed_ocr_can_retry_and_restart_recovers(settings, keys, monkeypatch):

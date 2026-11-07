@@ -7,7 +7,8 @@
 4. 落到人：IM 账号 → 系统用户；没绑定的账号只回一句提示，不做任何事；
 5. 分流（零模型成本的确定性规则）：
    - 卡片按钮 / 文字指令「确认 K7Q2M」→ 卡片确认（L2）；
-   - 图片、文件 → 直接进文档解析；
+   - 图片、文件 → 直接进文档解析；认出是哪种单据（送货单、报工单……）就生成录单卡片（L2）；
+   - 「追溯 批号」→ 直接查引用图回追溯报告（只读，零模型成本）；
    - 其他文字 → 交给 Router（fos.agents.runtime，事务提交后执行）。
 
 IM 消息是不可信输入：这里不把消息内容交给模型，也不据此执行任何写操作；写操作只发生在卡片确认，
@@ -20,6 +21,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -29,14 +31,26 @@ from fos.channels.base import ChannelAdapter, ChannelError
 from fos.channels.cards import Card, CardField
 from fos.channels.types import ConversationRef, InboundMessage
 from fos.config import Settings
-from fos.db.models import CardRecord, ChannelIdentity, Thread, Trigger, User, utcnow
+from fos.db.models import CardRecord, ChannelIdentity, Event, Thread, Trigger, User, utcnow
+from fos.entry.draft import build_draft, draft_card
+from fos.extraction.service import Extractor, load_fields
 from fos.governance.principal import Principal, principal_for_user
 from fos.ledger import Ledger
+from fos.ledger.report import TraceConfig, find_root, report_card, trace_report
+from fos.ontology import Ontology
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.ocr import OCRProvider
-from fos.perception.service import IngestError, ingest_document
+from fos.perception.service import IngestError, IngestResult, ingest_document
 from fos.tenancy import TenantRegistry
-from fos.triggers.cards import CODE_ALPHABET, CODE_LEN, act_on_card, find_card, send_card_record
+from fos.triggers.cards import (
+    CODE_ALPHABET,
+    CODE_LEN,
+    LedgerAppendAction,
+    act_on_card,
+    find_card,
+    propose_card,
+    send_card_record,
+)
 
 if TYPE_CHECKING:
     from fos.policy.approvals import ApprovalService
@@ -47,6 +61,9 @@ log = logging.getLogger(__name__)
 COMMAND = re.compile(
     rf"^(?:@\S+\s+)*(\S{{1,10}})\s*#?([{CODE_ALPHABET}{CODE_ALPHABET.lower()}]{{{CODE_LEN}}})$"
 )
+# 「追溯 B20261107-01」「追溯：L2611…」，前面可以带 @机器人
+# 编号里至少有一个数字（"追溯客户投诉"这类自然语言仍交给 Router）
+TRACE = re.compile(r"^(?:@\S+\s+)*(?:追溯|查追溯|批次追溯)\s*[:：]?\s*([\w\-.]*\d[\w\-.]*)$")
 MAX_ATTACHMENTS = 5
 METHOD_TEXT = {
     "text_layer": "文字层",
@@ -77,6 +94,9 @@ class TriggerIntake:
         blobs: LocalBlobStore,
         settings: Settings,
         approvals: ApprovalService | None = None,
+        extractor: Extractor | None = None,
+        ontologies: dict[str, Ontology] | None = None,
+        traces: dict[str, TraceConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -84,6 +104,9 @@ class TriggerIntake:
         self.ocr = ocr
         self.blobs = blobs
         self.settings = settings
+        self.extractor = extractor
+        self.ontologies = ontologies or {}
+        self.traces = traces or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -163,6 +186,8 @@ class TriggerIntake:
                 await self._card_action(session, adapter, msg, out, principal, card, action)
             elif msg.attachments and msg.kind in ("image", "file", "rich"):
                 await self._documents(session, adapter, msg, out, principal)
+            elif msg.kind == "text" and (m := TRACE.match(msg.text.strip())) and self._can_trace(msg):
+                await self._trace(session, adapter, msg, out, principal, m.group(1))
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -232,7 +257,11 @@ class TriggerIntake:
                 continue
             d = r.document
             methods = sorted({METHOD_TEXT.get(p.method, p.method) for p in r.pages})
-            docs.append({"document_id": d.id, "status": d.status, "duplicate": r.duplicate})
+            info: dict[str, Any] = {"document_id": d.id, "status": d.status, "duplicate": r.duplicate}
+            docs.append(info)
+            entry = await self._entry(session, msg, out, principal, r, info)
+            if entry:
+                continue
             fields = [
                 CardField(label="文件", value=d.filename),
                 CardField(label="页数", value=str(d.page_count)),
@@ -244,12 +273,118 @@ class TriggerIntake:
                 title, text = "这份文件之前已收到", "不重复识别，沿用上次的结果。"
             else:
                 title, text = "已收到并识别", "原件和识别结果已保存，可以在控制台查看每一页。"
+                if self._entry_enabled(msg.tenant_id):
+                    text += "没有认出是哪种单据；如果要录单，发照片时附一句单据名（如“送货单”“报工单”）。"
             card = Card(
                 title=title, text=text, fields=fields, data_mode=d.data_mode, footer=f"文档 {d.id[:8]}"
             )
             await self._reply(adapter, msg, out, card)
         trig.result = {"documents": docs}
         trig.status = "done" if docs and all("document_id" in x for x in docs) else "failed"
+
+    # ---------------- 拍照录单（W9） ----------------
+
+    def _entry_enabled(self, tenant_id: str) -> bool:
+        return self.extractor is not None and self.extractor.has_detect(tenant_id, "receipt")
+
+    async def _entry(
+        self, session, msg: InboundMessage, out: Outcome, principal: Principal, r: IngestResult, info: dict
+    ) -> bool:
+        """认出单据就抽字段、生成录单草稿，回一张卡片。返回 False 表示不是单据，按普通文件回复。"""
+        d = r.document
+        if not self._entry_enabled(msg.tenant_id) or d.status != "parsed" or not r.pages:
+            return False
+        assert self.extractor is not None
+        schema = self.extractor.schema_for(d.tenant_id, d.kind, d.schema_id) if d.schema_id else None
+        if schema is None or schema.entry is None:
+            text = "\n".join([msg.text or "", *(p.markdown for p in r.pages)])
+            schema = self.extractor.detect(d.tenant_id, "receipt", text)
+        if schema is None or schema.entry is None:
+            return False
+        if d.schema_id != schema.id:
+            d.kind, d.schema_id = "receipt", schema.id
+            await self.extractor.run(session, d, r.pages)
+        elif not r.duplicate:
+            await self.extractor.run(session, d, r.pages)
+        tenant = self.registry.get(d.tenant_id)
+        assert tenant is not None
+        onto = self.ontologies[d.tenant_id]
+        draft = await build_draft(
+            session, onto, schema, d, await load_fields(session, d.id), tz=ZoneInfo(tenant.timezone)
+        )
+        info["entry"] = {"schema_id": schema.id, "ok": draft.ok, "problems": draft.problems}
+        prev = (
+            await session.scalars(
+                select(Event).where(
+                    Event.tenant_id == d.tenant_id, Event.idempotency_key == draft.idempotency_key
+                )
+            )
+        ).one_or_none()
+        if prev is not None:
+            info["entry"]["event_id"] = prev.id
+            await self._reply(
+                None,
+                msg,
+                out,
+                f"这张{schema.name}已经录过了（{prev.actor_name} 确认，事件序号 {prev.seq}），不重复入账。",
+            )
+            return True
+        card = draft_card(draft, d)
+        if not draft.ok or draft.request is None:
+            await self._reply(None, msg, out, card)
+            return True
+        thread_id = out.trigger.thread_id if out.trigger else None
+        assert thread_id is not None
+        rec = await propose_card(
+            session,
+            tenant_id=d.tenant_id,
+            to=msg.reply_to(),
+            thread_id=thread_id,
+            card=card,
+            created_by=f"entry:{schema.id}",
+            action=LedgerAppendAction(request=draft.request.model_copy(update={"correlation_id": thread_id})),
+            required_permission=onto.events[draft.event].permission,
+        )
+        info["entry"]["card_id"] = rec.id
+        out.outbox.append((msg.reply_to(), rec))
+        out.replies.append(
+            {"type": "card", "card_id": rec.id, "short_code": rec.short_code, "card": card.model_dump()}
+        )
+        return True
+
+    # ---------------- 追溯（只读 Fast Path） ----------------
+
+    def _can_trace(self, msg: InboundMessage) -> bool:
+        return msg.tenant_id in self.traces and msg.tenant_id in self.ontologies
+
+    async def _trace(
+        self, session, adapter, msg: InboundMessage, out: Outcome, principal: Principal, key: str
+    ):
+        trig = out.trigger
+        assert trig is not None
+        trig.route = "trace"
+        onto, cfg = self.ontologies[msg.tenant_id], self.traces[msg.tenant_id]
+        hits = await find_root(session, onto, cfg, principal, key)
+        if not hits:
+            trig.status, trig.result = "done", {"found": 0}
+            hint = "可以发生产批号、窑次号、原料批号或报告编号。"
+            await self._reply(adapter, msg, out, f"没有找到“{key}”。{hint}")
+            return
+        if len(hits) > 1:
+            ids = "、".join(f"{h.object_type}:{h.object_id}" for h in hits[:5])
+            trig.status, trig.result = "done", {"found": len(hits)}
+            await self._reply(adapter, msg, out, f"“{key}”对应多条记录（{ids}），请发完整编号。")
+            return
+        h = hits[0]
+        report = await trace_report(session, onto, cfg, principal, h.object_type, h.object_id)
+        trig.status = "done"
+        trig.result = {
+            "root": report["root"],
+            "nodes": len(report["nodes"]),
+            "alerts": report["alerts"],
+            "elapsed_ms": report["elapsed_ms"],
+        }
+        await self._reply(adapter, msg, out, report_card(onto, cfg, report))
 
     # ---------------- 工具 ----------------
 
@@ -269,7 +404,9 @@ class TriggerIntake:
             return None
         return principal_for_user(user, tenant)
 
-    async def _reply(self, adapter: ChannelAdapter, msg: InboundMessage, out: Outcome, body: str | Card):
+    async def _reply(
+        self, adapter: ChannelAdapter | None, msg: InboundMessage, out: Outcome, body: str | Card
+    ):
         """回复先排队，等事务提交后再由 deliver() 发出，避免“回复了已记账但其实回滚了”。"""
         out.outbox.append((msg.reply_to(), body))
         if isinstance(body, Card):

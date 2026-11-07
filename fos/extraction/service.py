@@ -16,7 +16,7 @@ from fos.db.models import Document, DocumentField, DocumentPage
 from fos.extraction.llm import extract_llm
 from fos.extraction.merge import combine, resolve
 from fos.extraction.rules import extract_rules
-from fos.extraction.schema import ExtractionSchema, schema_for_kind
+from fos.extraction.schema import ExtractionSchema, detect_schema, schema_for_kind
 from fos.gateway.llm import LLMClient
 
 log = logging.getLogger(__name__)
@@ -46,10 +46,21 @@ class Extractor:
             return ts.get(schema_id)
         return schema_for_kind(ts, kind)
 
+    def has_detect(self, tenant_id: str, kind: str) -> bool:
+        return any(s.detect and kind in s.kinds for s in self.schemas.get(tenant_id, {}).values())
+
+    def detect(self, tenant_id: str, kind: str | None, text: str) -> ExtractionSchema | None:
+        return detect_schema(self.schemas.get(tenant_id, {}), kind, text)
+
     async def run(
         self, session: AsyncSession, doc: Document, pages: list[DocumentPage]
     ) -> list[DocumentField] | None:
-        schema = self.schema_for(doc.tenant_id, doc.kind, doc.schema_id)
+        schema = None
+        if doc.schema_id is None:  # 同一类别有多份带 detect 的 Schema（各种单据）：按原文挑
+            schema = self.detect(doc.tenant_id, doc.kind, "\n".join(p.markdown for p in pages))
+            if schema is None and self.has_detect(doc.tenant_id, doc.kind):
+                return None  # 认不出是哪种单据就不猜，等人选
+        schema = schema or self.schema_for(doc.tenant_id, doc.kind, doc.schema_id)
         if schema is None or doc.status == "failed":
             return None
         doc.schema_id = schema.id

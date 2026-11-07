@@ -1,0 +1,15 @@
+# 录单：装窑记录 → 批次装窑烧成（把生产批次挂到窑次上）
+id: entry_kiln_loading
+name: 装窑记录
+version: 1
+kinds: [receipt]
+detect: [装窑记录, 装窑单, 入窑记录, 装车记录]
+fields:
+  - {key: batch_no, name: 生产批号, group: 装窑, labels: [生产批号, 批次号, 批号], exclude_before: [原料, 供方], required: true}
+  - {key: kiln_run, name: 窑次号, group: 装窑, labels: [窑次号, 窑次, 窑号批次], required: true}
+  - {key: date, name: 装窑日期, group: 装窑, type: date, labels: [装窑日期, 装窑时间, 日期]}
+entry:
+  event: production.batch_fired
+  object_id: {from: batch_no, lookup: []}
+  fields:
+    kiln_run: {from: kiln_run, lookup: [run_no]}

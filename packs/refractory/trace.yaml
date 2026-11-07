@@ -1,0 +1,55 @@
+# 批次追溯配置（fos/ledger/report.py）。租户可在 tenants/<id>/trace.yaml 追加。
+
+# 「追溯 XXX」按这个顺序找对象：先按对象编号，再按 keys 里的属性
+roots:
+  - {object: production_batch}
+  - {object: kiln_run, keys: [run_no]}
+  - {object: material_lot, keys: [supplier_lot_no]}
+  - {object: inspection, keys: [report_no]}
+  - {object: sales_order}
+
+# 报告里标红、放在最前面的情况
+alerts:
+  - {object: inspection, field: result, in: [fail], text: 检验不合格}
+  - {object: inspection, field: result, in: [conditional], text: 有条件放行}
+  - {object: material_lot, field: status, in: [rejected], text: 来料判退}
+  - {object: material_lot, field: status, in: [concession], text: 让步接收}
+  - {object: material_lot, field: status, in: [pending_inspection], text: 来料未检}
+  - {object: kiln_run, field: deviation, in: [true], text: 烧成温度偏差}
+  - {object: kiln_run, field: status, in: [aborted], text: 窑次中止}
+  - {object: production_batch, field: status, in: [scrapped], text: 已报废}
+
+# 每类对象在报告里显示的属性
+show:
+  production_batch: [product, planned_qty, good_qty, status]
+  material_lot: [material, supplier, supplier_lot_no, qty, status]
+  material: [name, spec]
+  supplier: [name]
+  kiln_run: [kiln, run_no, max_temp, deviation, status]
+  kiln: [name, kiln_type]
+  inspection: [kind, result, report_no, bulk_density, cold_crushing_strength, thermal_conductivity]
+  product: [code, name]
+  recipe: [code, version]
+  sales_order: [customer, qty, due_date]
+
+value_names:
+  pass: 合格
+  fail: 不合格
+  conditional: 有条件放行
+  incoming: 来料检验
+  process: 过程检验
+  final: 出厂检验
+  pending_inspection: 待检
+  accepted: 合格入库
+  rejected: 判退
+  concession: 让步接收
+  in_progress: 生产中
+  completed: 已完工
+  in_stock: 已入库
+  shipped: 已发货
+  scrapped: 已报废
+  firing: 烧成中
+  finished: 已出窑
+  aborted: 中止
+  tunnel: 隧道窑
+  shuttle: 梭式窑
