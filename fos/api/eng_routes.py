@@ -56,7 +56,8 @@ async def _designs(
     q = select(EngDesign).where(EngDesign.tenant_id == tenant_id, EngDesign.project_id == project_id)
     if not all_versions:
         q = q.where(EngDesign.status != "superseded")
-    return list(await session.scalars(q.order_by(EngDesign.label, EngDesign.version)))
+    rows = list(await session.scalars(q.order_by(EngDesign.label, EngDesign.version)))
+    return sorted(rows, key=lambda d: (not d.label.startswith("方案"), d.label, d.version))  # 客户方案排最后
 
 
 async def _stage(session, project: ObjectState, designs: list[EngDesign]) -> str:

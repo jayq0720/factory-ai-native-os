@@ -187,6 +187,7 @@ def build_review(
                 "medium",
                 "部分产品没有成本价，无法计算毛利率",
                 "请知识库管理员补充成本价",
+                blocking=True,
             )
         )
     elif margin is not None and margin < 0:

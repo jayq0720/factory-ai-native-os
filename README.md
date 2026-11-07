@@ -14,6 +14,7 @@
   # 打开 http://127.0.0.1:8000/app/
   ```
 - **拍照录单与批次追溯（M1）**：`docs/production-entry.md`。演示：`fos production-demo ./samples/production` 登记模拟主数据并导出五张单据照片。
+- **工程方案报价（M2）**：`docs/engineering.md`。技术文件 → 工程项目 → 选材匹配 → 方案 / BOM / 报价 → 审核 → 发布报价。演示：`fos eng-demo` 写入演示知识库，网页 `/app/eng.html`。
 
 ## 目录
 
