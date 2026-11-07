@@ -10,6 +10,7 @@
    - 图片、文件 → 直接进文档解析；认出是哪种单据（送货单、报工单……）就生成录单卡片（L2）；
    - 「追溯 批号」→ 直接查引用图回追溯报告（只读，零模型成本）；
    - 「日报」「昨天日报」「日报 11-06」→ 直接从账本统计回生产日报（只读，零模型成本）；
+   - 「订单 编号」「交期风险」「订单看板」→ 订单交付进度 / 看板（只读，零模型成本）；
    - 其他文字 → 交给 Router（fos.agents.runtime，事务提交后执行）。
 
 IM 消息是不可信输入：这里不把消息内容交给模型，也不据此执行任何写操作；写操作只发生在卡片确认，
@@ -39,6 +40,10 @@ from fos.governance.principal import Principal, principal_for_user
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, find_root, report_card, trace_report
 from fos.ontology import Ontology
+from fos.orders.cards import BOARD, ORDER, board_card, order_card
+from fos.orders.config import OrdersConfig
+from fos.orders.data import find_by
+from fos.orders.progress import order_board, order_progress
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.ocr import OCRProvider
 from fos.perception.service import IngestError, IngestResult, ingest_document
@@ -101,6 +106,7 @@ class TriggerIntake:
         ontologies: dict[str, Ontology] | None = None,
         traces: dict[str, TraceConfig] | None = None,
         dailies: dict[str, DailyConfig] | None = None,
+        orders: dict[str, OrdersConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -112,6 +118,7 @@ class TriggerIntake:
         self.ontologies = ontologies or {}
         self.traces = traces or {}
         self.dailies = dailies or {}
+        self.orders = orders or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -195,6 +202,10 @@ class TriggerIntake:
                 await self._trace(session, adapter, msg, out, principal, m.group(1))
             elif msg.kind == "text" and msg.tenant_id in self.dailies and (d := self._daily_day(msg)):
                 await self._daily(session, msg, out, principal, d)
+            elif msg.kind == "text" and self._can_orders(msg) and (om := ORDER.match(msg.text.strip())):
+                await self._order(session, msg, out, principal, om.group(1))
+            elif msg.kind == "text" and self._can_orders(msg) and BOARD.match(msg.text.strip()):
+                await self._board(session, msg, out, principal, BOARD.match(msg.text.strip()).group(1))
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -421,6 +432,68 @@ class TriggerIntake:
         trig.status = "done"
         trig.result = {"date": rep["date"], "events": rep["events"], "alerts": len(rep["alerts"])}
         await self._reply(None, msg, out, daily_card(rep))
+
+    # ---------------- 订单（只读 Fast Path） ----------------
+
+    def _can_orders(self, msg: InboundMessage) -> bool:
+        return msg.tenant_id in self.orders and msg.tenant_id in self.ontologies
+
+    def _today(self, msg: InboundMessage):
+        tenant = self.registry.get(msg.tenant_id)
+        assert tenant is not None
+        return msg.received_at.astimezone(ZoneInfo(tenant.timezone)).date()
+
+    async def _order(self, session, msg: InboundMessage, out: Outcome, principal: Principal, key: str):
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = "order", "done"
+        if not principal.can("sales.sales_order:read"):
+            await self._reply(None, msg, out, "你没有查看订单的权限（sales.sales_order:read）。")
+            return
+        onto, cfg, tid = self.ontologies[msg.tenant_id], self.orders[msg.tenant_id], msg.tenant_id
+        today = self._today(msg)
+        hits = await find_by(session, tid, "sales_order", "order_no", key)
+        if len(hits) == 1:
+            p = await order_progress(session, onto, cfg, principal, hits[0], today)
+            trig.result = {"order": p["order_id"], "stage": p["stage"], "risks": len(p["risks"])}
+            await self._reply(None, msg, out, order_card(p))
+            return
+        if len(hits) > 1:
+            trig.result = {"found": len(hits)}
+            ids = "、".join(h.object_id for h in hits[:5])
+            await self._reply(None, msg, out, f"订单号“{key}”对应多个订单（{ids}），请发订单编号。")
+            return
+        contracts = await find_by(session, tid, "contract", "contract_no", key)
+        if len(contracts) == 1:
+            c = contracts[0]
+            rows = await order_board(
+                session, onto, cfg, principal, today, include_done=True, contract=c.object_id
+            )
+            trig.result = {"contract": c.object_id, "orders": len(rows)}
+            title = f"合同 {c.state.get('contract_no') or c.object_id}"[:40]
+            await self._reply(None, msg, out, board_card(rows, title=title, today=today.isoformat()))
+            return
+        trig.result = {"found": 0}
+        await self._reply(None, msg, out, f"没有找到订单或合同“{key}”。可以发订单编号、订单号或合同编号。")
+
+    async def _board(self, session, msg: InboundMessage, out: Outcome, principal: Principal, word: str):
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = "order_board", "done"
+        if not principal.can("sales.sales_order:read"):
+            await self._reply(None, msg, out, "你没有查看订单的权限（sales.sales_order:read）。")
+            return
+        today = self._today(msg)
+        rows = await order_board(
+            session,
+            self.ontologies[msg.tenant_id],
+            self.orders[msg.tenant_id],
+            principal,
+            today,
+            only_risky=word == "交期风险",
+        )
+        trig.result = {"orders": len(rows)}
+        await self._reply(None, msg, out, board_card(rows, title=word, today=today.isoformat()))
 
     # ---------------- 工具 ----------------
 

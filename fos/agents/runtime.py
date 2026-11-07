@@ -51,12 +51,14 @@ class AgentRuntime:
         skills: dict[str, dict[str, SkillDef]],
         llm: LLMClient,
         settings: Settings,
+        tool_extras: dict[str, dict[str, Any]] | None = None,
     ):
         self.registry = registry
         self.ontologies = ontologies
         self.skills = skills
         self.llm = llm
         self.settings = settings
+        self.tool_extras = tool_extras or {}  # 按租户给工具的配置（如订单交付配置）
 
     async def process(self, sm: async_sessionmaker, adapter: ChannelAdapter, trigger_id: str) -> RunOutcome:
         async with sm() as session, session.begin():
@@ -134,7 +136,11 @@ class AgentRuntime:
             out.decision = "dispatch"
             skill = skills[d.skill or ""]
             ctx0 = ToolContext(
-                session=session, user=principal, skill=skill, ontology=self.ontologies[tenant.id]
+                session=session,
+                user=principal,
+                skill=skill,
+                ontology=self.ontologies[tenant.id],
+                extras=self.tool_extras.get(tenant.id, {}),
             )
             run = Run(
                 tenant_id=tenant.id,
@@ -157,7 +163,13 @@ class AgentRuntime:
             await session.flush()
 
         skill = skills[run.skill_id]
-        ctx = ToolContext(session=session, user=principal, skill=skill, ontology=self.ontologies[tenant.id])
+        ctx = ToolContext(
+            session=session,
+            user=principal,
+            skill=skill,
+            ontology=self.ontologies[tenant.id],
+            extras=self.tool_extras.get(tenant.id, {}),
+        )
         wr = await run_worker(
             self.llm,
             ctx,

@@ -16,14 +16,31 @@ rules:
     steps:
       - {name: 总经理审批, role: gm}
 
-  sales_order_large:
-    name: 订单金额 50 万元及以上需销售负责人和总经理审批
-    events: [sales.order_created]
+  # 合同评审：大额在登记合同时审批一次；合同拆出的订单行不再重复审批（只管没有合同的散单）
+  contract_large:
+    name: 合同金额 50 万元及以上需销售负责人和总经理审批
+    events: [sales.contract_signed, sales.contract_signed_from_quote]
     when:
       - {field: amount, op: gte, value: 500000}
     steps:
       - {name: 销售负责人审批, role: sales_lead}
       - {name: 总经理审批, role: gm}
+
+  sales_order_large:
+    name: 无合同订单金额 50 万元及以上需销售负责人和总经理审批
+    events: [sales.order_created]
+    when:
+      - {field: amount, op: gte, value: 500000}
+      - {field: contract, op: exists, value: false}
+    steps:
+      - {name: 销售负责人审批, role: sales_lead}
+      - {name: 总经理审批, role: gm}
+
+  order_rescheduled:
+    name: 订单交期变更需销售负责人确认
+    events: [sales.order_rescheduled]
+    steps:
+      - {name: 销售负责人确认, role: sales_lead}
 
   lot_concession:
     name: 来料让步接收需总经理审批

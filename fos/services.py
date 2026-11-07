@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -19,6 +20,9 @@ from fos.ledger.report import TraceConfig, load_trace_config
 from fos.onboarding.config import ImportConfig, load_import_config
 from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
+from fos.orders import tools as order_tools  # noqa: F401  注册订单工具
+from fos.orders.config import OrdersConfig, load_orders_config
+from fos.orders.shipping import SHIP_EVENT, ShipmentGuard
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.jobs import DocumentJobs
 from fos.perception.ocr import OCRProvider, make_ocr
@@ -56,6 +60,7 @@ class Services:
     engineering: dict[str, EngineeringConfig | None]
     dailies: dict[str, DailyConfig]
     imports: dict[str, ImportConfig]
+    orders: dict[str, OrdersConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -76,6 +81,13 @@ class Services:
             if (t := registry.get(tid)) is not None
         }
         ledger = Ledger(lambda tid: ontologies[tid], lambda tid: policies.get(tid))
+        # 订单交付（W14）：发货前的跨对象校验注册为账本守卫
+        orders = {
+            tid: load_orders_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+        }
+        ledger.add_guard(SHIP_EVENT, ShipmentGuard(orders))
         approvals = ApprovalService(registry=registry, ontologies=ontologies, ledger=ledger)
         skills = {
             tid: load_skills(t, packs_dir=settings.packs_dir, ontology=ontologies[tid], tools=set(REGISTRY))
@@ -141,10 +153,20 @@ class Services:
                 traces=traces,
                 approvals=approvals,
                 dailies=dailies,
+                orders=orders,
             ),
             skills=skills,
             runtime=AgentRuntime(
-                registry=registry, ontologies=ontologies, skills=skills, llm=llm, settings=settings
+                registry=registry,
+                ontologies=ontologies,
+                skills=skills,
+                llm=llm,
+                settings=settings,
+                tool_extras={
+                    tid: {"orders": orders[tid], "tz": ZoneInfo(t.timezone)}
+                    for tid in registry.ids()
+                    if (t := registry.get(tid)) is not None
+                },
             ),
             schemas=schemas,
             extractor=extractor,
@@ -153,6 +175,7 @@ class Services:
             engineering=engineering,
             dailies=dailies,
             imports=imports,
+            orders=orders,
         )
 
     async def aclose(self) -> None:

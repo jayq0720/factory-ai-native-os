@@ -43,6 +43,7 @@ class ToolContext:
     skill: SkillDef
     ontology: Ontology
     proposals: list[Proposal] = field(default_factory=list)
+    extras: dict[str, Any] = field(default_factory=dict)  # 租户级配置，如 orders（OrdersConfig）、tz
 
     @property
     def tenant_id(self) -> str:
