@@ -3,8 +3,10 @@
 - 需求：每个计划装窑行里还没开工的量 × 当前配方版本的单位用量 × (1 + 损耗率)，
   在装窑前 pre_firing_hours 要到位；
   订单里已开工的批次先抵扣（原料已经领走了）；
-- 现存：状态在 materials.stock_statuses 的原料批次合计（W17 仓储上线前没有领用记录，未扣领用，会偏多）；
-- 在途：已到货待检的批次（现在可用）+ 未到货采购单（按采购单交期到位，没交期的不计入时间线，单列）。
+- 现存：状态在 materials.stock_statuses 的原料批次的实时现存
+  （到货 − 领用 + 退料 ± 盘点，fos/supply/stock.py）；
+- 在途：已到货待检的批次现存（现在可用）+ 未到齐采购单的未到量
+  （按采购单交期到位，没交期的不计入时间线，单列）。
 """
 
 from __future__ import annotations
@@ -18,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fos.db.models import ObjectState
 from fos.orders.data import get, num, referrers
 from fos.planning.demand import NEW, Context, _all
+from fos.supply.guards import po_lots
+from fos.supply.stock import lot_balances
 
-STOCK_NOTE = "现存 = 合格到货批次合计，还没有扣领用（W17 仓储上线后改为实时库存）"
+STOCK_NOTE = "现存 = 合格 / 让步批次的实时库存（到货 − 领用 + 退料 ± 盘点）；在途 = 待检批次 + 采购单未到量"
 
 
 @dataclass
@@ -92,29 +96,38 @@ async def material_plan(session: AsyncSession, ctx: Context, runs: list[dict[str
         warnings.append(f"这些产品没有配方用量，算不出物料需求：{'、'.join(sorted(no_recipe))}")
 
     rows = []
+    bals = await lot_balances(session, ctx.tenant, material_ids=set(mats), mode=ctx.mode)
     for mid, mm in mats.items():
         unit = mm.obj.state.get("unit")
         on_hand = incoming = undated = 0.0
         arrivals: list[tuple[datetime, float]] = []
-        for lot in await referrers(session, ctx.tenant, "material_lot", "material", "material", [mid]):
-            ls = lot.state
-            if lot.data_mode != ctx.mode or not ctx.ocfg.same_unit(ls.get("unit"), unit):
+        for b in bals.values():
+            ls = b.lot.state
+            if ls.get("material") != mid or not ctx.ocfg.same_unit(ls.get("unit"), unit):
                 continue
             if ls.get("status") in ctx.cfg.materials.stock_statuses:
-                on_hand += num(ls.get("qty"))
+                on_hand += max(b.on_hand, 0.0)
             elif ls.get("status") in ctx.cfg.materials.incoming_statuses:
-                incoming += num(ls.get("qty"))
+                incoming += max(b.on_hand, 0.0)
         for po in await referrers(session, ctx.tenant, "purchase_order", "material", "material", [mid]):
             ps = po.state
             if po.data_mode != ctx.mode or ps.get("status") not in ctx.cfg.materials.po_statuses:
                 continue
             if not ctx.ocfg.same_unit(ps.get("unit"), unit):
                 continue
+            got = sum(
+                num(lot.state.get("qty"))
+                for lot in await po_lots(session, ctx.tenant, po)
+                if ctx.ocfg.same_unit(lot.state.get("unit"), unit)
+            )
+            left = max(num(ps.get("qty")) - got, 0.0)  # 已到的部分已经算在批次里
+            if left <= 1e-9:
+                continue
             if ps.get("due_date"):
                 due = datetime.fromisoformat(ps["due_date"])
-                arrivals.append((datetime.combine(due.date(), time(0), ctx.tz), num(ps.get("qty"))))
+                arrivals.append((datetime.combine(due.date(), time(0), ctx.tz), left))
             else:
-                undated += num(ps.get("qty"))
+                undated += left
         cum = 0.0
         worst = 0.0
         first = None

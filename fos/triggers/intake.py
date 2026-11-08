@@ -51,6 +51,8 @@ from fos.planning.cards import EVALUATE, PLAN, SHORTAGE, evaluation_card, plan_c
 from fos.planning.config import PlanningConfig
 from fos.reports.daily import DAILY, DailyConfig, daily_report, parse_day
 from fos.reports.daily import report_card as daily_card
+from fos.supply.cards import STOCK, SUGGEST, low_stock_card, material_card, suggestion_card
+from fos.supply.config import SupplyConfig
 from fos.tenancy import TenantRegistry
 from fos.triggers.cards import (
     CODE_ALPHABET,
@@ -110,6 +112,7 @@ class TriggerIntake:
         dailies: dict[str, DailyConfig] | None = None,
         orders: dict[str, OrdersConfig] | None = None,
         planning: dict[str, PlanningConfig] | None = None,
+        supply: dict[str, SupplyConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -123,6 +126,7 @@ class TriggerIntake:
         self.dailies = dailies or {}
         self.orders = orders or {}
         self.planning = planning or {}
+        self.supply = supply or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -212,6 +216,8 @@ class TriggerIntake:
                 await self._board(session, msg, out, principal, BOARD.match(msg.text.strip()).group(1))
             elif msg.kind == "text" and self._can_plan(msg) and (pm := _plan_word(msg.text.strip())):
                 await self._planning(session, msg, out, principal, *pm)
+            elif msg.kind == "text" and self._can_supply(msg) and (sm := _supply_word(msg.text.strip())):
+                await self._supply(session, msg, out, principal, *sm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -551,6 +557,62 @@ class TriggerIntake:
         trig.result = {"plan": p["plan"]["id"], "shortages": len(p["materials"]["shortages"])}
         await self._reply(None, msg, out, shortage_card(p["materials"], mode=p["data_mode"]))
 
+    # ---------------- 采购仓储（只读 Fast Path） ----------------
+
+    def _can_supply(self, msg: InboundMessage) -> bool:
+        return msg.tenant_id in self.supply and msg.tenant_id in self.orders
+
+    async def _supply(self, session, msg: InboundMessage, out: Outcome, principal: Principal, kind, arg):
+        from fos.supply.purchase import suggestions
+        from fos.supply.stock import material_stock
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"supply_{kind}", "done"
+        tid = msg.tenant_id
+        cfg, ocfg = self.supply[tid], self.orders[tid]
+        if kind == "suggest":
+            if not principal.can("purchase.purchase_requisition:read"):
+                await self._reply(
+                    None, msg, out, "你没有查看请购的权限（purchase.purchase_requisition:read）。"
+                )
+                return
+            tenant = self.registry.get(tid)
+            assert tenant is not None
+            s = await suggestions(
+                session,
+                tid,
+                cfg,
+                ocfg,
+                planning=self.planning.get(tid),
+                tz=ZoneInfo(tenant.timezone),
+                now=msg.received_at,
+            )
+            trig.result = {"suggestions": len(s["suggestions"])}
+            await self._reply(None, msg, out, suggestion_card(s, mode="real"))
+            return
+        if not principal.can("warehouse.material_lot:read"):
+            await self._reply(None, msg, out, "你没有查看库存的权限（warehouse.material_lot:read）。")
+            return
+        rows = (await material_stock(session, tid, cfg, ocfg))["materials"]
+        if not arg:
+            trig.result = {"materials": len(rows), "low": sum(r["below_safety"] for r in rows)}
+            await self._reply(None, msg, out, low_stock_card(rows, mode="real"))
+            return
+        hits = [r for r in rows if arg in (r["material"], r["name"])] or [r for r in rows if arg in r["name"]]
+        if len(hits) != 1:
+            trig.result = {"found": len(hits)}
+            names = "、".join(r["name"] for r in hits[:5])
+            await self._reply(
+                None,
+                msg,
+                out,
+                f"“{arg}”对应多种物料：{names}，请发全名。" if hits else f"没有找到物料“{arg}”。",
+            )
+            return
+        trig.result = {"material": hits[0]["material"]}
+        await self._reply(None, msg, out, material_card(hits[0], mode="real"))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -587,6 +649,17 @@ def _plan_word(text: str) -> tuple[str, str] | None:
         return "shortage", ""
     if m := EVALUATE.match(text):
         return "evaluate", m.group(1)
+    return None
+
+
+def _supply_word(text: str) -> tuple[str, str] | None:
+    if SUGGEST.match(text):
+        return "suggest", ""
+    if m := STOCK.match(text):
+        arg = (m.group(1) or "").strip()
+        if len(arg) > 30 or any(c in arg for c in "？?吗呢多少"):
+            return None  # 像一句话，交给 Agent
+        return "stock", "" if arg in ("预警", "不足") else arg
     return None
 
 

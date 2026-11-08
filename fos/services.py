@@ -34,6 +34,9 @@ from fos.policy.approvals import ApprovalService
 from fos.reports.daily import DailyConfig, load_daily_config
 from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
+from fos.supply import tools as supply_tools  # noqa: F401  注册采购仓储工具
+from fos.supply.config import SupplyConfig, load_supply_config
+from fos.supply.guards import COUNT_EVENT, ISSUE_EVENT, RECEIVE_EVENT, RETURN_EVENT, SupplyGuard
 from fos.tenancy import TenantRegistry
 from fos.tools import builtin  # noqa: F401  注册内置工具
 from fos.tools.registry import REGISTRY
@@ -65,6 +68,7 @@ class Services:
     imports: dict[str, ImportConfig]
     orders: dict[str, OrdersConfig]
     planning: dict[str, PlanningConfig]
+    supply: dict[str, SupplyConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -99,6 +103,14 @@ class Services:
             if (t := registry.get(tid)) is not None and "kiln_plan" in ontologies[tid].objects
         }
         ledger.add_guard(RUN_EVENT, PlannedRunGuard(orders))
+        # 采购与仓储（W17）：领料 / 退料 / 盘点、按采购单到货的跨对象校验注册为账本守卫
+        supply = {
+            tid: load_supply_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None and "stock_move" in ontologies[tid].objects
+        }
+        for ev in (ISSUE_EVENT, RETURN_EVENT, COUNT_EVENT, RECEIVE_EVENT):
+            ledger.add_guard(ev, SupplyGuard(ev, supply, orders))
         approvals = ApprovalService(registry=registry, ontologies=ontologies, ledger=ledger)
         skills = {
             tid: load_skills(t, packs_dir=settings.packs_dir, ontology=ontologies[tid], tools=set(REGISTRY))
@@ -166,6 +178,7 @@ class Services:
                 dailies=dailies,
                 orders=orders,
                 planning=planning,
+                supply=supply,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -175,7 +188,12 @@ class Services:
                 llm=llm,
                 settings=settings,
                 tool_extras={
-                    tid: {"orders": orders[tid], "planning": planning.get(tid), "tz": ZoneInfo(t.timezone)}
+                    tid: {
+                        "orders": orders[tid],
+                        "planning": planning.get(tid),
+                        "supply": supply.get(tid),
+                        "tz": ZoneInfo(t.timezone),
+                    }
                     for tid in registry.ids()
                     if (t := registry.get(tid)) is not None
                 },
@@ -189,6 +207,7 @@ class Services:
             imports=imports,
             orders=orders,
             planning=planning,
+            supply=supply,
         )
 
     async def aclose(self) -> None:

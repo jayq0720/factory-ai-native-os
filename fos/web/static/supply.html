@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>采购仓储 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .pilot { max-width: 1100px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
+  .pilot > .card { padding: 16px 20px; }
+  .pilot h3 { margin: 14px 0 4px; font-size: 15px; }
+  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+  .pilot .row > * { flex: 0 0 auto; width: auto; }
+  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .pilot .bad { color: #b91c1c; }
+  .pilot .ok { color: #15803d; }
+  .pilot ul.lines { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据：演示用库存和采购，确认后也只记为模拟数据</div>
+<header class="top">
+  <div class="brand"><span class="logo">工</span><b>采购仓储</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <a class="btn small" href="./">文档解析</a>
+    <a class="btn small" href="eng.html">工程方案</a>
+    <a class="btn small" href="pilot.html">试点上线</a>
+    <a class="btn small" href="plan.html">计划排窑</a>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入 API Key（和其他页面共用，只保存在本机浏览器）。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="pilot" hidden>
+  <section class="card">
+    <h2>实时库存</h2>
+    <p class="muted small">现存 = 到货 − 领用 + 退料 ± 盘点，由代码按账本算。可用 = 合格和让步接收的批次；待检、不合格的批次不能领（账本层强制）。</p>
+    <div class="row">
+      <select id="mode"><option value="real">正式数据</option><option value="mock">模拟数据</option></select>
+      <button id="b-stock" class="btn small">刷新</button>
+    </div>
+    <div id="stock"></div>
+    <h3>领料</h3>
+    <div class="row">
+      <input id="i-material" placeholder="物料 id（按先进先出分配）">
+      <span class="muted">或</span>
+      <input id="i-lot" placeholder="批次 id">
+      <input id="i-qty" type="number" min="0" step="0.001" placeholder="数量">
+      <input id="i-batch" placeholder="生产批次（可选）">
+      <button id="b-issue" class="btn small">确认领料</button>
+    </div>
+  </section>
+  <section class="card">
+    <h2>请购建议</h2>
+    <p class="muted small">按当前排窑计划的原料缺口和安全库存算，已扣掉还没下单的请购；建议供应商来自比价（能按时到的报价里最便宜）。勾选后点“生成请购单”才入账。</p>
+    <div class="row"><button id="b-suggest" class="btn small">计算请购建议</button><button id="b-raise" class="btn primary small" disabled>生成请购单</button></div>
+    <div id="suggest"></div>
+  </section>
+  <section class="card">
+    <h2>请购单与比价</h2>
+    <div class="row"><button id="b-reqs" class="btn small">刷新</button></div>
+    <div id="reqs"></div>
+    <div id="compare"></div>
+  </section>
+  <section class="card">
+    <h2>采购单与到货</h2>
+    <p class="muted small">金额 = 数量 × 单价，由代码算；超过审批阈值的采购单进入审批。到货按采购单登记，批次为“待检”，累计到货不能超订（容差见 supply.yaml）。</p>
+    <div class="row"><button id="b-pos" class="btn small">刷新</button></div>
+    <div id="pos"></div>
+  </section>
+  <section class="card">
+    <h2>供应商评分</h2>
+    <div class="row"><button id="b-sup" class="btn small">刷新</button></div>
+    <div id="sup"></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script src="supply.js"></script>
+</body>
+</html>

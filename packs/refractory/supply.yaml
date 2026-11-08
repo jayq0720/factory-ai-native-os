@@ -1,0 +1,19 @@
+# 采购与仓储（fos/supply/，说明见 docs/supply.md）。全部是占位值，待六安绿能现场确认。
+# 租户可在 tenants/<id>/supply.yaml 里按段覆盖（stock / receiving / requisition / suppliers）。
+# 物料的安全库存、采购提前期、最小起订量、常用供应商是主数据（账本事件），不在这里。
+
+stock:
+  usable_statuses: [accepted, concession]    # 能领用、算作现存的原料批次状态（红线：待检、不合格的批次不能领）
+  incoming_statuses: [pending_inspection]    # 已到货待检：不能领，但算作“马上能用”
+  low_stock_notify_roles: [warehouse, purchaser]   # 领料后低于安全库存，推给谁
+
+receiving:
+  over_receive_pct: 5        # 按采购单到货：累计到货 ≤ 采购数量 × (1 + 5%)，超了不能入账
+  closed_statuses: [closed, cancelled]   # 这些状态的采购单不能再到货
+
+requisition:
+  round_to_min_qty: true     # 请购建议数量不足最小起订量时，补到起订量
+
+suppliers:
+  window_days: 180           # 供应商评分看最近多少天的到货
+  weights: {quality: 60, on_time: 40}   # 来料合格率、准时率的权重（满分 100）

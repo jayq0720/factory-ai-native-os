@@ -32,7 +32,8 @@ roles:
   planner:
     name: 计划员
     permissions: ["pmc.*:read", "pmc.*:write", "production.*:read", "warehouse.*:read", "sales.sales_order:read",
-                  "sales.customer:read", "sales.product:read", "purchase.purchase_order:read"]
+                  "sales.customer:read", "sales.product:read", "purchase.purchase_order:read",
+                  "purchase.purchase_requisition:read"]
   purchaser:
     name: 采购
     permissions: ["purchase.*:read", "purchase.*:write", "warehouse.*:read", "doc.document:read", "doc.document:write",
@@ -41,7 +42,8 @@ roles:
     name: 仓管
     permissions: ["warehouse.*:read", "warehouse.*:write", "doc.document:read", "doc.document:write",
                   "sales.sales_order:read", "sales.customer:read", "sales.product:read", "sales.contract:read",
-                  "production.production_batch:read", "quality.inspection:read"]
+                  "production.production_batch:read", "quality.inspection:read",
+                  "purchase.purchase_order:read", "purchase.supplier:read"]
   shift_lead:
     name: 班组长
     permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read", "doc.document:write", "platform.todo:write"]
