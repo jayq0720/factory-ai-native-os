@@ -1,0 +1,64 @@
+# 窑炉监控（W19，fos/monitoring/，说明见 docs/kiln-monitoring.md）。
+# 读数是高频时序数据，存在 point_readings 表，不进账本；进账本的是测点主数据（登记 / 修改）和
+# 结束窑次时按读数算出的最高温度、偏差、能耗（人点“结束窑次”时入账，证据指向读数区间）。
+
+objects:
+  monitor_point:
+    name: 测点
+    domain: production
+    description: 一个温度 / 压力 / 气氛 / 电表 / 燃气表点位。三条接入路径（直连、加装采集、人工抄表）混用，读数进同一张时序表
+    properties:
+      code: {type: string, name: 测点编号, required: true}   # 和 fos-edge 配置里的点位 id 一致，例如 kiln1.zone18.temp
+      name: {type: string, name: 名称, required: true}
+      kiln: {type: ref, target: kiln, name: 所属窑炉}
+      kind: {type: enum, name: 类型, required: true,
+             values: [temperature, pressure, atmosphere, electricity, gas, other]}
+      unit: {type: string, name: 单位, required: true}
+      source: {type: enum, name: 接入路径, values: [direct, retrofit, manual], required: true}
+      edge_id: {type: string, name: 采集网关}            # 直连 / 加装采集的点位由哪台 fos-edge 上行
+      interval_s: {type: integer, name: 采样或抄表间隔, unit: s, required: true}
+      low_limit: {type: number, name: 下限}
+      high_limit: {type: number, name: 上限}
+      curve_role: {type: bool, name: 参与烧成曲线比对}     # 窑内代表温度点（如最高温区），一窑可以有多个
+      status: {type: enum, name: 状态, values: [active, retired], required: true}
+
+extend:
+  kiln:
+    firing_curve: {type: string, name: 默认烧成制度}     # 窑次里批次的配方没写烧成制度时用它；制度定义在 monitoring.yaml
+  kiln_run:
+    firing_curve: {type: string, name: 烧成制度}
+    electricity_kwh: {type: number, name: 耗电, unit: kWh}
+    gas_m3: {type: number, name: 耗气, unit: m³}
+    deviation_minutes: {type: number, name: 超差时长, unit: min}
+
+events:
+  production.point_registered:
+    name: 登记测点
+    object: monitor_point
+    op: create
+    permission: production.monitor_point:write
+    fields: [code, name, kiln, kind, unit, source, edge_id, interval_s, low_limit, high_limit, curve_role, status]
+
+  production.point_changed:
+    name: 修改测点
+    description: 改上下限、采样间隔、接入路径（例如抄表改为加装采集）、停用
+    object: monitor_point
+    op: update
+    permission: production.monitor_point:write
+    fields: [name, kiln, unit, source, edge_id, interval_s, low_limit, high_limit, curve_role, status]
+
+  production.kiln_curve_set:
+    name: 设置窑炉默认烧成制度
+    object: kiln
+    op: update
+    permission: production.kiln:write
+    fields: [firing_curve]
+
+  production.kiln_run_summarized:
+    name: 窑次读数汇总
+    description: 结束窑次时按读数算出（确定性代码）；和 production.kiln_run_finished 同时入账
+    object: kiln_run
+    op: update
+    permission: production.kiln:write
+    evidence: required   # sensor：测点 + 读数区间；calculation：曲线比对
+    fields: [firing_curve, electricity_kwh, gas_m3, deviation_minutes]

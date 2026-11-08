@@ -40,6 +40,7 @@ from fos.extraction.service import Extractor, load_fields
 from fos.governance.principal import Principal, principal_for_user
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, find_root, report_card, trace_report
+from fos.monitoring.config import MonitorConfig
 from fos.ontology import Ontology
 from fos.orders.cards import BOARD, ORDER, board_card, order_card
 from fos.orders.config import OrdersConfig
@@ -117,6 +118,7 @@ class TriggerIntake:
         planning: dict[str, PlanningConfig] | None = None,
         supply: dict[str, SupplyConfig] | None = None,
         tenders: dict[str, TenderConfig] | None = None,
+        monitoring: dict[str, MonitorConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -132,6 +134,7 @@ class TriggerIntake:
         self.planning = planning or {}
         self.supply = supply or {}
         self.tenders = tenders or {}
+        self.monitoring = monitoring or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -229,6 +232,12 @@ class TriggerIntake:
                 and (tm := TENDER.match(msg.text.strip()))
             ):
                 await self._tender(session, msg, out, principal, tm.group(1))
+            elif (
+                msg.kind == "text"
+                and msg.tenant_id in self.monitoring
+                and (km := _kiln_word(msg.text.strip()))
+            ):
+                await self._kiln(session, msg, out, principal, *km)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -686,6 +695,64 @@ class TriggerIntake:
             tender_card(t, ts.analysis_out(a, full=False) if a else None, risks, mode=o.data_mode),
         )
 
+    # ---------------- 窑炉监控（窑况只读；抄表 = 报数人本人输入数值） ----------------
+
+    async def _kiln(self, session, msg: InboundMessage, out: Outcome, principal: Principal, kind, args):
+        from fos.monitoring import service as ms
+        from fos.monitoring.cards import board_card, kiln_card, meter_reply
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"kiln_{kind}", "done"
+        tid = msg.tenant_id
+        cfg = self.monitoring[tid]
+        if kind == "meter":
+            if not principal.can("production.reading:write"):
+                trig.status = "rejected"
+                await self._reply(None, msg, out, "你没有抄表的权限（production.reading:write）。")
+                return
+            key, value = args
+            try:
+                p, _ = await ms.record_manual(
+                    session, principal, key, value, evidence=f"im:{msg.external_msg_id}"
+                )
+            except ms.MonitorError as e:
+                trig.status = "rejected"
+                await self._reply(None, msg, out, str(e))
+                return
+            warn = None
+            if p.high is not None and value > p.high:
+                warn = f"超上限 {p.high:g}{p.unit}，已通知班组长"
+            elif p.low is not None and value < p.low:
+                warn = f"低于下限 {p.low:g}{p.unit}，已通知班组长"
+            trig.result = {"point": p.code, "value": value}
+            await self._reply(None, msg, out, meter_reply(p.name, p.code, value, p.unit, warn))
+            return
+        if not principal.can("production.kiln:read"):
+            await self._reply(None, msg, out, "你没有查看窑炉的权限（production.kiln:read）。")
+            return
+        b = await ms.board(session, tid, cfg)
+        name = args[0]
+        if not name:
+            trig.result = {"kilns": len(b["kilns"])}
+            await self._reply(None, msg, out, board_card(b))
+            return
+        hits = [k for k in b["kilns"] if name in (k["kiln"], k["name"])] or [
+            k for k in b["kilns"] if name in k["name"]
+        ]
+        if len(hits) != 1:
+            trig.result = {"found": len(hits)}
+            names = "、".join(k["name"] for k in hits[:5])
+            await self._reply(
+                None,
+                msg,
+                out,
+                f"“{name}”对应多座窑炉：{names}，请发全名。" if hits else f"没有找到窑炉“{name}”。",
+            )
+            return
+        trig.result = {"kiln": hits[0]["kiln"]}
+        await self._reply(None, msg, out, kiln_card(hits[0], mode=b["data_mode"]))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -733,6 +800,19 @@ def _supply_word(text: str) -> tuple[str, str] | None:
         if len(arg) > 30 or any(c in arg for c in "？?吗呢多少"):
             return None  # 像一句话，交给 Agent
         return "stock", "" if arg in ("预警", "不足") else arg
+    return None
+
+
+def _kiln_word(text: str) -> tuple[str, tuple] | None:
+    from fos.monitoring.cards import BOARD, METER
+
+    if m := METER.match(text):
+        return "meter", (m.group(1), float(m.group(2)))
+    if m := BOARD.match(text):
+        arg = (m.group(1) or "").strip()
+        if any(c in arg for c in "？?吗呢怎么"):
+            return None  # 像一句话，交给 Agent
+        return "board", (arg,)
     return None
 
 

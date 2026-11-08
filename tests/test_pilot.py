@@ -89,7 +89,7 @@ def _good_book(client, h) -> bytes:
 
 def test_template_lists_sheets_and_required_columns(client, h):
     wb = _template(client, h)
-    assert wb.sheetnames == ["说明", "供应商", "客户", "物料", "产品", "设备", "窑炉"]
+    assert wb.sheetnames == ["说明", "供应商", "客户", "物料", "产品", "设备", "窑炉", "测点"]
     head = [c.value for c in wb["产品"][1]]
     assert head[:5] == ["编号", "牌号*", "名称*", "规格", "计量单位*"]
     assert "分类温度" in head  # 更新事件 sales.product_specified 的字段也在同一张表

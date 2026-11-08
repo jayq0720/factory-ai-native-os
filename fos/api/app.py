@@ -21,6 +21,7 @@ from fos.api.document_routes import router as document_router
 from fos.api.eng_routes import router as eng_router
 from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
+from fos.api.monitor_routes import router as monitor_router
 from fos.api.order_routes import router as order_router
 from fos.api.pilot_routes import router as pilot_router
 from fos.api.planning_routes import router as planning_router
@@ -147,6 +148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(planning_router)
     app.include_router(supply_router)
     app.include_router(tender_router)
+    app.include_router(monitor_router)
     return app
 
 

@@ -32,6 +32,7 @@ USERS = [
     ("engineer", "luneng", ["engineer"]),
     ("kb_admin", "luneng", ["kb_admin"]),
     ("planner", "luneng", ["planner"]),
+    ("edge", "luneng", ["edge"]),
     ("other_admin", "other", ["admin"]),
 ]
 

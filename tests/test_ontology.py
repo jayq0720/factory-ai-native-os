@@ -22,6 +22,7 @@ def test_layers_merge():
         "core",
         "pack:refractory",
         "pack:refractory/engineering",
+        "pack:refractory/monitoring",
         "pack:refractory/planning",
         "pack:refractory/tender",
     ]

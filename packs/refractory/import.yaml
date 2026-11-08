@@ -11,7 +11,8 @@ sheets:
   - {id: material, name: 物料, events: [warehouse.material_defined, purchase.material_sourcing_set], key: name}
   - {id: product, name: 产品, events: [sales.product_defined, sales.product_specified, pmc.product_firing_set], key: code}
   - {id: equipment, name: 设备, events: [eam.equipment_registered], key: name}
-  - {id: kiln, name: 窑炉, events: [production.kiln_registered, pmc.kiln_capacity_set], key: name}
+  - {id: kiln, name: 窑炉, events: [production.kiln_registered, pmc.kiln_capacity_set, production.kiln_curve_set], key: name}
+  - {id: monitor_point, name: 测点, events: [production.point_registered], key: code}
 
 # 枚举值的中文（导入时中文和英文代码都认；模板批注里列出中文选项）
 value_names:
@@ -38,5 +39,11 @@ value_names:
   idle: 停用
   maintenance: 维修
   retired: 报废
+  temperature: 温度
+  pressure: 压力
+  atmosphere: 气氛
+  electricity: 电表
+  gas: 燃气表
+  active: 在用
   available: 可排产
   stopped: 停止排产
