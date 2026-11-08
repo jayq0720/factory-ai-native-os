@@ -211,11 +211,10 @@ def test_full_flow_register_decompose_submit(client, keys):
     # 转工程项目：技术规格的关键工况要先核对
     r = client.post(f"/v1/tenders/{tid}/eng-project", headers=eng)
     assert r.status_code == 409 and "字段核对" in r.json()["detail"]
-    _tender_doc(
-        client,
-        keys["engineer"],
-        confirm=("normal_temp", "max_temp", "atmosphere", "shell_temp", "area", "total_thickness"),
-    )
+    # 在登记用的那份文档上确认（重新生成的 docx 带保存时间，哈希可能不同，不能靠重新上传）
+    for k in ("normal_temp", "max_temp", "atmosphere", "shell_temp", "area", "total_thickness"):
+        r = client.patch(f"/v1/documents/{doc_id}/fields/{k}", json={"action": "confirm"}, headers=eng)
+        assert r.status_code == 200, r.text
     r = client.post(f"/v1/tenders/{tid}/eng-project", headers=eng)
     assert r.status_code == 201, r.text
     pid = r.json()["eng_project"]
