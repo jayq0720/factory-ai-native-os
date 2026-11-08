@@ -469,3 +469,37 @@ class EngDesign(Base):
     created_by_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------- 招标拆解草稿（W18） ----------------
+
+
+class TenderAnalysis(Base):
+    """招标文件拆解的一个版本：章节结构、需求矩阵、偏离表、评分点、资料清单（方案 4.3 第 1–6 步）。
+
+    和工程方案一样是 L1 草稿，不是业务事实：重新拆解生成新版本（旧版本标 superseded），
+    人工处理结果（响应、负责人、状态）按条款 id 带到新版本。提交投标时才以 sales.tender_submitted
+    事件写入账本，引用这里的版本 id。
+    """
+
+    __tablename__ = "tender_analyses"
+    __table_args__ = (
+        Index("ix_tender_analyses_tender", "tenant_id", "tender_id", "created_at"),
+        UniqueConstraint("tenant_id", "tender_id", "version", name="uq_tender_analyses_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    tender_id: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))  # draft / submitted / superseded
+    data_mode: Mapped[str] = mapped_column(String(8))
+    data: Mapped[dict] = mapped_column(JSON)  # 章节、评分点、资料清单、偏离表、风险
+    items: Mapped[list] = mapped_column(JSON, default=list)  # 需求矩阵（含人工处理结果）
+    tender_version: Mapped[int] = mapped_column(Integer)  # 拆解时招标项目的版本
+    approval_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[str] = mapped_column(String(36))
+    created_by_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

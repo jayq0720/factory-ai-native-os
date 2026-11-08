@@ -47,3 +47,10 @@ fields:
     group: 条款
     type: list
     patterns: ['.{0,60}(?:废标|无效投标|否决其投标|投标无效|不予受理).{0,60}']
+
+# ---------- 技术规格（借用技术文件的工况字段，转工程项目时直接用，方案 4.3 第 7 步）----------
+include:
+  - schema: tech
+    group: 技术规格
+    keys: [furnace_type, position, normal_temp, max_temp, atmosphere, shell_temp, area, total_thickness,
+           hot_face, insulation_layer, standards]

@@ -73,7 +73,15 @@ async def seed_kb(s: Settings, tenant_id: str, login: str) -> int:
                 print(f"用户 {login} 不存在（先执行 fos quickstart）", file=sys.stderr)
                 return 1
             principal = principal_for_user(user, tenant)
-            for req in kb_requests(path):
+            reqs = kb_requests(path)
+            creds = s.packs_dir / tenant.industry_pack / "tender" / "sample_credentials.yaml"
+            if creds.exists() and "credential" in onto.objects:  # 招标拆解的演示资质资料库
+                from datetime import date
+
+                from fos.tender.samples import credential_requests
+
+                reqs += credential_requests(creds, date.today())
+            for req in reqs:
                 obj = onto.events[req.type].object
                 if await session.get(ObjectState, (tenant_id, obj, req.object_id)) is not None:
                     continue
@@ -81,5 +89,5 @@ async def seed_kb(s: Settings, tenant_id: str, login: str) -> int:
                 n += 1
     finally:
         await engine.dispose()
-    print(f"已写入演示知识库 {n} 条（模拟数据）。")
+    print(f"已写入演示知识库与资质资料 {n} 条（模拟数据）。")
     return 0

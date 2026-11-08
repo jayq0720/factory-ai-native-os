@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>招标拆解 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .pilot { max-width: 1200px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
+  .pilot > .card { padding: 16px 20px; }
+  .pilot h3 { margin: 14px 0 4px; font-size: 15px; }
+  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+  .pilot .row > * { flex: 0 0 auto; width: auto; }
+  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .pilot tr.pick { cursor: pointer; }
+  .pilot tr.pick:hover { background: #f8fafc; }
+  .pilot .bad { color: #b91c1c; }
+  .pilot .warn { color: #b45309; }
+  .pilot .ok { color: #15803d; }
+  .pilot .star { color: #b91c1c; font-weight: 600; }
+  .pilot textarea { width: 100%; min-height: 38px; font: inherit; font-size: 13px; }
+  .pilot .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; font-size: 14px; }
+  .pilot ul.lines { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
+  .pilot .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据：用了模拟 OCR 或演示资料库，不能提交投标、不能导出正式文件</div>
+<header class="top">
+  <div class="brand"><span class="logo">工</span><b>招标拆解</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <a class="btn small" href="./">文档解析</a>
+    <a class="btn small" href="eng.html">工程方案</a>
+    <a class="btn small" href="supply.html">采购仓储</a>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入 API Key（和其他页面共用，只保存在本机浏览器）。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="pilot" hidden>
+  <section class="card">
+    <h2>招标项目</h2>
+    <p class="muted small">在“文档解析”页上传招标文件（类别选“招标文件”），核对投标截止时间等字段后，把文档 id 填在这里登记。登记时按截止时间生成提醒待办，并自动拆解。</p>
+    <div class="row">
+      <input id="doc-id" placeholder="招标文件的文档 id" style="min-width:300px">
+      <input id="owner" placeholder="负责人登录名（默认自己）">
+      <button id="b-create" class="btn primary small">登记并拆解</button>
+      <button id="b-list" class="btn small">刷新</button>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section id="detail" class="card" hidden>
+    <h2 id="d-title"></h2>
+    <div id="d-info" class="kv"></div>
+    <h3>风险</h3>
+    <div id="d-risks"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="b-analyze" class="btn small">重新拆解</button>
+      <button id="b-eng" class="btn small">技术规格转工程项目</button>
+      <a id="b-export" class="btn small" href="#">导出 Excel</a>
+      <input id="bid-amount" type="number" min="0" step="0.01" placeholder="投标报价（元，可选）">
+      <button id="b-submit" class="btn primary small">提交投标</button>
+      <select id="close-status"><option value="won">中标</option><option value="lost">未中标</option><option value="abandoned">放弃</option></select>
+      <button id="b-close" class="btn ghost small">登记结果</button>
+    </div>
+
+    <h3>需求矩阵</h3>
+    <p class="muted small">★/▲/“必须”“不得”条款和可能废标的条款必须逐条处理才能提交；偏离由代码按知识库和我方承诺值比较，技术人员可以改（留痕）。</p>
+    <div class="row">
+      <select id="filter">
+        <option value="all">全部</option>
+        <option value="must">★▲ / 必须 / 废标</option>
+        <option value="neg">负偏离 / 待确认</option>
+        <option value="open">未处理</option>
+      </select>
+      <span id="summary" class="muted small"></span>
+    </div>
+    <div id="items" class="scroll"></div>
+
+    <h3>偏离表</h3>
+    <div id="devs" class="scroll"></div>
+    <h3>资料清单</h3>
+    <div id="docs" class="scroll"></div>
+    <h3>评分点</h3>
+    <div id="score" class="scroll"></div>
+    <h3>章节结构</h3>
+    <div id="sections" class="muted small"></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script src="tender.js"></script>
+</body>
+</html>

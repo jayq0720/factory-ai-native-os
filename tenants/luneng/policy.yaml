@@ -75,3 +75,28 @@ rules:
     reason: 报价低于材料成本，请调整折扣或价格
     when:
       - {field: gross_margin_pct, op: lt, value: 0}
+
+  # ---------- 投标（W18，方案 4.3 / 4.5）----------
+  # 提交投标前代码已经检查：★/▲/必须条款全部处理、资料清单没有缺失或过期、不是模拟数据。
+  # ★条款负偏离 = 投标会被否决：红线。阈值与审批人是占位值，待试点确认。
+  tender_submit_confirm:
+    name: 提交投标需销售负责人确认
+    events: [sales.tender_submitted]
+    steps:
+      - {name: 销售负责人确认, role: sales_lead}
+
+  tender_submit_large:
+    name: 投标报价 50 万元及以上加总经理审批
+    events: [sales.tender_submitted]
+    when:
+      - {field: bid_amount, op: gte, value: 500000}
+    steps:
+      - {name: 总经理审批, role: gm}
+
+  tender_star_negative:
+    name: ★实质性条款负偏离不能投标
+    events: [sales.tender_submitted]
+    effect: deny
+    reason: ★实质性条款有负偏离，投标会被否决；请调整产品或放弃投标
+    when:
+      - {field: star_negative, op: gt, value: 0}

@@ -46,6 +46,7 @@ async def _run_channels(tenant_ids: list[str]) -> int:
     from fos.planning.notify import order_watch_loop
     from fos.reports.schedule import daily_loop
     from fos.services import Services
+    from fos.tender.notify import tender_watch_loop
     from fos.triggers.intake import deliver
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -81,6 +82,11 @@ async def _run_channels(tenant_ids: list[str]) -> int:
         if tid in svc.planning:
             runs.append(order_watch_loop(svc, tid, adapter))
             print(f"{tid}: 新订单自动评估交期，推给 {'、'.join(svc.planning[tid].watch.notify_roles)}")
+        if tid in svc.tenders:
+            runs.append(tender_watch_loop(svc, tid, adapter))
+            hours = "/".join(f"{h:g}" for h in svc.tenders[tid].reminders.offsets_hours)
+            roles = "、".join(svc.tenders[tid].reminders.notify_roles)
+            print(f"{tid}: 投标截止前 {hours} 小时提醒负责人和 {roles}")
     if not runs:
         print("没有可启动的信道", file=sys.stderr)
         await svc.aclose()

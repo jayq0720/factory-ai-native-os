@@ -38,6 +38,7 @@ from fos.supply import tools as supply_tools  # noqa: F401  注册采购仓储�
 from fos.supply.config import SupplyConfig, load_supply_config
 from fos.supply.guards import COUNT_EVENT, ISSUE_EVENT, RECEIVE_EVENT, RETURN_EVENT, SupplyGuard
 from fos.tenancy import TenantRegistry
+from fos.tender.config import TenderConfig, load_tender_config
 from fos.tools import builtin  # noqa: F401  注册内置工具
 from fos.tools.registry import REGISTRY
 from fos.triggers.intake import TriggerIntake
@@ -69,6 +70,7 @@ class Services:
     orders: dict[str, OrdersConfig]
     planning: dict[str, PlanningConfig]
     supply: dict[str, SupplyConfig]
+    tenders: dict[str, TenderConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -151,6 +153,19 @@ class Services:
         for tid, cfg in engineering.items():
             if cfg is not None:
                 check_engineering(tid, cfg, ontologies[tid])
+        # 招标拆解（W18）：只给本体里有招标项目、行业包有 tender.yaml 的租户开
+        tenders: dict[str, TenderConfig] = {}
+        for tid in registry.ids():
+            t = registry.get(tid)
+            if t is None or "tender" not in ontologies[tid].objects:
+                continue
+            tcfg = load_tender_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            if tcfg is None:
+                continue
+            errs = tcfg.check(ontologies[tid])
+            if errs:
+                raise ValueError(f"[{tid}] 招标配置与本体不一致：\n" + "\n".join(errs))
+            tenders[tid] = tcfg
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -179,6 +194,7 @@ class Services:
                 orders=orders,
                 planning=planning,
                 supply=supply,
+                tenders=tenders,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -208,6 +224,7 @@ class Services:
             orders=orders,
             planning=planning,
             supply=supply,
+            tenders=tenders,
         )
 
     async def aclose(self) -> None:

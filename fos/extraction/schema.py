@@ -57,6 +57,14 @@ class FieldDef(BaseModel):
         return self
 
 
+class IncludeDef(BaseModel):
+    """从另一份 Schema 借字段（同一套叫法只维护一处）。例如招标文件的技术规格借用技术文件的工况字段。"""
+
+    schema_id: str = Field(alias="schema")
+    keys: list[str]
+    group: str | None = None  # 借来的字段归到这个分组（不写保持原分组）
+
+
 class ExtractionSchema(BaseModel):
     id: str
     name: str
@@ -65,6 +73,7 @@ class ExtractionSchema(BaseModel):
     fields: list[FieldDef]
     detect: list[str] = Field(default_factory=list)  # 同一类别有多份 Schema 时，按原文里的这些词自动选
     entry: EntrySpec | None = None  # 录单：确认后写哪个事件（fos/entry/spec.py）
+    include: list[IncludeDef] = Field(default_factory=list)
     source: str = ""
 
     @model_validator(mode="after")
@@ -100,7 +109,31 @@ def _load_dir(d: Path, source: str) -> dict[str, ExtractionSchema]:
 def load_schemas(tenant: TenantConfig, *, packs_dir: Path, tenants_dir: Path) -> dict[str, ExtractionSchema]:
     schemas = _load_dir(packs_dir / tenant.industry_pack / "extraction", tenant.industry_pack)
     schemas.update(_load_dir(tenants_dir / tenant.id / "extraction", f"tenant:{tenant.id}"))
-    return schemas
+    return {sid: _resolve_includes(s, schemas) for sid, s in schemas.items()}
+
+
+def _resolve_includes(s: ExtractionSchema, schemas: dict[str, ExtractionSchema]) -> ExtractionSchema:
+    """把 include 借来的字段追加到字段表末尾（借来的字段不算必填）。租户覆盖之后再解析，借的是最终版本。"""
+    if not s.include:
+        return s
+    fields = list(s.fields)
+    for inc in s.include:
+        src = schemas.get(inc.schema_id)
+        if src is None:
+            raise SchemaError(f"Schema {s.id} include 的 {inc.schema_id} 不存在")
+        for key in inc.keys:
+            f = src.field(key)
+            if f is None:
+                raise SchemaError(f"Schema {s.id} include：{inc.schema_id} 没有字段 {key}")
+            update: dict = {"required": False}
+            if inc.group:
+                update["group"] = inc.group
+            fields.append(f.model_copy(update=update))
+    keys = [f.key for f in fields]
+    dup = sorted({k for k in keys if keys.count(k) > 1})
+    if dup:
+        raise SchemaError(f"Schema {s.id} include 后字段 key 重复：{dup}")
+    return s.model_copy(update={"fields": fields})
 
 
 def schema_for_kind(schemas: dict[str, ExtractionSchema], kind: str) -> ExtractionSchema | None:
