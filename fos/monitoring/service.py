@@ -64,6 +64,7 @@ class ReadingIn(BaseModel):
     quality: Literal["good", "estimated", "bad"]
     confidence: float | None = Field(default=None, ge=0, le=1)
     evidence: str | None = Field(default=None, max_length=512)
+    mock: bool = False  # 仪表模拟器 / 演示读数（fos-edge mode = "mock"）
 
 
 class UplinkIn(BaseModel):
@@ -165,6 +166,9 @@ async def ingest(session: AsyncSession, principal: Principal, batch: UplinkIn) -
             continue
         if r.unit != p.unit:
             rejected[r.point] = f"单位 {r.unit} 与测点登记的 {p.unit} 不一致"
+            continue
+        if r.mock and p.data_mode != "mock":
+            rejected[r.point] = "模拟读数不能写入正式测点（规则 4）"
             continue
         ts = from_ms(r.ts_ms)
         if ts > now + timedelta(minutes=5):

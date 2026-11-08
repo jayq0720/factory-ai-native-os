@@ -137,13 +137,15 @@ def test_kiln_monitoring_flow(client, h, keys):
     rs.append(_r("k1.unknown", now, 1))
     rs.append(_r("k1.door", now, 1))  # 登记的网关是 edge-2
     rs.append(_r("k1.flue", now, 1, unit="°F"))
+    rs.append({**_r("k1.top", now, 1300), "mock": True})  # 模拟器读数不能进正式测点
     body = _batch(1, rs)
     assert client.post("/v1/edge/uplink", json=body, headers=h("sales")).status_code == 403
     assert client.post("/v1/edge/uplink", json={**body, "protocol": 9}, headers=h("edge")).status_code == 422
     other = _batch(1, rs[:1], tenant="other")
     assert client.post("/v1/edge/uplink", json=other, headers=h("edge")).status_code == 403
     r = client.post("/v1/edge/uplink", json=body, headers=h("edge")).json()
-    assert r["accepted"] == 93 and set(r["rejected"]) == {"k1.unknown", "k1.door", "k1.flue"}
+    assert r["accepted"] == 93 and set(r["rejected"]) == {"k1.unknown", "k1.door", "k1.flue", "k1.top"}
+    assert "模拟" in r["rejected"]["k1.top"]
     dup = client.post("/v1/edge/uplink", json=body, headers=h("edge")).json()
     assert dup == {"duplicate": True, "seq": 1, "accepted": 0, "rejected": {}}  # 断网补传 / 重发不重复入库
 
@@ -258,6 +260,14 @@ def test_demo_data_is_mock(client, h):
     assert client.post("/v1/kiln/demo", headers=h("worker")).status_code == 403
     b = client.get("/v1/kiln/board", headers=h("admin")).json()
     assert b["data_mode"] == "mock" and b["kilns"][0]["run"]["curve"] == "QG-1300"
+    # fos-edge 连仪表模拟器（edge.sim.toml）上行的模拟读数可以写进演示测点
+    now = datetime.now(UTC)
+    sim = [
+        {**_r("demo1.top.temp", now, 1290.5), "mock": True},
+        {**_r("demo1.kwh", now, 52100, "kWh", "direct"), "mock": True},
+    ]
+    up = client.post("/v1/edge/uplink", json=_batch(7, sim, edge="edge-demo"), headers=h("edge")).json()
+    assert up["accepted"] == 2 and up["rejected"] == {}
     c = client.get("/v1/kiln/runs/KR-DEMO1/curve", headers=h("admin")).json()
     assert c["data_mode"] == "mock" and c["deviation"] and c["lines"][0]["spans"]
     f = client.post("/v1/kiln/runs/KR-DEMO1/finish", json={}, headers=h("admin")).json()
