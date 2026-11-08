@@ -1,5 +1,5 @@
 """数据库表：身份（W1）、事件账本与投影（W2–W3）、文档解析（W4）、信道与 Trigger（W5–W6）、Agent 运行（W7）、
-审批与待办（W8）、工程方案（W10–W12）。
+审批与待办（W8）、工程方案（W10–W12）、招标拆解（W18）、窑炉监控（W19）。
 
 约定：
 - 每张业务表都有 tenant_id，所有查询必须按 tenant_id 过滤（由 repository 层保证）。
@@ -503,3 +503,81 @@ class TenderAnalysis(Base):
     created_by_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------- 窑炉监控（W19） ----------------
+
+
+class PointReading(Base):
+    """测点读数（时序）。三条接入路径的数据进同一张表，只是 source / quality 不同（方案 3.2）。
+
+    读数不是业务事实，不走账本；只追加，不改。结束窑次时按读数区间算出的最高温度、偏差、能耗才入账。
+    """
+
+    __tablename__ = "point_readings"
+    __table_args__ = (Index("ix_point_readings_point_ts", "tenant_id", "point", "ts"),)
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    point: Mapped[str] = mapped_column(String(64))  # 测点编号（monitor_point.code）
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(16))  # direct / retrofit / manual
+    quality: Mapped[str] = mapped_column(String(16))  # good / estimated / bad
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    evidence: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    edge_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recorded_by: Mapped[str | None] = mapped_column(String(36), nullable=True)  # 人工抄表的人
+    data_mode: Mapped[str] = mapped_column(String(8), default="real")
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EdgeBatch(Base):
+    """fos-edge 上行的一批读数。(edge_id, seq) 唯一：断网补传、重发都不会重复入库；也当心跳用。"""
+
+    __tablename__ = "edge_batches"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "edge_id", "seq", name="uq_edge_batches_seq"),
+        Index("ix_edge_batches_received", "tenant_id", "edge_id", "received_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    edge_id: Mapped[str] = mapped_column(String(64))
+    seq: Mapped[int] = mapped_column(BigInteger)
+    backfill: Mapped[bool] = mapped_column(Boolean, default=False)
+    accepted: Mapped[int] = mapped_column(Integer)
+    rejected: Mapped[dict] = mapped_column(JSON, default=dict)  # 点位 → 原因
+    received_by: Mapped[str] = mapped_column(String(36))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class KilnAlarm(Base):
+    """监控告警：超上下限、曲线超差、网关断网、设备故障。条件消失自动关闭；人可以确认（已知晓）。
+
+    告警是从读数派生的运行状态，不是业务事实，不走账本；同一 key 同时只有一条未关闭的告警。
+    """
+
+    __tablename__ = "kiln_alarms"
+    __table_args__ = (Index("ix_kiln_alarms_open", "tenant_id", "status", "key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    key: Mapped[str] = mapped_column(String(160))  # kind:点位 或 kind:网关
+    kind: Mapped[str] = mapped_column(String(16))  # high / low / deviation / edge_offline / point_fault
+    point: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kiln: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kiln_run: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    edge_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))  # open / closed
+    message: Mapped[str] = mapped_column(String(500))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    data_mode: Mapped[str] = mapped_column(String(8), default="real")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    acked_by_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

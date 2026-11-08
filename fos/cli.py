@@ -43,6 +43,7 @@ from fos.tenancy import TenantRegistry
 async def _run_channels(tenant_ids: list[str]) -> int:
     from fos.channels.dingtalk import DingTalkAdapter, DingTalkApp, DingTalkStream
     from fos.channels.types import InboundMessage
+    from fos.monitoring.watch import monitor_loop
     from fos.planning.notify import order_watch_loop
     from fos.reports.schedule import daily_loop
     from fos.services import Services
@@ -87,6 +88,11 @@ async def _run_channels(tenant_ids: list[str]) -> int:
             hours = "/".join(f"{h:g}" for h in svc.tenders[tid].reminders.offsets_hours)
             roles = "、".join(svc.tenders[tid].reminders.notify_roles)
             print(f"{tid}: 投标截止前 {hours} 小时提醒负责人和 {roles}")
+        if tid in svc.monitoring:
+            runs.append(monitor_loop(svc, tid, adapter))
+            m = svc.monitoring[tid]
+            roles = "、".join(m.notify.alarm_roles)
+            print(f"{tid}: 窑炉监控每 {m.alarms.poll_seconds:g} 秒判定一轮，告警推给 {roles}")
     if not runs:
         print("没有可启动的信道", file=sys.stderr)
         await svc.aclose()

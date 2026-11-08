@@ -17,6 +17,7 @@ from fos.extraction.service import Extractor
 from fos.gateway.llm import LLMClient
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, load_trace_config
+from fos.monitoring.config import MonitorConfig, load_monitor_config
 from fos.onboarding.config import ImportConfig, load_import_config
 from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
@@ -71,6 +72,7 @@ class Services:
     planning: dict[str, PlanningConfig]
     supply: dict[str, SupplyConfig]
     tenders: dict[str, TenderConfig]
+    monitoring: dict[str, MonitorConfig]
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -166,6 +168,12 @@ class Services:
             if errs:
                 raise ValueError(f"[{tid}] 招标配置与本体不一致：\n" + "\n".join(errs))
             tenders[tid] = tcfg
+        # 窑炉监控（W19）：只给本体里有测点的租户开
+        monitoring = {
+            tid: load_monitor_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None and "monitor_point" in ontologies[tid].objects
+        }
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -195,6 +203,7 @@ class Services:
                 planning=planning,
                 supply=supply,
                 tenders=tenders,
+                monitoring=monitoring,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -225,6 +234,7 @@ class Services:
             planning=planning,
             supply=supply,
             tenders=tenders,
+            monitoring=monitoring,
         )
 
     async def aclose(self) -> None:

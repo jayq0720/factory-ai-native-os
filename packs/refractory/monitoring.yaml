@@ -1,0 +1,31 @@
+# 窑炉监控（fos/monitoring/，说明见 docs/kiln-monitoring.md）。
+# 烧成制度、允许偏差、告警时长、推送角色都是占位值，按现场工艺卡和班组长确认后修改；
+# 租户可在 tenants/<id>/monitoring.yaml 里按段整体覆盖。改这里不需要改代码。
+# 测点本身是主数据（production.point_registered 事件，可用主数据 Excel 的“测点”表导入）。
+
+# 1. 烧成制度：从装窑开始的小时数 → 目标温度，中间线性插值；tolerance = 允许偏差（±℃）
+#    窑次用哪条：窑次里批次配方的“烧成制度”→ 窑炉的“默认烧成制度”→ 不比对（只看上下限）
+curves:
+  QG-1300:
+    name: 轻质隔热砖 1300℃ 制度（占位）
+    tolerance: 30
+    points: [[0, 20], [8, 300], [20, 900], [30, 1300], [36, 1300], [48, 600], [60, 100]]
+  GL-1550:
+    name: 高铝砖 1550℃ 制度（占位）
+    tolerance: 25
+    points: [[0, 20], [12, 400], [30, 1100], [44, 1550], [52, 1550], [70, 700], [84, 100]]
+
+# 2. 告警判定
+alarms:
+  deviation_minutes: 5        # 曲线超差持续多少分钟才告警（避免单点抖动）
+  limit_minutes: 1            # 超上下限持续多少分钟才告警（方案 10.6：超差 1 分钟内提醒）
+  edge_offline_minutes: 5     # 网关多久没上行算“断网”
+  stale_factor: 3             # 直连点位超过 N 个采样间隔没有读数、网关却在线 → “设备故障”
+  manual_grace_minutes: 15    # 人工抄表点位到点后多久没报数就提醒
+  poll_seconds: 30            # `fos channels run` 里判定一轮的间隔
+
+# 3. 推送（告警和抄表提醒发到这些角色绑定的 IM 单聊；租户没有的角色跳过）
+notify:
+  alarm_roles: [shift_lead]
+  manual_roles: [shift_lead, worker]
+  repeat_minutes: 60          # 告警持续未处理，每隔多久再提醒一次
