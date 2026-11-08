@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -389,8 +388,8 @@ def test_deadline_change_regenerates_reminders_and_im(client, keys):
     )
     at = datetime.fromisoformat(new) - timedelta(hours=20)
     n0 = len(adapter.outbox)
-    done = asyncio.run(remind(svc, "luneng", adapter, now=at))
+    done = client.portal.call(remind, svc, "luneng", adapter, at)
     assert done == [f"{tid}:bid_deadline:24"]
     sent = adapter.outbox[n0:]
     assert len(sent) == 2 and all("投标截止还有 20 小时" in str(m) for m in sent)  # 负责人 + 销售负责人
-    assert asyncio.run(remind(svc, "luneng", adapter, now=at + timedelta(minutes=30))) == []
+    assert client.portal.call(remind, svc, "luneng", adapter, at + timedelta(minutes=30)) == []
