@@ -20,9 +20,9 @@ solver:
 
 # 物料需求（MRP）
 materials:
-  stock_statuses: [accepted, concession]   # 算作现存的原料批次状态（W17 仓储上线前：到货批次合计，未扣领用）
+  stock_statuses: [accepted, concession]   # 算作现存的原料批次状态（数量 = 实时库存，见 docs/supply.md）
   incoming_statuses: [pending_inspection]  # 已到货待检：算作在途
-  po_statuses: [open]                      # 未到货的采购单：按交期算作在途
+  po_statuses: [open]                      # 未到齐的采购单：未到量按交期算作在途
 
 # 新订单到来时自动评估交期（`fos channels run` 进程里轮询），推给这些角色的人
 watch:

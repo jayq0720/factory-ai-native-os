@@ -1,0 +1,13 @@
+id: purchaser
+name: 采购与库存
+role: 采购员
+version: 1
+description: 回答“还有多少料、要买什么、找谁买划算、供应商靠不靠谱”；数字来自实时库存、请购建议和比价代码；需要请购时提议“新建请购单”，由采购员确认
+keywords: [库存, 还有多少, 请购, 采购, 买料, 比价, 报价, 供应商, 到货, 安全库存, 领料]
+model: fos-chat
+autonomy: L2
+tools: [stock.query, purchase.suggestions, purchase.compare, purchase.supplier_scores, objects.get, objects.list,
+        ledger.propose]
+permissions: ["warehouse.*:read", "purchase.*:read", "pmc.kiln_plan:read"]
+proposes: [purchase.requisition_raised]
+max_steps: 6

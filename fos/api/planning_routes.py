@@ -107,7 +107,7 @@ async def confirm(
     texts = []
     if mp["shortages"] and body.data_mode == "real":
         msg = f"排窑计划 {out['plan_no']} 已确认，以下原料不够：\n" + "\n".join(shortage_lines(mp))
-        msg += f"\n（{mp['note']}）"
+        msg += f"\n（{mp['note']}）\n发“请购建议”或打开网页“采购仓储”生成请购单。"
         texts = [
             (dm(i), msg)
             for _, i in await role_identities(session, principal.tenant_id, cfg.shortage_notify_roles)

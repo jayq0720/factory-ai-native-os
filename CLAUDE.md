@@ -32,6 +32,7 @@
 - `fos/onboarding/`：试点上线（W13）。`importer.py` 主数据 Excel 导入（模板 → 预览 → 全有或全无入账，配置 `packs/<pack>/import.yaml`），`check.py` 上线检查 `fos pilot-check`；`fos/reports/daily.py` 生产日报（配置 `packs/<pack>/reports.yaml`，IM「日报」走 Fast Path），`schedule.py` 定时推送（`tenant.yaml` 的 `reports.daily`）；API 在 `fos/api/pilot_routes.py`，网页 `/app/pilot.html`；说明见 `docs/pilot-go-live.md`
 - `fos/orders/`：订单交付（W14–W15）。`progress.py` 交付进度与交期风险、`shipping.py` 发货前校验（注册为账本守卫 `Ledger.add_guard`，任何入口都绕不过去）、`service.py` 工程报价 → 合同草稿 / 合同拆订单行 / 发货 / 签收、`export.py` 发货单 Excel、`cards.py` IM「订单 编号」「交期风险」；配置 `packs/<pack>/orders.yaml`；API 在 `fos/api/order_routes.py`；说明见 `docs/orders.md`
 - `fos/planning/`：计划与排窑（W16）。`solver.py` OR-Tools CP-SAT 排窑求解（纯函数）、`demand.py` 从账本读待烧订单和可用窑炉、`service.py` 排窑建议 / 确认（全有或全无）/ 承诺交期 / 交期评估、`guard.py` 计划装窑账本守卫、`materials.py` 物料需求与缺口、`notify.py` 新订单自动评估推计划员 + 缺料推采购、`cards.py` IM「排窑」「缺料」「交期评估 编号」；本体 `packs/<pack>/ontology/planning.yaml`，配置 `packs/<pack>/planning.yaml`；API 在 `fos/api/planning_routes.py`，网页 `/app/plan.html`；说明见 `docs/planning.md`
+- `fos/supply/`：采购与仓储（W17）。`stock.py` 实时库存（到货 ± 库存变动，先进先出）、`guards.py` 领料 / 退料 / 盘点和按单到货的账本守卫、`moves.py` 领料 / 退料 / 盘点、`purchase.py` 请购建议 / 请购单 / 比价 / 采购单 / 到货、`suppliers.py` 供应商评分、`cards.py` IM「库存」「请购建议」；配置 `packs/<pack>/supply.yaml`；API 在 `fos/api/supply_routes.py`，网页 `/app/supply.html`；说明见 `docs/supply.md`
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 

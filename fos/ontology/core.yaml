@@ -31,11 +31,14 @@ objects:
       category: {type: enum, name: 类别, values: [raw, auxiliary, packaging, spare_part], required: true}
       unit: {type: string, name: 计量单位, required: true}
       safety_stock: {type: number, name: 安全库存}
+      lead_days: {type: number, name: 采购提前期, unit: 天}
+      min_order_qty: {type: number, name: 最小起订量}
+      default_supplier: {type: ref, target: supplier, name: 常用供应商}
 
   material_lot:
     name: 原料批次
     domain: warehouse
-    description: 一次到货形成一个批次；后续检验、领用、追溯都挂在批次上
+    description: 一次到货形成一个批次；后续检验、领用、追溯都挂在批次上。现存 = 到货数量 ± 库存变动（stock_move），由 fos/supply/stock.py 算
     properties:
       material: {type: ref, target: material, name: 物料, required: true}
       supplier: {type: ref, target: supplier, name: 供应商}
@@ -45,6 +48,54 @@ objects:
       received_at: {type: datetime, name: 到货时间, required: true}
       purchase_order: {type: string, name: 采购单号}
       status: {type: enum, name: 状态, values: [pending_inspection, accepted, rejected, concession]}
+      location: {type: string, name: 库位}
+
+  stock_move:
+    name: 库存变动
+    domain: warehouse
+    description: 原料批次的领用、退料、盘点调整；数量都填正数，方向由类型决定（领用、盘亏减少，退料、盘盈增加）
+    properties:
+      lot: {type: ref, target: material_lot, name: 原料批次, required: true}
+      material: {type: ref, target: material, name: 物料, required: true}
+      kind: {type: enum, name: 类型, values: [issue, return, count_gain, count_loss], required: true}
+      qty: {type: number, name: 数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      moved_at: {type: datetime, name: 时间, required: true}
+      batch: {type: ref, target: production_batch, name: 生产批次}
+      count_no: {type: string, name: 盘点单号}
+      note: {type: text, name: 备注}
+
+  purchase_requisition:
+    name: 请购单
+    domain: purchase
+    description: 缺料或低于安全库存时起草、采购员确认；被采购单引用即为已下单（不另记状态）
+    properties:
+      req_no: {type: string, name: 请购单号, required: true}
+      material: {type: ref, target: material, name: 物料, required: true}
+      qty: {type: number, name: 数量, required: true}
+      unit: {type: string, name: 单位, required: true}
+      need_date: {type: date, name: 需要日期}
+      source: {type: string, name: 来源}
+      reason: {type: text, name: 原因}
+      suggested_supplier: {type: ref, target: supplier, name: 建议供应商}
+      status: {type: enum, name: 状态, values: [open, cancelled], required: true}
+      note: {type: text, name: 备注}
+
+  supplier_quote:
+    name: 供应商报价
+    domain: purchase
+    description: 一家供应商对一种物料的报价；比价只用有效期内、单位一致的最新报价
+    properties:
+      supplier: {type: ref, target: supplier, name: 供应商, required: true}
+      material: {type: ref, target: material, name: 物料, required: true}
+      unit_price: {type: number, name: 单价（含税）, unit: 元, required: true}
+      unit: {type: string, name: 单位, required: true}
+      quoted_at: {type: date, name: 报价日期, required: true}
+      valid_until: {type: date, name: 有效期至}
+      lead_days: {type: number, name: 交货周期, unit: 天}
+      min_qty: {type: number, name: 起订量}
+      quote_no: {type: string, name: 报价单号}
+      note: {type: text, name: 备注}
 
   product:
     name: 产品
@@ -118,6 +169,11 @@ objects:
       amount: {type: number, name: 金额, unit: 元, required: true}
       due_date: {type: date, name: 交期}
       status: {type: enum, name: 状态, values: [open, received, closed, cancelled]}
+      po_no: {type: string, name: 采购单号}
+      unit_price: {type: number, name: 单价（含税）, unit: 元}
+      requisitions: {type: ref, target: purchase_requisition, many: true, name: 请购单}
+      quote: {type: ref, target: supplier_quote, name: 依据报价}
+      note: {type: text, name: 备注}
 
   production_batch:
     name: 生产批次
@@ -183,7 +239,70 @@ events:
     op: create
     permission: warehouse.stock:write
     evidence: required   # 送货单照片
-    fields: [material, supplier, supplier_lot_no, qty, unit, received_at, purchase_order, status]
+    description: 填了采购单（编号或采购单号）时，物料、供应商、单位、累计到货不超订的校验在 fos/supply/guards.py，账本层强制
+    fields: [material, supplier, supplier_lot_no, qty, unit, received_at, purchase_order, status, location]
+
+  warehouse.lot_relocated:
+    name: 批次移库
+    object: material_lot
+    op: update
+    permission: warehouse.stock:write
+    fields: [location]
+
+  warehouse.stock_issued:
+    name: 领料出库
+    object: stock_move
+    op: create
+    permission: warehouse.stock:write
+    description: 只能领合格（或让步接收）的批次、不能超过现存（fos/supply/guards.py，账本层强制）
+    fields: [lot, material, kind, qty, unit, moved_at, batch, note]
+
+  warehouse.stock_returned:
+    name: 退料入库
+    object: stock_move
+    op: create
+    permission: warehouse.stock:write
+    description: 退回数量不能超过这个批次已领未退的量
+    fields: [lot, material, kind, qty, unit, moved_at, batch, note]
+
+  warehouse.stock_counted:
+    name: 盘点调整
+    object: stock_move
+    op: create
+    permission: warehouse.stock:write
+    evidence: required   # 盘点照片 / 盘点表
+    description: 盘点数和账面数的差额，盘盈 count_gain、盘亏 count_loss
+    fields: [lot, material, kind, qty, unit, moved_at, count_no, note]
+
+  purchase.material_sourcing_set:
+    name: 设置物料采购参数
+    description: 安全库存、采购提前期、最小起订量、常用供应商；请购建议按这些算
+    object: material
+    op: update
+    permission: purchase.material:write
+    fields: [safety_stock, lead_days, min_order_qty, default_supplier]
+
+  purchase.requisition_raised:
+    name: 新建请购单
+    object: purchase_requisition
+    op: create
+    permission: purchase.requisition:write
+    fields: [req_no, material, qty, unit, need_date, source, reason, suggested_supplier, status, note]
+
+  purchase.requisition_cancelled:
+    name: 取消请购单
+    object: purchase_requisition
+    op: update
+    permission: purchase.requisition:write
+    fields: [status, note]
+
+  purchase.quote_recorded:
+    name: 登记供应商报价
+    object: supplier_quote
+    op: create
+    permission: purchase.quote:write
+    evidence: required   # 报价单照片或文件
+    fields: [supplier, material, unit_price, unit, quoted_at, valid_until, lead_days, min_qty, quote_no, note]
 
   quality.lot_dispositioned:
     name: 来料处置
@@ -260,15 +379,15 @@ events:
     object: purchase_order
     op: create
     permission: purchase.order:write
-    description: 金额阈值的审批由 Policy 声明（tenants/<id>/policy.yaml），不写在这里
-    fields: [supplier, material, qty, unit, amount, due_date, status]
+    description: 金额阈值的审批由 Policy 声明（tenants/<id>/policy.yaml），不写在这里；金额 = 数量 × 单价，由代码算
+    fields: [supplier, material, qty, unit, amount, due_date, status, po_no, unit_price, requisitions, quote, note]
 
   purchase.order_status_changed:
     name: 采购单状态变更
     object: purchase_order
     op: update
     permission: purchase.order:write
-    fields: [status]
+    fields: [status, note]
 
   production.batch_started:
     name: 批次开工
