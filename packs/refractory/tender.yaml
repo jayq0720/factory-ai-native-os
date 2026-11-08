@@ -1,0 +1,58 @@
+# 招标拆解（fos/tender/，说明见 docs/tender.md）。关键词、我方能力、提醒时间都是占位值，
+# 按现场拿到的真实招标文件持续补充；租户可在 tenants/<id>/tender.yaml 里按段整体覆盖。
+# 改这里不需要改代码。
+
+# 1. 章节结构识别：章节标题里出现这些词就归到这一类（从上往下第一个命中）
+sections:
+  - {id: notice, name: 招标公告, keywords: [招标公告, 投标邀请, 采购公告, 询价函, 竞争性谈判公告], category: 商务}
+  - {id: instructions, name: 投标人须知, keywords: [投标人须知, 供应商须知, 响应人须知], category: 资格}
+  - {id: evaluation, name: 评标办法, keywords: [评标办法, 评审办法, 评分标准, 评标标准, 评分办法], category: 商务}
+  - {id: contract, name: 合同条款, keywords: [合同条款, 合同主要条款, 合同文本, 专用条款, 通用条款], category: 商务}
+  - {id: technical, name: 技术规格书, keywords: [技术规格, 技术要求, 技术参数, 采购需求, 技术标准, 供货要求], category: 技术}
+  - {id: boq, name: 工程量清单, keywords: [工程量清单, 货物清单, 报价清单, 供货范围, 分项报价], category: 商务}
+  - {id: format, name: 投标文件格式, keywords: [投标文件格式, 响应文件格式, 投标文件组成, 附件格式], category: 格式}
+
+# 2. 条款拆解：哪些句子算“要求”，怎么分级、分类
+markers:
+  star: ['★']                                   # 实质性条款：不满足 = 废标
+  key: ['▲']                                    # 重要条款：不满足扣分或可能废标
+  must: [必须, 不得, 不允许, 严禁, 不应, 务必, 须]
+  disqualify: [废标, 无效投标, 投标无效, 否决其投标, 否决投标, 不予受理, 作无效标处理, 拒绝其投标]
+  requirement: [应, 须, 要求, 提供, 具有, 具备, 不少于, 不低于, 不高于, 不超过, 不大于, 不小于, '≥', '≤', 以上, 以内, 承诺, 满足]
+
+# 条款类别：先按关键词判断（从上往下第一个命中），都不命中按所在章节的默认类别
+categories:
+  资格: [资格, 资质, 业绩, 法人, 营业执照, 信用, 注册资本, 联合体]
+  格式: [密封, 签字, 盖章, 装订, 正本, 副本, 格式, 递交, 逐页]
+  技术: [温度, 导热, 密度, 强度, 线变化, 检测, 技术, 规格, 材料, 产品, 牌号, 衬里, 施工, 验收, 标准]
+  商务: [付款, 支付, 质保, 保修, 交货, 供货, 报价, 价格, 保证金, 违约, 发票, 运输, 包装]
+
+# 建议负责人（角色）：按类别
+owners: {技术: engineer, 商务: sales_lead, 资格: sales, 格式: sales}
+
+# 3. 偏离表：条款里的指标 → 我方能力。better: higher（越大越好）/ lower（越小越好）
+#   source: kb = 取知识库产品属性（有已发布报价方案时取方案里用到的产品）；value = 我方承诺值（占位）
+#   default_rule: 原文只写了数值、没写“不低于 / 不超过”时按什么理解（min = 要求下限，max = 要求上限）
+capabilities:
+  - {id: classification_temp, name: 产品分类温度, match: [分类温度], unit: ℃, better: higher, source: kb, property: classification_temp, default_rule: min}
+  - {id: warranty, name: 质保期, match: [质保期, 保修期, 质量保证期], unit: 月, better: higher, value: 12, default_rule: min, key_field: warranty}
+  - {id: delivery, name: 交货期, match: [交货期, 供货期, 交付期], unit: 天, better: lower, value: 30, default_rule: max, key_field: delivery_period}
+  - {id: report_age, name: 检测报告时效, match: [检测报告], unit: 月, better: lower, source: credential, credential_kind: test_report, default_rule: max}
+
+# 4. 资料清单：条款里提到 → 需要提交 → 和资质资料库（credential 对象）对上
+#   credential_kind 为空的是要按格式现编的资料（投标函、授权书……），只列出不匹配
+documents:
+  - {id: license, name: 营业执照, keywords: [营业执照, 独立法人], credential_kind: license}
+  - {id: certificate, name: 质量管理体系认证证书, keywords: [ISO9001, ISO 9001, 质量管理体系], credential_kind: certificate}
+  - {id: test_report, name: 第三方检测报告, keywords: [检测报告], credential_kind: test_report}
+  - {id: performance, name: 业绩合同, keywords: [业绩], credential_kind: performance}
+  - {id: bid_letter, name: 投标函, keywords: [投标函]}
+  - {id: authorization, name: 法定代表人授权书, keywords: [授权书, 授权委托书]}
+  - {id: bid_bond, name: 投标保证金缴纳凭证, keywords: [投标保证金]}
+
+# 5. 截止提醒（方案 4.3 第 2 步）：登记时生成待办；`fos channels run` 进程在截止前这些时间点推 IM
+reminders:
+  offsets_hours: [72, 24, 3]
+  notify_roles: [sales_lead]
+  poll_minutes: 30
+  warn_days: 3          # 审核：离投标截止不到 3 天标“截止临近”

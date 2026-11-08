@@ -33,6 +33,7 @@
 - `fos/orders/`：订单交付（W14–W15）。`progress.py` 交付进度与交期风险、`shipping.py` 发货前校验（注册为账本守卫 `Ledger.add_guard`，任何入口都绕不过去）、`service.py` 工程报价 → 合同草稿 / 合同拆订单行 / 发货 / 签收、`export.py` 发货单 Excel、`cards.py` IM「订单 编号」「交期风险」；配置 `packs/<pack>/orders.yaml`；API 在 `fos/api/order_routes.py`；说明见 `docs/orders.md`
 - `fos/planning/`：计划与排窑（W16）。`solver.py` OR-Tools CP-SAT 排窑求解（纯函数）、`demand.py` 从账本读待烧订单和可用窑炉、`service.py` 排窑建议 / 确认（全有或全无）/ 承诺交期 / 交期评估、`guard.py` 计划装窑账本守卫、`materials.py` 物料需求与缺口、`notify.py` 新订单自动评估推计划员 + 缺料推采购、`cards.py` IM「排窑」「缺料」「交期评估 编号」；本体 `packs/<pack>/ontology/planning.yaml`，配置 `packs/<pack>/planning.yaml`；API 在 `fos/api/planning_routes.py`，网页 `/app/plan.html`；说明见 `docs/planning.md`
 - `fos/supply/`：采购与仓储（W17）。`stock.py` 实时库存（到货 ± 库存变动，先进先出）、`guards.py` 领料 / 退料 / 盘点和按单到货的账本守卫、`moves.py` 领料 / 退料 / 盘点、`purchase.py` 请购建议 / 请购单 / 比价 / 采购单 / 到货、`suppliers.py` 供应商评分、`cards.py` IM「库存」「请购建议」；配置 `packs/<pack>/supply.yaml`；API 在 `fos/api/supply_routes.py`，网页 `/app/supply.html`；说明见 `docs/supply.md`
+- `fos/tender/`：招标拆解（W18）。`decompose.py` 结构识别 / 条款拆解 / 评分点 / 资料清单 / 偏离比较（纯函数，零模型成本）、`service.py` 登记招标项目（截止时间生成提醒待办）/ 拆解版本（`tender_analyses` 表，迁移 0009）/ 逐条处理 / 转工程项目 / 提交投标、`notify.py` 截止前 IM 提醒、`cards.py` IM「招标」「招标 编号」；本体 `packs/<pack>/ontology/tender.yaml`（招标项目、资质资料），配置 `packs/<pack>/tender.yaml`；招标 Schema 用 `include` 借技术文件字段；API 在 `fos/api/tender_routes.py`，网页 `/app/tender.html`；说明见 `docs/tender.md`
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
 

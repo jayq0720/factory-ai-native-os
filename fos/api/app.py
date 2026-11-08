@@ -26,6 +26,7 @@ from fos.api.pilot_routes import router as pilot_router
 from fos.api.planning_routes import router as planning_router
 from fos.api.production_routes import router as production_router
 from fos.api.supply_routes import router as supply_router
+from fos.api.tender_routes import router as tender_router
 from fos.channels.mock import MockChannel
 from fos.config import Settings, get_settings
 from fos.gateway.llm import MODEL_ALIASES, ChatMessage, LLMClient, LLMError
@@ -145,6 +146,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(order_router)
     app.include_router(planning_router)
     app.include_router(supply_router)
+    app.include_router(tender_router)
     return app
 
 

@@ -1,0 +1,106 @@
+# 招标拆解（方案 4.3 应用 B，W18）：招标项目 + 资质与资料库。
+#
+# - 招标项目从人工核对过的招标文件字段登记，证据是每个字段的原文页码与片段；
+#   登记时按投标截止、澄清截止自动生成提醒待办（方案 4.3 第 2 步，截止时间 100% 设提醒）。
+# - 需求矩阵、偏离表、评分点、资料清单是 L1 草稿（tender_analyses 表，可反复修改、重新拆解）；
+#   提交投标是一条账本事件，受 policy.yaml 审批规则与红线约束（L2）。
+# - 资质与资料（营业执照、检测报告、业绩合同……）是知识库对象，带有效期，用来自动对上资料清单。
+
+objects:
+  tender:
+    name: 招标项目
+    domain: sales
+    description: 一份招标 / 询价文件对应的投标机会；技术规格可转成工程项目（应用 A）做选材与报价
+    properties:
+      name: {type: string, name: 项目名称, required: true}
+      tender_no: {type: string, name: 招标编号}
+      purchaser: {type: string, name: 招标人}
+      agency: {type: string, name: 招标代理机构}
+      budget: {type: number, name: 预算/最高限价, unit: 元}
+      bid_deadline: {type: datetime, name: 投标截止时间, required: true}
+      opening_time: {type: datetime, name: 开标时间}
+      clarification_deadline: {type: datetime, name: 澄清截止时间}
+      bid_bond: {type: number, name: 投标保证金, unit: 元}
+      evaluation_method: {type: string, name: 评标办法}
+      delivery_period: {type: string, name: 交货期}
+      delivery_place: {type: string, name: 交货地点}
+      qualification: {type: text, name: 资格要求}
+      payment_terms: {type: text, name: 付款方式}
+      warranty: {type: string, name: 质保期}
+      contact: {type: string, name: 联系人}
+      phone: {type: string, name: 联系电话}
+      owner: {type: string, name: 负责人（登录名）}
+      source_documents: {type: string, name: 来源文件}
+      eng_project: {type: ref, target: eng_project, name: 工程项目}
+      status: {type: enum, name: 状态, values: [open, submitted, won, lost, abandoned], required: true}
+      bid_amount: {type: number, name: 投标报价, unit: 元}
+      analysis: {type: string, name: 提交时的拆解版本}
+      star_total: {type: integer, name: ★实质性条款数}
+      star_negative: {type: integer, name: ★条款负偏离数}
+      docs_missing: {type: integer, name: 缺失或过期资料数}
+      result_note: {type: text, name: 结果说明}
+
+  credential:
+    name: 资质与资料
+    domain: kb
+    description: 营业执照、资质证书、检测报告、业绩合同等投标资料；有效期用于资料清单匹配与过期提醒
+    properties:
+      name: {type: string, name: 名称, required: true}
+      kind: {type: enum, name: 类别, values: [license, certificate, test_report, performance, authorization, other], required: true}
+      number: {type: string, name: 编号}
+      issuer: {type: string, name: 发证 / 检测机构}
+      issued_on: {type: date, name: 发证 / 签发日期}
+      valid_until: {type: date, name: 有效期至}
+      product: {type: ref, target: product, name: 适用产品}
+      keywords: {type: string, name: 关键词}     # 逗号分隔，例如 加热炉,耐火材料
+      document: {type: string, name: 扫描件（文档 id）}
+      note: {type: text, name: 备注}
+
+events:
+  sales.tender_registered:
+    name: 登记招标项目
+    object: tender
+    op: create
+    permission: sales.tender:write
+    evidence: required   # 字段原文页码
+    fields: [name, tender_no, purchaser, agency, budget, bid_deadline, opening_time, clarification_deadline,
+             bid_bond, evaluation_method, delivery_period, delivery_place, qualification, payment_terms,
+             warranty, contact, phone, owner, source_documents, status]
+
+  sales.tender_updated:
+    name: 修改招标项目
+    object: tender
+    op: update
+    permission: sales.tender:write
+    fields: [name, tender_no, purchaser, agency, budget, bid_deadline, opening_time, clarification_deadline,
+             bid_bond, evaluation_method, delivery_period, delivery_place, qualification, payment_terms,
+             warranty, contact, phone, owner, eng_project]
+
+  sales.tender_submitted:
+    name: 提交投标
+    object: tender
+    op: update
+    permission: sales.tender:write
+    evidence: required   # 拆解版本（需求矩阵、偏离表、资料清单的处理结果）
+    fields: [status, bid_amount, analysis, star_total, star_negative, docs_missing]
+
+  sales.tender_closed:
+    name: 投标结果
+    object: tender
+    op: update
+    permission: sales.tender:write
+    fields: [status, result_note]
+
+  kb.credential_registered:
+    name: 登记资质资料
+    object: credential
+    op: create
+    permission: kb.credential:write
+    fields: [name, kind, number, issuer, issued_on, valid_until, product, keywords, document, note]
+
+  kb.credential_updated:
+    name: 更新资质资料
+    object: credential
+    op: update
+    permission: kb.credential:write
+    fields: [name, number, issuer, issued_on, valid_until, product, keywords, document, note]

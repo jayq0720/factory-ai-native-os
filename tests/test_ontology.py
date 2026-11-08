@@ -23,6 +23,7 @@ def test_layers_merge():
         "pack:refractory",
         "pack:refractory/engineering",
         "pack:refractory/planning",
+        "pack:refractory/tender",
     ]
     assert "eng_project" in o.objects and "tc_a" in o.objects["product"].properties
     assert "kiln_run" in o.objects

@@ -25,7 +25,8 @@ roles:
                   "pmc.kiln_plan:read"]
   engineer:
     name: 工程技术
-    permissions: ["eng.*:read", "eng.*:write", "kb.*:read", "kb.change:write", "doc.*:read", "doc.*:write", "sales.product:read", "sales.customer:read"]
+    permissions: ["eng.*:read", "eng.*:write", "kb.*:read", "kb.change:write", "doc.*:read", "doc.*:write", "sales.product:read", "sales.customer:read",
+                  "sales.tender:read", "sales.tender:write"]   # 招标拆解（方案 5 章：工程师助理负责招标拆解）
   kb_admin:
     name: 知识库管理员
     permissions: ["kb.*:*", "sales.product:read"]

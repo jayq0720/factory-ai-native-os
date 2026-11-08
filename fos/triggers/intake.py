@@ -11,6 +11,7 @@
    - 「追溯 批号」→ 直接查引用图回追溯报告（只读，零模型成本）；
    - 「日报」「昨天日报」「日报 11-06」→ 直接从账本统计回生产日报（只读，零模型成本）；
    - 「订单 编号」「交期风险」「订单看板」→ 订单交付进度 / 看板（只读，零模型成本）；
+   - 「招标」「招标 编号」→ 进行中的招标项目 / 一个项目的截止时间、拆解进度和风险（只读，零模型成本）；
    - 其他文字 → 交给 Router（fos.agents.runtime，事务提交后执行）。
 
 IM 消息是不可信输入：这里不把消息内容交给模型，也不据此执行任何写操作；写操作只发生在卡片确认，
@@ -33,7 +34,7 @@ from fos.channels.base import ChannelAdapter, ChannelError
 from fos.channels.cards import Card, CardField
 from fos.channels.types import ConversationRef, InboundMessage
 from fos.config import Settings
-from fos.db.models import CardRecord, ChannelIdentity, Event, Thread, Trigger, User, utcnow
+from fos.db.models import CardRecord, ChannelIdentity, Event, ObjectState, Thread, Trigger, User, utcnow
 from fos.entry.draft import build_draft, draft_card
 from fos.extraction.service import Extractor, load_fields
 from fos.governance.principal import Principal, principal_for_user
@@ -54,6 +55,8 @@ from fos.reports.daily import report_card as daily_card
 from fos.supply.cards import STOCK, SUGGEST, low_stock_card, material_card, suggestion_card
 from fos.supply.config import SupplyConfig
 from fos.tenancy import TenantRegistry
+from fos.tender.cards import TENDER
+from fos.tender.config import TenderConfig
 from fos.triggers.cards import (
     CODE_ALPHABET,
     CODE_LEN,
@@ -113,6 +116,7 @@ class TriggerIntake:
         orders: dict[str, OrdersConfig] | None = None,
         planning: dict[str, PlanningConfig] | None = None,
         supply: dict[str, SupplyConfig] | None = None,
+        tenders: dict[str, TenderConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -127,6 +131,7 @@ class TriggerIntake:
         self.orders = orders or {}
         self.planning = planning or {}
         self.supply = supply or {}
+        self.tenders = tenders or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -218,6 +223,12 @@ class TriggerIntake:
                 await self._planning(session, msg, out, principal, *pm)
             elif msg.kind == "text" and self._can_supply(msg) and (sm := _supply_word(msg.text.strip())):
                 await self._supply(session, msg, out, principal, *sm)
+            elif (
+                msg.kind == "text"
+                and msg.tenant_id in self.tenders
+                and (tm := TENDER.match(msg.text.strip()))
+            ):
+                await self._tender(session, msg, out, principal, tm.group(1))
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -612,6 +623,68 @@ class TriggerIntake:
             return
         trig.result = {"material": hits[0]["material"]}
         await self._reply(None, msg, out, material_card(hits[0], mode="real"))
+
+    # ---------------- 招标（只读 Fast Path） ----------------
+
+    async def _tender(
+        self, session, msg: InboundMessage, out: Outcome, principal: Principal, arg: str | None
+    ):
+        from fos.tender import service as ts
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = "tender", "done"
+        tid = msg.tenant_id
+        if not principal.can("sales.tender:read"):
+            await self._reply(None, msg, out, "你没有查看招标项目的权限（sales.tender:read）。")
+            return
+        from fos.tender.cards import list_card, tender_card
+
+        now = utcnow()
+        rows = list(
+            await session.scalars(
+                select(ObjectState).where(ObjectState.tenant_id == tid, ObjectState.object_type == "tender")
+            )
+        )
+        if not arg:
+            items = []
+            for o in rows:
+                if o.state.get("status") != "open":
+                    continue
+                a = await ts.latest(session, tid, o.object_id)
+                items.append(
+                    {**ts.tender_out(o, now=now), "analysis": ts.analysis_out(a, full=False) if a else None}
+                )
+            items.sort(key=lambda t: t.get("bid_deadline") or "")
+            mode = "mock" if any(t["data_mode"] == "mock" for t in items) else "real"
+            trig.result = {"tenders": len(items)}
+            await self._reply(None, msg, out, list_card(items, mode=mode))
+            return
+        hits = [o for o in rows if arg in (o.object_id, o.state.get("tender_no"))]
+        if len(hits) != 1:
+            trig.result = {"found": len(hits)}
+            await self._reply(
+                None, msg, out, f"没有找到招标项目“{arg}”。可以发招标项目编号（TD-…）或招标编号。"
+            )
+            return
+        o = hits[0]
+        a = await ts.latest(session, tid, o.object_id)
+        names = {
+            "open": "投标准备中",
+            "submitted": "已投标",
+            "won": "中标",
+            "lost": "未中标",
+            "abandoned": "放弃",
+        }
+        t = {**ts.tender_out(o, now=now), "status_name": names.get(o.state.get("status", ""), "")}
+        risks = ts.risks(a, o, self.tenders[tid], now) if a else []
+        trig.result = {"tender": o.object_id}
+        await self._reply(
+            None,
+            msg,
+            out,
+            tender_card(t, ts.analysis_out(a, full=False) if a else None, risks, mode=o.data_mode),
+        )
 
     # ---------------- 工具 ----------------
 
