@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>计划排窑 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .pilot { max-width: 1100px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
+  .pilot > .card { padding: 16px 20px; }
+  .pilot h3 { margin: 14px 0 4px; font-size: 15px; }
+  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+  .pilot .row > * { flex: 0 0 auto; width: auto; }
+  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .pilot .bad { color: #b91c1c; }
+  .pilot .ok { color: #15803d; }
+  .pilot ul.lines { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
+  .gantt { display: grid; gap: 6px; margin-top: 8px; }
+  .gantt .lane { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; font-size: 13px; }
+  .gantt .track { position: relative; height: 30px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+  .gantt .bar { position: absolute; top: 3px; bottom: 3px; background: #2563eb; color: #fff; border-radius: 3px;
+                font-size: 11px; padding: 2px 4px; overflow: hidden; white-space: nowrap; box-sizing: border-box; }
+  .gantt .bar.part { background: #60a5fa; }
+  .gantt .axis { display: flex; justify-content: space-between; font-size: 11px; color: #6b7280; margin-left: 128px; }
+</style>
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据：演示用排程，确认后也只记为模拟数据</div>
+<header class="top">
+  <div class="brand"><span class="logo">工</span><b>计划排窑</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <a class="btn small" href="./">文档解析</a>
+    <a class="btn small" href="eng.html">工程方案</a>
+    <a class="btn small" href="pilot.html">试点上线</a>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入 API Key（和其他页面共用，只保存在本机浏览器）。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="pilot" hidden>
+  <section class="card">
+    <h2>排窑建议</h2>
+    <p class="muted small">按在手订单、窑炉装量和烧成周期，由求解器（OR-Tools）排出计划窑次。只是建议，不入账；核对后点“确认排窑计划”才记账，勾选的订单同时按计划承诺交期。窑炉装量、产品烧成参数、配方用量在主数据里维护。</p>
+    <div class="row">
+      <select id="mode"><option value="real">正式数据</option><option value="mock">模拟数据</option></select>
+      <button id="b-draft" class="btn primary small">生成排窑建议</button>
+      <button id="b-current" class="btn small">查看当前计划</button>
+      <button id="b-confirm" class="btn small" disabled>确认排窑计划</button>
+    </div>
+    <div id="plan"></div>
+  </section>
+  <section class="card">
+    <h2>交期评估</h2>
+    <p class="muted small">把一个订单（或假设的新订单）放进去重排一次：能不能按期、会把哪些在手订单往后推、缺什么料。不入账。IM 里发“交期评估 订单号”也可以。</p>
+    <div class="row">
+      <input id="e-order" placeholder="订单编号（已有订单）">
+      <span class="muted">或</span>
+      <input id="e-product" placeholder="产品 id">
+      <input id="e-qty" type="number" min="0" step="0.01" placeholder="数量">
+      <input id="e-due" type="date">
+      <button id="b-eval" class="btn small">评估</button>
+    </div>
+    <div id="eval"></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script src="plan.js"></script>
+</body>
+</html>

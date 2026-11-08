@@ -35,6 +35,7 @@ def order_card(p: dict[str, Any]) -> Card:
                 else ""
             ),
         ),
+        *([CardField(label="承诺交期", value=p["promised_date"])] if p.get("promised_date") else []),
         CardField(label="进度", value=p["stage_text"]),
         CardField(
             label="数量进度",

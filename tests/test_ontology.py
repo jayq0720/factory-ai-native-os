@@ -18,7 +18,12 @@ def _luneng() -> Ontology:
 
 def test_layers_merge():
     o = _luneng()
-    assert o.layers == ["core", "pack:refractory", "pack:refractory/engineering"]
+    assert o.layers == [
+        "core",
+        "pack:refractory",
+        "pack:refractory/engineering",
+        "pack:refractory/planning",
+    ]
     assert "eng_project" in o.objects and "tc_a" in o.objects["product"].properties
     assert "kiln_run" in o.objects
     # 行业包给核心对象追加了属性

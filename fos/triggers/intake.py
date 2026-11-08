@@ -47,6 +47,8 @@ from fos.orders.progress import order_board, order_progress
 from fos.perception.blobs import LocalBlobStore
 from fos.perception.ocr import OCRProvider
 from fos.perception.service import IngestError, IngestResult, ingest_document
+from fos.planning.cards import EVALUATE, PLAN, SHORTAGE, evaluation_card, plan_card, shortage_card
+from fos.planning.config import PlanningConfig
 from fos.reports.daily import DAILY, DailyConfig, daily_report, parse_day
 from fos.reports.daily import report_card as daily_card
 from fos.tenancy import TenantRegistry
@@ -107,6 +109,7 @@ class TriggerIntake:
         traces: dict[str, TraceConfig] | None = None,
         dailies: dict[str, DailyConfig] | None = None,
         orders: dict[str, OrdersConfig] | None = None,
+        planning: dict[str, PlanningConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -119,6 +122,7 @@ class TriggerIntake:
         self.traces = traces or {}
         self.dailies = dailies or {}
         self.orders = orders or {}
+        self.planning = planning or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -206,6 +210,8 @@ class TriggerIntake:
                 await self._order(session, msg, out, principal, om.group(1))
             elif msg.kind == "text" and self._can_orders(msg) and BOARD.match(msg.text.strip()):
                 await self._board(session, msg, out, principal, BOARD.match(msg.text.strip()).group(1))
+            elif msg.kind == "text" and self._can_plan(msg) and (pm := _plan_word(msg.text.strip())):
+                await self._planning(session, msg, out, principal, *pm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -495,6 +501,56 @@ class TriggerIntake:
         trig.result = {"orders": len(rows)}
         await self._reply(None, msg, out, board_card(rows, title=word, today=today.isoformat()))
 
+    # ---------------- 计划排窑（只读 Fast Path） ----------------
+
+    def _can_plan(self, msg: InboundMessage) -> bool:
+        return msg.tenant_id in self.planning and msg.tenant_id in self.orders
+
+    async def _planning(self, session, msg: InboundMessage, out: Outcome, principal: Principal, kind, arg):
+        from fos.planning.demand import load_context
+        from fos.planning.service import PlanningError, current_plan, evaluate
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"planning_{kind}", "done"
+        if not principal.can("pmc.kiln_plan:read"):
+            await self._reply(None, msg, out, "你没有查看排窑计划的权限（pmc.kiln_plan:read）。")
+            return
+        tid = msg.tenant_id
+        tenant = self.registry.get(tid)
+        assert tenant is not None
+        env = {
+            "tenant": tid,
+            "cfg": self.planning[tid],
+            "ocfg": self.orders[tid],
+            "tz": ZoneInfo(tenant.timezone),
+        }
+        now = msg.received_at
+        if kind == "evaluate":
+            hits = await find_by(session, tid, "sales_order", "order_no", arg)
+            if len(hits) != 1:
+                trig.result = {"found": len(hits)}
+                await self._reply(None, msg, out, f"没有找到订单“{arg}”，或者对应多个订单。请发订单编号。")
+                return
+            try:
+                e = await evaluate(session, now=now, order_id=hits[0].object_id, **env)
+            except PlanningError as err:
+                await self._reply(None, msg, out, str(err))
+                return
+            trig.result = {"order": hits[0].object_id, "ok": e["ok"], "impacts": len(e["impacts"])}
+            await self._reply(None, msg, out, evaluation_card(e, mode=hits[0].data_mode))
+            return
+        p = await current_plan(session, await load_context(session, now=now, **env))
+        if kind == "plan":
+            trig.result = {"plan": p["plan"]["id"] if p else None}
+            await self._reply(None, msg, out, plan_card(p))
+            return
+        if p is None:
+            await self._reply(None, msg, out, "还没有确认的排窑计划，算不了物料缺口。")
+            return
+        trig.result = {"plan": p["plan"]["id"], "shortages": len(p["materials"]["shortages"])}
+        await self._reply(None, msg, out, shortage_card(p["materials"], mode=p["data_mode"]))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -522,6 +578,16 @@ class TriggerIntake:
             out.replies.append({"type": "card", "card": body.model_dump()})
         else:
             out.replies.append({"type": "text", "text": body})
+
+
+def _plan_word(text: str) -> tuple[str, str] | None:
+    if PLAN.match(text):
+        return "plan", ""
+    if SHORTAGE.match(text):
+        return "shortage", ""
+    if m := EVALUATE.match(text):
+        return "evaluate", m.group(1)
+    return None
 
 
 async def deliver(adapter: ChannelAdapter, out: Outcome) -> list[str]:

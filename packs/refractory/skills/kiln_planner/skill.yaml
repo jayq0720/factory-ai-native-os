@@ -1,0 +1,13 @@
+id: kiln_planner
+name: 计划与排窑
+role: 计划员
+version: 1
+description: 回答“这单能不能接、什么时候能交、排窑怎么排、缺什么料”；数字来自排窑求解器和确定性代码，只解释不改数
+keywords: [排窑, 排产, 产能, 能不能交, 能不能接, 交期评估, 什么时候能交, 窑炉, 缺料, 物料需求, 计划]
+model: fos-chat
+autonomy: L1
+tools: [planning.current, planning.evaluate, planning.shortages, orders.progress, objects.get, objects.list]
+permissions: ["pmc.*:read", "sales.sales_order:read", "sales.customer:read", "sales.product:read",
+              "production.*:read", "warehouse.*:read", "purchase.purchase_order:read"]
+proposes: []
+max_steps: 6

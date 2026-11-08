@@ -43,6 +43,7 @@ from fos.tenancy import TenantRegistry
 async def _run_channels(tenant_ids: list[str]) -> int:
     from fos.channels.dingtalk import DingTalkAdapter, DingTalkApp, DingTalkStream
     from fos.channels.types import InboundMessage
+    from fos.planning.notify import order_watch_loop
     from fos.reports.schedule import daily_loop
     from fos.services import Services
     from fos.triggers.intake import deliver
@@ -77,6 +78,9 @@ async def _run_channels(tenant_ids: list[str]) -> int:
         if sched is not None and sched.to:
             runs.append(daily_loop(svc, tid, adapter))
             print(f"{tid}: 每天 {sched.at} 推送生产日报给 {'、'.join(sched.to)}")
+        if tid in svc.planning:
+            runs.append(order_watch_loop(svc, tid, adapter))
+            print(f"{tid}: 新订单自动评估交期，推给 {'、'.join(svc.planning[tid].watch.notify_roles)}")
     if not runs:
         print("没有可启动的信道", file=sys.stderr)
         await svc.aclose()
