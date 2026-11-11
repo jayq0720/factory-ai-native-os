@@ -171,10 +171,10 @@ def _seed_kb(client, keys, mode="real"):
         assert r.status_code in (200, 201), r.text
 
 
-def _tech_doc(client, key, confirm=True):
+def _tech_doc(client, key, confirm=True, data=None):
     r = client.post(
         "/v1/documents",
-        files={"file": ("技术要求.docx", sample_tech_docx())},
+        files={"file": ("技术要求.docx", data or sample_tech_docx())},
         data={"kind": "tech"},
         headers=_h(key),
     )
@@ -192,12 +192,14 @@ def _tech_doc(client, key, confirm=True):
 def test_full_flow_to_published_quote(client, keys):
     eng = _h(keys["engineer"])
     _seed_kb(client, keys)
-    doc_id = _tech_doc(client, keys["engineer"], confirm=False)
+    # 同一份字节上传两次（docx 里带生成时间，各自生成可能跨秒、哈希不同）
+    data = sample_tech_docx()
+    doc_id = _tech_doc(client, keys["engineer"], confirm=False, data=data)
 
     # 关键字段没核对不能建项目
     r = client.post("/v1/eng/projects", json={"document_id": doc_id}, headers=eng)
     assert r.status_code == 409 and "最高温度" in r.json()["detail"]
-    _tech_doc(client, keys["engineer"])  # 同一文件（哈希相同），确认关键字段
+    assert _tech_doc(client, keys["engineer"], data=data) == doc_id  # 同一文件（哈希相同），确认关键字段
     r = client.post("/v1/eng/projects", json={"document_id": doc_id}, headers=eng)
     assert r.status_code == 201, r.text
     p = r.json()["project"]
