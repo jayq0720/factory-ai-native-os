@@ -1,0 +1,39 @@
+# fos-edge 模拟联调配置：配合 `fos-edge simulate` 和云端“加载演示数据”的演示窑（demo1.*）。
+#
+#   fos-edge simulate --listen 127.0.0.1:5020 --speed 60 --start-h 10
+#   FOS_EDGE_API_KEY=<edge 角色的 Key> fos-edge run crates/fos-edge/edge.sim.toml
+#
+# mode = "mock"：每条读数带 mock 标记，云端只接受写进模拟测点（规则 4）。
+tenant_id = "luneng"
+edge_id = "edge-demo"
+uplink_url = "http://127.0.0.1:8000/v1/edge/uplink"
+mode = "mock"
+buffer_path = "fos-edge-sim.db"
+flush_s = 5
+heartbeat_s = 30
+
+# 窑顶：模拟器从站 1，寄存器 0，i16，×0.1℃；32767 表示断偶
+[[point]]
+id = "demo1.top.temp"
+driver = "modbus-tcp"
+source = "retrofit"
+unit = "℃"
+interval_s = 5
+params = { host = "127.0.0.1", port = 5020, address = 1, register = 0, scale = 0.1, bad_values = [32767] }
+
+# 窑底：从站 2
+[[point]]
+id = "demo1.bottom.temp"
+driver = "modbus-tcp"
+source = "retrofit"
+unit = "℃"
+interval_s = 5
+params = { host = "127.0.0.1", port = 5020, address = 2, register = 0, scale = 0.1, bad_values = [32767] }
+
+# 电表：从站 1，寄存器 2–3，u32 高字在前，×0.1 kWh（累计走字）
+[[point]]
+id = "demo1.kwh"
+driver = "modbus-tcp"
+unit = "kWh"
+interval_s = 30
+params = { host = "127.0.0.1", port = 5020, address = 1, register = 2, data_type = "u32", scale = 0.1 }

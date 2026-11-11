@@ -1,0 +1,29 @@
+# 工控机上用 systemd 常驻 fos-edge（无人值守、断电重启后自动拉起）。
+# 安装：
+#   sudo useradd --system --no-create-home fos-edge && sudo usermod -aG dialout fos-edge   # dialout：读串口
+#   sudo install -m 755 fos-edge /usr/local/bin/ && sudo mkdir -p /etc/fos-edge /var/lib/fos-edge
+#   sudo cp edge.toml /etc/fos-edge/   # buffer_path 写成 /var/lib/fos-edge/buffer.db
+#   echo 'FOS_EDGE_API_KEY=fos_xxx' | sudo tee /etc/fos-edge/env && sudo chmod 600 /etc/fos-edge/env
+#   sudo cp fos-edge.service /etc/systemd/system/ && sudo systemctl enable --now fos-edge
+#   journalctl -u fos-edge -f
+[Unit]
+Description=fos-edge 厂端采集
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=fos-edge
+EnvironmentFile=/etc/fos-edge/env
+ExecStartPre=/usr/local/bin/fos-edge check /etc/fos-edge/edge.toml
+ExecStart=/usr/local/bin/fos-edge run /etc/fos-edge/edge.toml
+Restart=always
+RestartSec=5
+# 只需要读配置、写缓存目录、访问串口和网络
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fos-edge
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

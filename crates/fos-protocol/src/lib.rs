@@ -74,6 +74,13 @@ pub struct Reading {
     /// 证据引用，例如照片在 OSS 的对象键；直接采集为空
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<String>,
+    /// 模拟数据（仪表模拟器、演示）。云端拒绝把模拟读数写进正式测点（规则 4）
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mock: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// 厂端上行的一批读数。`seq` 单调递增，云端按 (edge_id, seq) 去重，断网补传不会重复入库。
@@ -87,6 +94,48 @@ pub struct UplinkBatch {
     #[serde(default)]
     pub backfill: bool,
     pub readings: Vec<Reading>,
+    /// 厂端状态。只在云端用 `ReportStatus` 要求时附带
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<EdgeStatus>,
+}
+
+/// 厂端状态：版本、缓存积压、各点位健康。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EdgeStatus {
+    pub version: String,
+    /// 还没上行成功的批次数、读数条数
+    pub pending_batches: u64,
+    pub pending_readings: u64,
+    /// 最早一批未上行数据的生成时间（Unix 毫秒）；没有积压为空
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_pending_ms: Option<i64>,
+    /// 被云端判为格式错误、暂存待查的批次数
+    pub rejected_batches: u64,
+    pub points: Vec<PointHealth>,
+}
+
+/// 一个点位的采集健康。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PointHealth {
+    pub point: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_ok_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    pub consecutive_errors: u32,
+}
+
+/// 云端对一批上行的回执。`commands` 是顺带下发的签名命令（厂端不开入站端口，命令只能随回执下来）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UplinkAck {
+    pub duplicate: bool,
+    pub seq: u64,
+    pub accepted: u64,
+    /// 被拒的点位 → 原因（未登记、单位不符、模拟读数写正式测点等）
+    #[serde(default)]
+    pub rejected: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub commands: Vec<SignedCommand>,
 }
 
 /// 云端可以下发的命令：**只有只读命令**。写设备、改设定值不在协议里，从根上禁止。
@@ -101,7 +150,7 @@ pub enum EdgeCommand {
     Resend { from_seq: u64 },
 }
 
-/// 带签名的命令。签名算法与密钥轮换在 fos-edge v0.1（W19+）实现；这里先固定结构。
+/// 带签名的命令。签名算法 Ed25519：云端私钥只在 KMS / 环境变量里，厂端配置里只有公钥。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedCommand {
     pub protocol: u16,
@@ -111,8 +160,37 @@ pub struct SignedCommand {
     /// 过期时间，Unix 毫秒；过期命令一律拒绝
     pub expires_ms: i64,
     pub command: EdgeCommand,
-    /// 对以上字段规范化 JSON 的签名（base64）
+    /// 对 [`SignedCommand::signing_bytes`] 的 Ed25519 签名（标准 base64）
     pub signature: String,
+}
+
+#[derive(Serialize)]
+struct Unsigned<'a> {
+    protocol: u16,
+    command_id: &'a str,
+    tenant_id: &'a str,
+    edge_id: &'a str,
+    expires_ms: i64,
+    command: &'a EdgeCommand,
+}
+
+impl SignedCommand {
+    /// 被签名的字节：除 `signature` 外的字段按声明顺序输出的紧凑 JSON（UTF-8，不转义中文）。
+    ///
+    /// Python 侧等价写法：
+    /// `json.dumps({"protocol":…, "command_id":…, "tenant_id":…, "edge_id":…, "expires_ms":…,
+    /// "command": {"type": …, …}}, ensure_ascii=False, separators=(",", ":")).encode()`
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(&Unsigned {
+            protocol: self.protocol,
+            command_id: &self.command_id,
+            tenant_id: &self.tenant_id,
+            edge_id: &self.edge_id,
+            expires_ms: self.expires_ms,
+            command: &self.command,
+        })
+        .expect("命令序列化不会失败")
+    }
 }
 
 #[cfg(test)]
@@ -130,6 +208,7 @@ mod tests {
             quality: Quality::Good,
             confidence: None,
             evidence: None,
+            mock: false,
         };
         let j = serde_json::to_string(&r).unwrap();
         assert_eq!(
@@ -161,6 +240,41 @@ mod tests {
         assert!(
             serde_json::from_str::<EdgeCommand>(r#"{"type":"write_register","addr":1}"#).is_err()
         );
+    }
+
+    #[test]
+    fn mock_flag_only_when_set() {
+        let j = r#"{"point":"a","ts_ms":1,"value":1.5,"unit":"℃","source":"direct","quality":"good","mock":true}"#;
+        let r: Reading = serde_json::from_str(j).unwrap();
+        assert!(r.mock);
+        assert_eq!(serde_json::to_string(&r).unwrap(), j);
+    }
+
+    #[test]
+    fn signing_bytes_are_canonical() {
+        let c = SignedCommand {
+            protocol: 1,
+            command_id: "c1".into(),
+            tenant_id: "luneng".into(),
+            edge_id: "e1".into(),
+            expires_ms: 5,
+            command: EdgeCommand::Resend { from_seq: 9 },
+            signature: "x".into(),
+        };
+        assert_eq!(
+            String::from_utf8(c.signing_bytes()).unwrap(),
+            r#"{"protocol":1,"command_id":"c1","tenant_id":"luneng","edge_id":"e1","expires_ms":5,"command":{"type":"resend","from_seq":9}}"#
+        );
+    }
+
+    #[test]
+    fn ack_without_commands_parses() {
+        let a: UplinkAck = serde_json::from_str(
+            r#"{"duplicate":false,"seq":3,"accepted":2,"rejected":{"x":"测点未登记"}}"#,
+        )
+        .unwrap();
+        assert_eq!(a.seq, 3);
+        assert!(a.commands.is_empty());
     }
 
     #[test]

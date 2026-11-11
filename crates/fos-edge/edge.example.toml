@@ -1,7 +1,8 @@
-# fos-edge 示例配置（六安绿能，点位为示意，W1 现场调研后替换）
+# fos-edge 示例配置（六安绿能，点位、地址、寄存器都是占位值，现场调研后替换）
+# 上行 API Key 从环境变量 FOS_EDGE_API_KEY 读，不写在这里。
 tenant_id = "luneng"
 edge_id = "luneng-ws1-ipc01"
-uplink_url = "https://fos.example.com/edge/uplink"
+uplink_url = "https://fos.example.com/v1/edge/uplink"
 buffer_days = 7
 
 # 路径 A：1# 隧道窑温控仪表，RS485 Modbus RTU

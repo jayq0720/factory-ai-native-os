@@ -36,7 +36,7 @@
 - `fos/tender/`：招标拆解（W18）。`decompose.py` 结构识别 / 条款拆解 / 评分点 / 资料清单 / 偏离比较（纯函数，零模型成本）、`service.py` 登记招标项目（截止时间生成提醒待办）/ 拆解版本（`tender_analyses` 表，迁移 0009）/ 逐条处理 / 转工程项目 / 提交投标、`notify.py` 截止前 IM 提醒、`cards.py` IM「招标」「招标 编号」；本体 `packs/<pack>/ontology/tender.yaml`（招标项目、资质资料），配置 `packs/<pack>/tender.yaml`；招标 Schema 用 `include` 借技术文件字段；API 在 `fos/api/tender_routes.py`，网页 `/app/tender.html`；说明见 `docs/tender.md`
 - `fos/monitoring/`：窑炉监控（W19）。`service.py` 读数入库（fos-edge 上行按 `(edge_id, seq)` 去重 / 人工抄表）、窑况、窑次曲线、结束窑次（按读数算最高温 / 超差 / 能耗后入账）、能耗，`curve.py` 曲线比对（纯函数），`watch.py` 告警判定（超限 / 超差 / 断网 / 设备故障）与抄表提醒推送，`cards.py` IM「窑况」「抄表」，`samples.py` 演示数据；读数存 `point_readings`（时序，不走账本，迁移 0010）；本体 `packs/<pack>/ontology/monitoring.yaml`（测点），配置 `packs/<pack>/monitoring.yaml`（烧成制度、告警时长）；API 在 `fos/api/monitor_routes.py`，网页 `/app/kiln.html`；说明见 `docs/kiln-monitoring.md`
 - `fos/services.py`：API 进程与信道进程共用的服务装配
-- `crates/fos-protocol`：云边数据契约；`crates/fos-edge`：厂端 daemon
+- `crates/fos-protocol`：云边数据契约（读数、上行批次 / 回执、签名命令）；`crates/fos-edge`：厂端 daemon v0.1（W20）。`modbus.rs` Modbus RTU / TCP 采集（仪表参数全在 edge.toml）、`buffer.rs` SQLite 断网缓存（先落盘再上行，seq 不变，云端去重）、`daemon.rs` 采集 / 封批 / 上行任务、`commands.rs` Ed25519 验签只读命令、`sim.rs` 仪表模拟器（`fos-edge simulate`）；配置 `edge.example.toml` / `edge.sim.toml`，systemd `deploy/edge/fos-edge.service`；说明见 `docs/fos-edge.md`
 
 ## 规则（不要破坏）
 
