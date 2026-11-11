@@ -5,6 +5,8 @@
 - 在烧窑次的温度点偏离烧成制度超过允许偏差、持续 deviation_minutes → deviation；
 - 网关 edge_offline_minutes 没有上行 → edge_offline（一台网关一条，不再逐个点位报“故障”）；
 - 网关在线、点位超过 stale_factor 个采样间隔没有读数，或最新读数质量为 bad → point_fault；
+- 网关在线、最近一次厂端状态里本地积压最早一批超过 edge.backlog_minutes → edge_backlog；
+  有被云端拒收、暂存待查的批次 → edge_rejected（W21，状态由 Watchdog 定时向网关要）；
 - 人工抄表点位到点 manual_grace_minutes 后还没报数 → 抄表提醒
   （不是告警，Trigger 唯一约束保证每次只提醒一回）。
 
@@ -26,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fos.channels.base import ChannelAdapter, ChannelError
 from fos.db.models import KilnAlarm, Trigger, utcnow
 from fos.monitoring import curve as cv
+from fos.monitoring import edge as ec
 from fos.monitoring import service as ms
 from fos.monitoring.config import MonitorConfig
 from fos.planning.notify import _thread, dm, role_identities
@@ -40,6 +43,8 @@ KIND_TEXT = {
     "deviation": "偏离烧成曲线",
     "edge_offline": "采集网关断网",
     "point_fault": "测点无数据 / 设备故障",
+    "edge_backlog": "网关积压未传",
+    "edge_rejected": "网关有被拒批次",
 }
 
 
@@ -212,7 +217,66 @@ async def conditions(
                 data_mode="mock" if all(p.data_mode == "mock" for p in plist) else "real",
             )
         )
+    out.extend(await edge_conditions(session, tenant_id, cfg, now, edges, offline, pts))
     return out, reminders
+
+
+async def edge_conditions(
+    session: AsyncSession,
+    tenant_id: str,
+    cfg: MonitorConfig,
+    now: datetime,
+    seen: dict[str, datetime],
+    offline: dict[str, list[ms.Point]],
+    pts: list[ms.Point],
+) -> list[Condition]:
+    """网关在线时看它最近报的状态；状态太旧（超过两个自动上报周期）就不判，等下一次。"""
+    fresh = timedelta(minutes=2 * (cfg.edge.status_every_minutes or 60))
+    out: list[Condition] = []
+    for edge, last in seen.items():
+        if edge in offline or now - last > timedelta(minutes=cfg.alarms.edge_offline_minutes):
+            continue
+        st = await ec.latest_status(session, tenant_id, edge)
+        if st is None or not st.status or now - ms.aware(st.received_at) > fresh:
+            continue
+        h = ec.health(st.status, ms.aware(st.received_at))
+        mine = [p for p in pts if p.edge_id == edge]
+        mode = "mock" if mine and all(p.data_mode == "mock" for p in mine) else "real"
+        if h.backlog_minutes is not None and h.backlog_minutes >= cfg.edge.backlog_minutes:
+            out.append(
+                Condition(
+                    key=f"edge_backlog:{edge}",
+                    kind="edge_backlog",
+                    message=(
+                        f"采集网关 {edge} 在线，但本地还有 {st.status.get('pending_batches')} 批"
+                        f"（{st.status.get('pending_readings')} 条）读数没传上来，最早一批积压 "
+                        f"{_fmt(h.backlog_minutes)} 分钟；请检查网络带宽 / 云端是否拒收"
+                    ),
+                    edge_id=edge,
+                    detail={"backlog_minutes": round(h.backlog_minutes, 1), **_counts(st.status)},
+                    data_mode=mode,
+                )
+            )
+        if h.rejected_batches > 0:
+            out.append(
+                Condition(
+                    key=f"edge_rejected:{edge}",
+                    kind="edge_rejected",
+                    message=(
+                        f"采集网关 {edge} 有 {h.rejected_batches} 批读数被云端判为格式错误、暂存在网关待查；"
+                        "查明原因后可在网页下发“重新补传”"
+                    ),
+                    edge_id=edge,
+                    detail=_counts(st.status),
+                    data_mode=mode,
+                )
+            )
+    return out
+
+
+def _counts(status: dict) -> dict:
+    keys = ("pending_batches", "pending_readings", "rejected_batches", "version")
+    return {k: status.get(k) for k in keys}
 
 
 async def evaluate(

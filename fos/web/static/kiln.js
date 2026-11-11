@@ -58,8 +58,52 @@ async function post(path, body) {
 }
 const table = (heads, rows) => el("table", {}, el("tr", {}, heads.map((x) => el("th", {}, x))), rows);
 const wrap = (fn) => () => fn().catch((e) => toast(e.message, 8000));
-const KIND = { high: "超上限", low: "低于下限", deviation: "偏离曲线", edge_offline: "网关断网", point_fault: "设备故障" };
-function refresh() { return Promise.all([loadBoard(), loadEnergy()]).catch((e) => toast(e.message)); }
+const KIND = { high: "超上限", low: "低于下限", deviation: "偏离曲线", edge_offline: "网关断网", point_fault: "设备故障", edge_backlog: "网关积压", edge_rejected: "网关被拒批次" };
+function refresh() { return Promise.all([loadBoard(), loadEnergy(), loadGateways()]).catch((e) => toast(e.message)); }
+
+// ---------------- 采集网关（W21） ----------------
+async function loadGateways() {
+  const r = await api("/v1/edge/gateways");
+  if (r.status === 403) { fill($("#gateways"), el("p", { class: "muted small" }, "你没有查看采集网关的权限（production.edge:read）。")); return; }
+  if (!r.ok) throw new Error(await detail(r));
+  const g = await r.json();
+  const head = g.signing
+    ? el("p", { class: "muted small" }, "云端验签公钥（填进 edge.toml 的 command_public_key）：", el("code", {}, g.public_key))
+    : el("p", { class: "bad small" }, "云端没有配置命令签名私钥（FOS_EDGE_COMMAND_KEY），不能下发命令；用 fos edge-keygen 生成。");
+  if (!g.gateways.length) { fill($("#gateways"), head, el("p", { class: "muted" }, "还没有采集网关。")); return; }
+  fill($("#gateways"), head, g.gateways.map((e) => {
+    const s = e.status, h = e.health;
+    const stat = s
+      ? `v${s.version} · 积压 ${s.pending_batches} 批 / ${s.pending_readings} 条${h && h.backlog_minutes !== null ? `（最早 ${n(h.backlog_minutes)} 分钟）` : ""} · 被拒 ${s.rejected_batches} 批${h && h.failing_points.length ? " · 连续失败：" + h.failing_points.join("、") : ""}（${t(e.status_at)}）`
+      : "还没报过状态";
+    return el("div", { class: "kiln" },
+      el("h4", {}, e.edge_id, el("span", { class: e.online ? "ok small" : "bad small" }, e.online ? "  在线" : "  离线"),
+        el("span", { class: "muted small" }, `  最后上行 ${t(e.last_seen)} · ${e.points.length} 个测点${e.data_mode === "mock" ? " · 模拟" : ""}`)),
+      el("p", { class: "small" }, stat),
+      el("div", { class: "row" },
+        cmdBtn(e.edge_id, "上报状态", { type: "report_status" }, g.signing),
+        e.points.length ? cmdBtn(e.edge_id, "全部立即读数", { type: "read_now", points: e.points.slice(0, 50) }, g.signing) : null,
+        resendBtn(e.edge_id, g.signing)),
+      e.commands.length ? table(["命令", "状态", "结果", "谁要的", "时间"], e.commands.map((c) => el("tr", {},
+        el("td", {}, c.text), el("td", { class: c.status === "failed" || c.status === "expired" ? "bad" : "" }, c.status_name),
+        el("td", {}, c.result || "—"), el("td", {}, c.created_by_name), el("td", {}, t(c.created_at))))) : null);
+  }));
+}
+function cmdBtn(edge, label, command, enabled) {
+  const b = el("button", { class: "btn small", disabled: !enabled }, label);
+  b.addEventListener("click", wrap(async () => { await post("/v1/edge/commands", { edge_id: edge, command }); toast("已排队，网关下次上行时带下去"); await loadGateways(); }));
+  return b;
+}
+function resendBtn(edge, enabled) {
+  const b = el("button", { class: "btn small", disabled: !enabled }, "重新补传…");
+  b.addEventListener("click", wrap(async () => {
+    const v = prompt("从哪个序号起重新补传？（网关上 fos-edge status 可查被拒批次的序号）");
+    if (v === null || v.trim() === "") return;
+    await post("/v1/edge/commands", { edge_id: edge, command: { type: "resend", from_seq: Number(v) } });
+    toast("已排队"); await loadGateways();
+  }));
+  return b;
+}
 
 // ---------------- 窑况 ----------------
 async function loadBoard() {
@@ -170,6 +214,7 @@ $("#b-curve").addEventListener("click", wrap(loadCurve));
 $("#b-finish").addEventListener("click", wrap(finish));
 $("#b-meter").addEventListener("click", wrap(meter));
 $("#b-energy").addEventListener("click", wrap(loadEnergy));
+$("#b-gw").addEventListener("click", wrap(loadGateways));
 state.timer = setInterval(() => { if (state.key && $("#auto").checked) loadBoard().catch(() => {}); }, 30000);
 
 const saved = store("get");

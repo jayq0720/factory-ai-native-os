@@ -311,7 +311,17 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8000)
     sm = sub.add_parser("samples")
     sm.add_argument("out")
+    sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
+    if args.cmd == "edge-keygen":
+        from fos.monitoring.edge import CommandSigner
+
+        seed, pub = CommandSigner.generate()
+        print("# 私钥：只放进云端环境变量 / KMS（凭据管家），不要写进代码、租户配置或 edge.toml")
+        print(f"FOS_EDGE_COMMAND_KEY={seed}")
+        print("# 公钥：填进每台网关 edge.toml")
+        print(f'command_public_key = "{pub}"')
+        return 0
     if args.cmd == "serve":
         import uvicorn
 

@@ -97,6 +97,18 @@ pub struct UplinkBatch {
     /// 厂端状态。只在云端用 `ReportStatus` 要求时附带
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<EdgeStatus>,
+    /// 上一批回执里命令的执行结果（含验签被拒的），云端据此关闭命令
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_results: Vec<CommandResult>,
+}
+
+/// 一条命令在厂端的结果。`ok = false` 包括验签被拒、执行出错。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandResult {
+    pub command_id: String,
+    pub ok: bool,
+    /// 给人看的说明，例如“重新排队 12 批”“签名无效”
+    pub detail: String,
 }
 
 /// 厂端状态：版本、缓存积压、各点位健康。
@@ -275,6 +287,42 @@ mod tests {
         .unwrap();
         assert_eq!(a.seq, 3);
         assert!(a.commands.is_empty());
+    }
+
+    #[test]
+    fn results_only_when_present() {
+        let b = UplinkBatch {
+            protocol: 1,
+            tenant_id: "luneng".into(),
+            edge_id: "e1".into(),
+            seq: 1,
+            backfill: false,
+            readings: vec![],
+            status: None,
+            command_results: vec![],
+        };
+        let j = serde_json::to_string(&b).unwrap();
+        assert!(!j.contains("command_results"));
+        let mut b2 = b.clone();
+        b2.command_results.push(CommandResult {
+            command_id: "c1".into(),
+            ok: true,
+            detail: "完成".into(),
+        });
+        let back: UplinkBatch = serde_json::from_str(&serde_json::to_string(&b2).unwrap()).unwrap();
+        assert_eq!(back, b2);
+    }
+
+    /// 云端（Python）签发的命令：同一份向量在 tests/test_edge_commands.py 里由 Python 生成并比对，
+    /// 两边对“被签名的字节”理解一致。
+    #[test]
+    fn cloud_vector_signing_bytes() {
+        let c: SignedCommand =
+            serde_json::from_str(include_str!("../testdata/signed_command.json")).unwrap();
+        assert_eq!(
+            String::from_utf8(c.signing_bytes()).unwrap(),
+            r#"{"protocol":1,"command_id":"cmd-测试-1","tenant_id":"luneng","edge_id":"edge-1","expires_ms":1762000300000,"command":{"type":"read_now","points":["k1.top","窑顶"]}}"#
+        );
     }
 
     #[test]

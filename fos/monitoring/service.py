@@ -67,6 +67,30 @@ class ReadingIn(BaseModel):
     mock: bool = False  # 仪表模拟器 / 演示读数（fos-edge mode = "mock"）
 
 
+class PointHealthIn(BaseModel):
+    point: str = Field(max_length=64)
+    last_ok_ms: int | None = None
+    last_error: str | None = Field(default=None, max_length=500)
+    consecutive_errors: int = Field(default=0, ge=0)
+
+
+class EdgeStatusIn(BaseModel):
+    """厂端状态（EdgeStatus）：云端要了才附带。"""
+
+    version: str = Field(max_length=32)
+    pending_batches: int = Field(ge=0)
+    pending_readings: int = Field(ge=0)
+    oldest_pending_ms: int | None = None
+    rejected_batches: int = Field(ge=0)
+    points: list[PointHealthIn] = Field(default_factory=list, max_length=5000)
+
+
+class CommandResultIn(BaseModel):
+    command_id: str = Field(max_length=64)
+    ok: bool
+    detail: str = Field(default="", max_length=500)
+
+
 class UplinkIn(BaseModel):
     protocol: int
     tenant_id: str
@@ -74,6 +98,8 @@ class UplinkIn(BaseModel):
     seq: int = Field(ge=0)
     backfill: bool = False
     readings: list[ReadingIn] = Field(max_length=5000)
+    status: EdgeStatusIn | None = None
+    command_results: list[CommandResultIn] = Field(default_factory=list, max_length=100)
 
     @field_validator("protocol")
     @classmethod
@@ -197,6 +223,7 @@ async def ingest(session: AsyncSession, principal: Principal, batch: UplinkIn) -
         backfill=batch.backfill,
         accepted=len(rows),
         rejected=rejected,
+        status=batch.status.model_dump() if batch.status else None,
         received_by=principal.subject_id,
         received_at=now,
     )

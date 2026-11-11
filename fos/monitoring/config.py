@@ -45,10 +45,20 @@ class Notify(BaseModel):
     repeat_minutes: float = Field(default=60, gt=0)
 
 
+class Edge(BaseModel):
+    """云端发给 fos-edge 的只读命令与厂端状态（W21）。"""
+
+    command_ttl_s: int = Field(default=300, ge=30, le=3600)  # 每次签名的有效期（厂端上限 1 小时）
+    queue_minutes: int = Field(default=30, ge=1, le=60)  # 排队多久没结果就作废（厂端按 id 去重的窗口内）
+    status_every_minutes: float = Field(default=60, ge=0)  # 多久自动要一次状态；0 = 不自动要
+    backlog_minutes: float = Field(default=30, gt=0)  # 网关在线但积压最早一批超过这么久 → 告警
+
+
 class MonitorConfig(BaseModel):
     curves: dict[str, Curve] = Field(default_factory=dict)
     alarms: Alarms = Field(default_factory=Alarms)
     notify: Notify = Field(default_factory=Notify)
+    edge: Edge = Field(default_factory=Edge)
 
 
 def _read(path: Path) -> dict[str, Any]:

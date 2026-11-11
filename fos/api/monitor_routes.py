@@ -18,6 +18,7 @@ from fos.api.deps import SessionDep, require
 from fos.db.models import KilnAlarm, ObjectState, PointReading, utcnow
 from fos.governance.principal import Principal
 from fos.ledger import ApprovalRequired, Conflict, Forbidden, Invalid, NotFound
+from fos.monitoring import edge as ec
 from fos.monitoring import samples as demo
 from fos.monitoring import service as ms
 from fos.monitoring.config import MonitorConfig
@@ -28,6 +29,8 @@ Reader = Annotated[Principal, Depends(require("production.kiln:read"))]
 Writer = Annotated[Principal, Depends(require("production.kiln:write"))]
 Recorder = Annotated[Principal, Depends(require("production.reading:write"))]
 Admin = Annotated[Principal, Depends(require("production.monitor_point:write"))]
+EdgeReader = Annotated[Principal, Depends(require("production.edge:read"))]
+EdgeOperator = Annotated[Principal, Depends(require("production.edge:write"))]
 _LEDGER_STATUS = {Forbidden: 403, NotFound: 404, Conflict: 409, Invalid: 422, ApprovalRequired: 409}
 
 
@@ -49,11 +52,67 @@ _ERRORS = (ms.MonitorError, Forbidden, NotFound, Conflict, Invalid, ApprovalRequ
 
 @router.post("/edge/uplink")
 async def uplink(batch: ms.UplinkIn, request: Request, session: SessionDep, p: Recorder) -> dict[str, Any]:
-    """fos-edge 上行一批读数（crates/fos-protocol 的 UplinkBatch）。重复的 (edge_id, seq) 返回 duplicate。"""
+    """fos-edge 上行一批读数（crates/fos-protocol 的 UplinkBatch）。重复的 (edge_id, seq) 返回 duplicate。
+
+    回执（UplinkAck）里顺带下发排队中的签名只读命令；批次里的命令结果在这里收。
+    """
+    cfg = _cfg(request, p)
+    try:
+        ack = await ms.ingest(session, p, batch)
+    except _ERRORS as e:
+        raise _err(e) from e
+    ack["commands"] = await ec.after_uplink(session, p, batch, cfg, request.app.state.services.edge_signer)
+    return ack
+
+
+class CommandIn(BaseModel):
+    edge_id: str = Field(min_length=1, max_length=64)
+    command: ec.Command
+
+
+@router.get("/edge/gateways")
+async def gateways(request: Request, session: SessionDep, p: EdgeReader) -> dict[str, Any]:
+    """采集网关：在线、最近状态（积压 / 被拒批次 / 点位健康）、最近命令；以及云端验签公钥。"""
+    cfg = _cfg(request, p)
+    return await ec.gateways(session, p.tenant_id, cfg, request.app.state.services.edge_signer)
+
+
+@router.post("/edge/commands", status_code=201)
+async def issue_command(
+    body: CommandIn, request: Request, session: SessionDep, p: EdgeOperator
+) -> dict[str, Any]:
+    """给网关排一条只读命令（立即读数 / 上报状态 / 重新补传），网关下次上行时签名带下去。"""
+    cfg = _cfg(request, p)
+    try:
+        rec = await ec.issue(
+            session, p, body.edge_id, body.command, cfg, request.app.state.services.edge_signer
+        )
+    except ms.MonitorError as e:
+        raise _err(e) from e
+    return ec.command_out(rec)
+
+
+@router.get("/edge/commands")
+async def list_commands(
+    request: Request,
+    session: SessionDep,
+    p: EdgeReader,
+    edge_id: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> dict[str, Any]:
+    _cfg(request, p)
+    rows = await ec.commands(session, p.tenant_id, edge_id, limit)
+    return {"commands": [ec.command_out(r) for r in rows]}
+
+
+@router.post("/edge/commands/{command_id}/cancel")
+async def cancel_command(
+    command_id: str, request: Request, session: SessionDep, p: EdgeOperator
+) -> dict[str, Any]:
     _cfg(request, p)
     try:
-        return await ms.ingest(session, p, batch)
-    except _ERRORS as e:
+        return ec.command_out(await ec.cancel(session, p.tenant_id, command_id))
+    except ms.MonitorError as e:
         raise _err(e) from e
 
 

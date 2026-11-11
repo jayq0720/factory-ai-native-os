@@ -1,0 +1,15 @@
+{
+  "protocol": 1,
+  "command_id": "cmd-测试-1",
+  "tenant_id": "luneng",
+  "edge_id": "edge-1",
+  "expires_ms": 1762000300000,
+  "command": {
+    "type": "read_now",
+    "points": [
+      "k1.top",
+      "窑顶"
+    ]
+  },
+  "signature": "9JtGu1HVGuZhU/XaIDGPkQY3sA+YB35gfI+8aBy5fpjdXOrzX7xYbU+ANwzuPm3gLBn88u/+abb3vl3JWvhtBA=="
+}

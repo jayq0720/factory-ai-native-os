@@ -29,3 +29,10 @@ notify:
   alarm_roles: [shift_lead]
   manual_roles: [shift_lead, worker]
   repeat_minutes: 60          # 告警持续未处理，每隔多久再提醒一次
+
+# 4. 采集网关（fos-edge）命令与状态（W21，说明见 docs/fos-edge.md）
+edge:
+  command_ttl_s: 300          # 每次签名的有效期（秒，厂端最多认 1 小时）
+  queue_minutes: 30           # 命令排队多久没结果就作废
+  status_every_minutes: 60    # 每隔多久自动要一次厂端状态（积压、被拒批次、点位健康）；0 = 不自动要
+  backlog_minutes: 30         # 网关在线、本地积压最早一批超过这么久还没传上来 → 告警

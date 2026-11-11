@@ -84,6 +84,13 @@
   </section>
 
   <section class="card">
+    <h2>采集网关</h2>
+    <p class="muted small">fos-edge 只执行签名的只读命令：立即读数、上报状态、重新补传。命令排队，网关下次上行时签名带下去，结果随下一批回报。没有任何写仪表 / 改设定值的命令。</p>
+    <div class="row"><button id="b-gw" class="btn small">刷新</button></div>
+    <div id="gateways"></div>
+  </section>
+
+  <section class="card">
     <h2>能耗（最近 24 小时）</h2>
     <button id="b-energy" class="btn small">刷新</button>
     <div id="energy"></div>

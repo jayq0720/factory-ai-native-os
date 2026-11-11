@@ -549,6 +549,8 @@ class EdgeBatch(Base):
     backfill: Mapped[bool] = mapped_column(Boolean, default=False)
     accepted: Mapped[int] = mapped_column(Integer)
     rejected: Mapped[dict] = mapped_column(JSON, default=dict)  # 点位 → 原因
+    # 厂端状态（EdgeStatus：版本、积压、被拒批次、各点位健康）；只有云端要了状态的那一批才有（W21）
+    status: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     received_by: Mapped[str] = mapped_column(String(36))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -581,3 +583,29 @@ class KilnAlarm(Base):
     acked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     acked_by_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EdgeCommandRecord(Base):
+    """云端发给 fos-edge 的只读命令（W21，方案 7.2）：排队 → 随上行回执签名下发 → 厂端回报结果。
+
+    命令不是业务事实，不走账本；谁要的、什么时候、结果如何都记在这里备查。
+    签名在下发时做（有效期很短）；没收到结果就用同一个 id 重签，厂端按 id 去重、只回报上次结果。
+    """
+
+    __tablename__ = "edge_commands"
+    __table_args__ = (Index("ix_edge_commands_open", "tenant_id", "edge_id", "status"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)  # = command_id
+    tenant_id: Mapped[str] = mapped_column(String(32))
+    edge_id: Mapped[str] = mapped_column(String(64))
+    command: Mapped[dict] = mapped_column(JSON)  # {"type": "read_now", "points": [...]} 等
+    status: Mapped[str] = mapped_column(String(16))  # pending / sent / done / failed / expired / cancelled
+    deliveries: Mapped[int] = mapped_column(Integer, default=0)
+    result: Mapped[str] = mapped_column(String(500), default="")
+    auto: Mapped[bool] = mapped_column(Boolean, default=False)  # Watchdog 自动要的（定时要状态）
+    created_by: Mapped[str] = mapped_column(String(36))
+    created_by_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # 过了还没结果就作废
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
