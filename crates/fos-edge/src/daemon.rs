@@ -12,14 +12,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use fos_protocol::{
-    EdgeCommand, EdgeStatus, PointHealth, Quality, Reading, SourcePath, UplinkBatch,
+    CommandResult, EdgeCommand, EdgeStatus, PointHealth, Quality, Reading, SourcePath, UplinkBatch,
     PROTOCOL_VERSION,
 };
 use tokio::sync::{mpsc, watch, Notify};
 use tokio::time::{sleep, sleep_until, Instant};
 
 use crate::buffer::Buffer;
-use crate::commands::Verifier;
+use crate::commands::{Rejected, Verifier};
 use crate::config::{DataMode, EdgeConfig};
 use crate::modbus::{Bus, Link, ModbusPoint};
 use crate::uplink::{SendError, Uplink};
@@ -94,6 +94,10 @@ pub struct Shared {
     flush_now: Notify,
     uplink_wake: Notify,
     want_status: Mutex<bool>,
+    /// 本网关采集的点位（ReadNow 只认这些）
+    collected: HashSet<String>,
+    /// 等着随下一批上行的命令结果
+    results: Mutex<Vec<CommandResult>>,
 }
 
 impl Shared {
@@ -109,6 +113,13 @@ impl Shared {
             flush_now: Notify::new(),
             uplink_wake: Notify::new(),
             want_status: Mutex::new(false),
+            collected: cfg
+                .points
+                .iter()
+                .filter(|p| p.collected())
+                .map(|p| p.id.clone())
+                .collect(),
+            results: Mutex::new(Vec::new()),
         })
     }
 
@@ -174,31 +185,71 @@ impl Shared {
         hit
     }
 
-    /// 执行一条已验签的命令。全部只读：读一次、报状态、重新排队补传。
-    pub fn execute(&self, cmd: &EdgeCommand) {
+    /// 执行一条已验签的命令。全部只读：读一次、报状态、重新排队补传。返回给云端看的说明。
+    pub fn execute(&self, cmd: &EdgeCommand) -> Result<String, String> {
         match cmd {
             EdgeCommand::ReadNow { points } => {
                 tracing::info!("命令：立即读 {:?}", points);
+                let (known, unknown): (Vec<&String>, Vec<&String>) =
+                    points.iter().partition(|p| self.collected.contains(*p));
+                if known.is_empty() {
+                    return Err(format!("本网关不采这些点位：{}", join(&unknown)));
+                }
                 self.forced
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .extend(points.iter().cloned());
+                    .extend(known.iter().map(|p| p.to_string()));
                 self.bus_wake.notify_waiters();
+                let mut msg = format!("已安排立即读 {} 个点位，读数随下一批上行", known.len());
+                if !unknown.is_empty() {
+                    msg.push_str(&format!("；本网关不采：{}", join(&unknown)));
+                }
+                Ok(msg)
             }
             EdgeCommand::ReportStatus => {
                 tracing::info!("命令：上报状态");
                 *self.want_status.lock().unwrap_or_else(|e| e.into_inner()) = true;
                 self.flush_now.notify_one();
+                Ok("状态随下一批上行".into())
             }
             EdgeCommand::Resend { from_seq } => match self.buffer().requeue_from(*from_seq) {
                 Ok(n) => {
                     tracing::info!("命令：从序号 {from_seq} 起补传，重新排队 {n} 批");
                     self.uplink_wake.notify_one();
+                    Ok(format!("从序号 {from_seq} 起重新排队 {n} 批"))
                 }
-                Err(e) => tracing::error!("补传失败：{e}"),
+                Err(e) => {
+                    tracing::error!("补传失败：{e}");
+                    Err(format!("补传失败：{e}"))
+                }
             },
         }
     }
+
+    fn push_result(&self, r: CommandResult) {
+        self.results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(r);
+    }
+
+    fn take_results(&self) -> Vec<CommandResult> {
+        std::mem::take(&mut *self.results.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// 发送失败时把结果放回去，下一次再带上。
+    fn restore_results(&self, mut rs: Vec<CommandResult>) {
+        if rs.is_empty() {
+            return;
+        }
+        let mut cur = self.results.lock().unwrap_or_else(|e| e.into_inner());
+        rs.append(&mut cur);
+        *cur = rs;
+    }
+}
+
+fn join(ps: &[&String]) -> String {
+    ps.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("、")
 }
 
 /// 一条链路（一个串口 / 一个 TCP 设备）上的采集循环。点位依次读，各自按间隔。
@@ -389,6 +440,7 @@ async fn uplink_task<U: Uplink>(
             backfill: now - p.created_ms > 3 * timing.flush.as_millis() as i64,
             readings: p.readings,
             status: status.then(|| shared.status()),
+            command_results: shared.take_results(),
         };
         let res = tokio::select! {
             r = uplink.send(&batch) => r,
@@ -410,10 +462,38 @@ async fn uplink_task<U: Uplink>(
                     }
                 }
                 for c in &ack.commands {
-                    match verifier.verify(c, now_ms()) {
-                        Ok(cmd) => shared.execute(cmd),
-                        Err(e) => tracing::warn!(command_id = %c.command_id, "拒绝命令：{e}"),
-                    }
+                    let (ok, detail) = match verifier.verify(c, now_ms()) {
+                        Ok(cmd) => match shared.execute(cmd) {
+                            Ok(d) => (true, d),
+                            Err(d) => (false, d),
+                        },
+                        Err(Rejected::Replay) => {
+                            // 云端没收到上次的结果才会重发：再报一次，不再执行
+                            if let Some(prev) = verifier.previous(&c.command_id) {
+                                shared.push_result(prev.clone());
+                            }
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::warn!(command_id = %c.command_id, "拒绝命令：{e}");
+                            (false, format!("厂端拒绝：{e}"))
+                        }
+                    };
+                    let r = CommandResult {
+                        command_id: c.command_id.clone(),
+                        ok,
+                        detail,
+                    };
+                    verifier.remember(&r);
+                    shared.push_result(r);
+                }
+                if !shared
+                    .results
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_empty()
+                {
+                    shared.flush_now.notify_one(); // 结果尽快报回去
                 }
             }
             Err(SendError::Reject(msg)) => {
@@ -423,6 +503,10 @@ async fn uplink_task<U: Uplink>(
                 );
                 if let Err(e) = shared.buffer().mark_rejected(p.seq, now_ms(), &msg) {
                     tracing::error!("标记被拒失败：{e}");
+                }
+                shared.restore_results(batch.command_results);
+                if status {
+                    *shared.want_status.lock().unwrap_or_else(|e| e.into_inner()) = true;
                 }
             }
             Err(SendError::Retry(msg)) => {
@@ -435,6 +519,7 @@ async fn uplink_task<U: Uplink>(
                 if status {
                     *shared.want_status.lock().unwrap_or_else(|e| e.into_inner()) = true;
                 }
+                shared.restore_results(batch.command_results);
                 tokio::select! {
                     _ = sleep(backoff) => {}
                     _ = stop.changed() => return,

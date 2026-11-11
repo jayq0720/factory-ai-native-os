@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     extract_with_llm: bool = True
     extract_chunk_chars: int = 6000
 
+    # fos-edge 命令签名私钥（Ed25519，32 字节种子的 base64，或 PEM 全文）；只从环境变量 / KMS 注入。
+    # 留空则不能下发命令（厂端也拒绝一切未签名命令）。生成：fos edge-keygen
+    edge_command_key: str = ""
+
     # Agent 运行预算（方案 2.6 Budget Lease）：单次运行的上限
     agent_max_tokens: int = 40_000
     agent_tool_result_chars: int = 4_000  # 工具结果放进上下文的上限，超出部分只存在运行记录里（Spill）

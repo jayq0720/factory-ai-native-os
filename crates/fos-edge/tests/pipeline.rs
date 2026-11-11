@@ -210,7 +210,10 @@ async fn offline_buffer_then_backfill_without_duplicates() {
         forged.signature = B64.encode([0u8; 64]);
         s.commands = vec![sign("c1", EdgeCommand::ReportStatus), forged];
     }
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    // 云端没收到结果时会用同一个 id 重签：厂端只回报上次的结果，不再执行
+    cloud.0.lock().unwrap().commands = vec![sign("c1", EdgeCommand::ReportStatus)];
+    tokio::time::sleep(Duration::from_millis(1000)).await;
     let _ = stop_tx.send(());
     run.await.unwrap().unwrap();
 
@@ -250,6 +253,17 @@ async fn offline_buffer_then_backfill_without_duplicates() {
         .points
         .iter()
         .any(|p| p.point == "k.bad" && p.consecutive_errors > 0));
+
+    let results: Vec<_> = received
+        .iter()
+        .flat_map(|b| b.command_results.iter())
+        .collect();
+    let c1: Vec<_> = results.iter().filter(|r| r.command_id == "c1").collect();
+    assert_eq!(c1.len(), 2, "执行一次、重签时再回报一次：{results:?}");
+    assert!(c1.iter().all(|r| r.ok && r.detail == c1[0].detail));
+    assert!(results
+        .iter()
+        .any(|r| r.command_id == "forged" && !r.ok && r.detail.contains("签名无效")));
 
     let st = shared.buffer().stats().unwrap();
     assert_eq!(st.pending_batches, 0, "恢复后积压全部发完：{st:?}");

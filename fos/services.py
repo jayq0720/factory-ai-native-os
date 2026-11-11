@@ -18,6 +18,7 @@ from fos.gateway.llm import LLMClient
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, load_trace_config
 from fos.monitoring.config import MonitorConfig, load_monitor_config
+from fos.monitoring.edge import CommandSigner
 from fos.onboarding.config import ImportConfig, load_import_config
 from fos.ontology import Ontology
 from fos.ontology.loader import load_ontology
@@ -73,6 +74,8 @@ class Services:
     supply: dict[str, SupplyConfig]
     tenders: dict[str, TenderConfig]
     monitoring: dict[str, MonitorConfig]
+    # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
+    edge_signer: CommandSigner | None = None
 
     @classmethod
     def build(cls, settings: Settings) -> Services:
@@ -235,6 +238,7 @@ class Services:
             supply=supply,
             tenders=tenders,
             monitoring=monitoring,
+            edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 
     async def aclose(self) -> None:

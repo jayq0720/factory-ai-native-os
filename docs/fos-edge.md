@@ -97,19 +97,48 @@ FOS_EDGE_API_KEY=<edge 的 Key> fos-edge run crates/fos-edge/edge.sim.toml
 
 先启动 fos-edge、后启动云端也行：期间的读数在本地缓存里，云端起来后自动补传（带 `backfill`）。
 
-## 签名只读命令
+## 签名只读命令（厂端 W20 + 云端 W21）
 
-- 厂端不开任何入站端口，命令只随上行回执（`UplinkAck.commands`）下来；
-- 协议里只有三条命令：`read_now`（立即读指定点位）、`report_status`（下一批附带厂端状态：版本、积压、各点位健康）、`resend`（从某序号起重新排队补传）；写寄存器、改设定值在协议里不存在（规则 7）；
-- Ed25519 验签，被签名的是除 `signature` 外字段的紧凑 JSON（`SignedCommand::signing_bytes`，文档注释里有 Python 等价写法）；还要求租户 / 网关匹配、未过期、有效期不超过 1 小时、同一 `command_id` 只执行一次；
-- 私钥只在云端（KMS / 环境变量），厂端配置只放公钥。生成：`openssl genpkey -algorithm ed25519 -out cmd.pem`，公钥 base64：`openssl pkey -in cmd.pem -pubout -outform DER | tail -c 32 | base64`。
+协议里只有三条命令：`read_now`（立即读指定点位）、`report_status`（下一批附带厂端状态：版本、积压、被拒批次、各点位健康）、`resend`（从某序号起重新排队补传）。写寄存器、改设定值在协议里不存在（规则 7），云端接口收到别的 `type` 直接 422。
 
-云端签发和下发命令（存待发命令、随回执带下去、记录执行结果）是下一步；v0.1 先把厂端的验签和执行做完，云端现在回执里没有命令，厂端什么都不执行。
+```
+人（网页 / POST /v1/edge/commands，权限 production.edge:write）        Watchdog（每 status_every_minutes 自动要一次状态）
+        │ 排队：edge_commands 表，status = pending，queue_minutes 内有效
+        ▼
+网关下次上行 POST /v1/edge/uplink ──▶ 回执 UplinkAck.commands：下发时才用私钥签名，有效期 command_ttl_s（默认 5 分钟）
+        │                                         status = sent
+        ▼
+厂端验签（公钥在 edge.toml）→ 执行 → 结果放进下一批的 command_results（验签被拒的也报，例如“签名无效”）
+        │
+        ▼
+云端收结果：done / failed；签名过期还没结果 → 同一个 id 重签再带一次；排队超过 queue_minutes → expired
+```
 
-## 云端配合的改动
+- **签名**：Ed25519，被签名的是除 `signature` 外字段的紧凑 JSON（`SignedCommand::signing_bytes`；Python 是 `fos/monitoring/edge.py` 的 `signing_bytes`）。两边对同一份测试向量 `crates/fos-protocol/testdata/signed_command.json` 逐字节比对，Rust 用它验签（`verifies_cloud_vector`），Python 用它比对签名结果（`tests/test_edge_commands.py`）。
+- **厂端校验**：租户 / 网关匹配、未过期、有效期不超过 1 小时、同一 `command_id` 只执行一次。执行过的 id 记到“过期后再 1 小时”，云端重签同一条命令时厂端只回报上次的结果，不会执行两遍（`queue_minutes` 最大 60，保证重签都落在这个窗口里）。网关重启后记录清空，最坏情况是一条只读命令执行两次，没有副作用。
+- **结果不丢**：结果和状态跟着批次走；这一批没发出去（断网 / 被拒）就放回去，下一批再带。
+- **私钥只在云端**：环境变量 `FOS_EDGE_COMMAND_KEY`（32 字节种子的 base64，或 PEM 全文；生产放 KMS / 凭据管家，规则 2）。没配置时云端不能下发命令（接口 409），回执里没有命令，采集照常。
+- **密钥生成**：`fos edge-keygen` 打印一行私钥（放环境变量）和一行公钥（填 edge.toml 的 `command_public_key`）；网页“采集网关”一节也显示当前公钥。也可以用 openssl：`openssl genpkey -algorithm ed25519 -out cmd.pem`，公钥 base64：`openssl pkey -in cmd.pem -pubout -outform DER | tail -c 32 | base64`，私钥种子：`openssl pkey -in cmd.pem -outform DER | tail -c 32 | base64`。
+- 一个云端私钥服务所有租户：租户 id 在被签名的字节里，跨租户重放会被厂端拒绝。以后要分租户密钥，再按租户从 KMS 取。
 
-- `Reading.mock`：模拟读数写进正式测点时逐条拒收（“模拟读数不能写入正式测点”）；
-- 协议新增 `UplinkAck`、`EdgeStatus`（云端暂不存，Pydantic 忽略多余字段，向前兼容）。
+### 接口
+
+| 接口 | 权限 | 说明 |
+|---|---|---|
+| `GET /v1/edge/gateways` | production.edge:read | 每台网关：在线、最后上行、测点、最近一次状态及解读（积压分钟、被拒批次、连续失败的点位）、最近 5 条命令；以及云端是否能签名、公钥 |
+| `POST /v1/edge/commands` | production.edge:write | `{"edge_id": "edge-1", "command": {"type": "read_now", "points": ["k1.top"]}}`；点位必须是登记在这台网关上的 |
+| `GET /v1/edge/commands?edge_id=` | production.edge:read | 命令记录：谁要的、下发几次、结果 |
+| `POST /v1/edge/commands/{id}/cancel` | production.edge:write | 只能取消还没下发的 |
+
+网关自己的 Key（`edge` 角色，只有 `production.reading:write`）不能给自己下命令。命令和状态不是业务事实，不走账本；谁要的、结果如何都记在 `edge_commands` 表里备查（迁移 0011）。
+
+### 厂端状态与 Watchdog
+
+状态存在那一批的 `edge_batches.status`。Watchdog（`fos channels run` 里的监控判定）看网关在线时最近一次状态（不超过两个上报周期）：
+
+- 积压最早一批超过 `edge.backlog_minutes`（默认 30 分钟）还没传上来 → 告警 `edge_backlog`；
+- 有被云端拒收、暂存在网关上的批次 → 告警 `edge_rejected`，查明原因后在网页点“重新补传”；
+- 状态恢复正常（下一次上报）自动关闭。配置在 `packs/<pack>/monitoring.yaml` 的 `edge:` 段。
 
 ## 待现场确认（占位值）
 
@@ -119,6 +148,5 @@ FOS_EDGE_API_KEY=<edge 的 Key> fos-edge run crates/fos-edge/edge.sim.toml
 
 ## 下一步
 
-- 云端签发命令、存厂端状态（Watchdog 看积压和点位健康）；
 - OPC UA、S7、摄像头定时拍仪表盘驱动（按现场设备决定先做哪个）；
 - 质量体系、另外两种 IM（W21–W22）。

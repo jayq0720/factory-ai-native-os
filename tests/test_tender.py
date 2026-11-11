@@ -347,9 +347,9 @@ def test_deadline_change_regenerates_reminders_and_im(client, keys):
     _, out = _register(client, keys)
     tid = out["tender"]["id"]
     new = _deadline(25)
-    r = client.patch(
-        f"/v1/tenders/{tid}", json={"bid_deadline": new, "note": "补遗：截止时间延后"}, headers=eng
-    )
+    # 澄清截止也改成相对今天（样例文件里是固定日期，临近时会多出一条澄清提醒）
+    body = {"bid_deadline": new, "clarification_deadline": _deadline(15), "note": "补遗：截止时间延后"}
+    r = client.patch(f"/v1/tenders/{tid}", json=body, headers=eng)
     assert r.status_code == 200, r.text
     rem = client.get(f"/v1/tenders/{tid}", headers=eng).json()["reminders"]
     open_bid = [x for x in rem if x["status"] == "open" and x["title"].startswith("投标截止")]

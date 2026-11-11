@@ -147,7 +147,13 @@ def test_kiln_monitoring_flow(client, h, keys):
     assert r["accepted"] == 93 and set(r["rejected"]) == {"k1.unknown", "k1.door", "k1.flue", "k1.top"}
     assert "模拟" in r["rejected"]["k1.top"]
     dup = client.post("/v1/edge/uplink", json=body, headers=h("edge")).json()
-    assert dup == {"duplicate": True, "seq": 1, "accepted": 0, "rejected": {}}  # 断网补传 / 重发不重复入库
+    assert dup == {
+        "duplicate": True,
+        "seq": 1,
+        "accepted": 0,
+        "rejected": {},
+        "commands": [],
+    }  # 断网补传 / 重发不重复入库
 
     # —— 判定一轮：超差、超上限、断网（edge-2）、设备故障（k1.flue）、抄表提醒（k1.panel） ——
     for ext, login in (("im-lead", "shift_lead"), ("im-w", "worker")):
