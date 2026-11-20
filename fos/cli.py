@@ -41,8 +41,11 @@ from fos.tenancy import TenantRegistry
 
 
 async def _run_channels(tenant_ids: list[str]) -> int:
+    from fos.channels.base import ChannelAdapter
     from fos.channels.dingtalk import DingTalkAdapter, DingTalkApp, DingTalkStream
+    from fos.channels.feishu import FeishuAdapter, FeishuApp
     from fos.channels.types import InboundMessage
+    from fos.channels.wecom import WeComAdapter, WeComApp
     from fos.monitoring.watch import monitor_loop
     from fos.planning.notify import order_watch_loop
     from fos.reports.schedule import daily_loop
@@ -53,48 +56,68 @@ async def _run_channels(tenant_ids: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     svc = Services.build(get_settings())
     runs = []
-    adapters: list[DingTalkAdapter] = []
+    adapters: list[ChannelAdapter] = []
     for tid in tenant_ids or svc.registry.ids():
         tenant = svc.registry.get(tid)
-        if tenant is None or "dingtalk" not in tenant.im:
+        if tenant is None:
             continue
-        app = DingTalkApp.from_env(tid)
-        if app is None:
-            print(
-                f"{tid}: 没有配置 FOS_DINGTALK_{tid.upper()}_CLIENT_ID / _CLIENT_SECRET，跳过",
-                file=sys.stderr,
-            )
-            continue
-        adapter = DingTalkAdapter(app)
-        adapters.append(adapter)
+        tenant_adapters: list[ChannelAdapter] = []
+        if "dingtalk" in tenant.im:
+            app = DingTalkApp.from_env(tid)
+            if app is None:
+                print(
+                    f"{tid}: 没有配置 FOS_DINGTALK_{tid.upper()}_CLIENT_ID / _CLIENT_SECRET，跳过钉钉",
+                    file=sys.stderr,
+                )
+            else:
+                dt_adapter = DingTalkAdapter(app)
+                adapters.append(dt_adapter)
+                tenant_adapters.append(dt_adapter)
 
-        async def handle(msg: InboundMessage, adapter: DingTalkAdapter = adapter) -> None:
-            async with svc.sessionmaker() as session, session.begin():
-                out = await svc.intake.handle(session, adapter, msg)
-            await deliver(adapter, out)  # 提交之后再回复
-            t = out.trigger
-            if t is not None and not out.duplicate and t.route == "router" and t.status == "pending":
-                await svc.runtime.process(svc.sessionmaker, adapter, t.id)
+                async def handle(msg: InboundMessage, adapter: DingTalkAdapter = dt_adapter) -> None:
+                    async with svc.sessionmaker() as session, session.begin():
+                        out = await svc.intake.handle(session, adapter, msg)
+                    await deliver(adapter, out)  # 提交之后再回复
+                    t = out.trigger
+                    if t is not None and not out.duplicate and t.route == "router" and t.status == "pending":
+                        await svc.runtime.process(svc.sessionmaker, adapter, t.id)
 
-        runs.append(DingTalkStream(app, handle).run_forever())
-        print(f"{tid}: 钉钉 Stream 启动")
-        sched = tenant.reports.daily
-        if sched is not None and sched.to:
-            runs.append(daily_loop(svc, tid, adapter))
-            print(f"{tid}: 每天 {sched.at} 推送生产日报给 {'、'.join(sched.to)}")
-        if tid in svc.planning:
-            runs.append(order_watch_loop(svc, tid, adapter))
-            print(f"{tid}: 新订单自动评估交期，推给 {'、'.join(svc.planning[tid].watch.notify_roles)}")
-        if tid in svc.tenders:
-            runs.append(tender_watch_loop(svc, tid, adapter))
-            hours = "/".join(f"{h:g}" for h in svc.tenders[tid].reminders.offsets_hours)
-            roles = "、".join(svc.tenders[tid].reminders.notify_roles)
-            print(f"{tid}: 投标截止前 {hours} 小时提醒负责人和 {roles}")
-        if tid in svc.monitoring:
-            runs.append(monitor_loop(svc, tid, adapter))
-            m = svc.monitoring[tid]
-            roles = "、".join(m.notify.alarm_roles)
-            print(f"{tid}: 窑炉监控每 {m.alarms.poll_seconds:g} 秒判定一轮，告警推给 {roles}")
+                runs.append(DingTalkStream(app, handle).run_forever())
+                print(f"{tid}: 钉钉 Stream 启动")
+        if "feishu" in tenant.im:
+            fs_app = FeishuApp.from_env(tid)
+            if fs_app is not None:
+                fs_adapter = FeishuAdapter(fs_app)
+                adapters.append(fs_adapter)
+                tenant_adapters.append(fs_adapter)
+                print(f"{tid}: 飞书适配器就绪（回调路径 /v1/channels/feishu/{tid}/webhook）")
+        if "wecom" in tenant.im:
+            wc_app = WeComApp.from_env(tid)
+            if wc_app is not None:
+                wc_adapter = WeComAdapter(wc_app)
+                adapters.append(wc_adapter)
+                tenant_adapters.append(wc_adapter)
+                print(f"{tid}: 企业微信适配器就绪（回调路径 /v1/channels/wecom/{tid}/webhook）")
+
+        for adapter in tenant_adapters:
+            sched = tenant.reports.daily
+            if sched is not None and sched.to:
+                runs.append(daily_loop(svc, tid, adapter))
+                print(f"{tid}: [{adapter.name}] 每天 {sched.at} 推送生产日报给 {'、'.join(sched.to)}")
+            if tid in svc.planning:
+                runs.append(order_watch_loop(svc, tid, adapter))
+                roles = "、".join(svc.planning[tid].watch.notify_roles)
+                print(f"{tid}: [{adapter.name}] 新订单自动评估交期，推给 {roles}")
+            if tid in svc.tenders:
+                runs.append(tender_watch_loop(svc, tid, adapter))
+                hours = "/".join(f"{h:g}" for h in svc.tenders[tid].reminders.offsets_hours)
+                roles = "、".join(svc.tenders[tid].reminders.notify_roles)
+                print(f"{tid}: [{adapter.name}] 投标截止前 {hours} 小时提醒负责人和 {roles}")
+            if tid in svc.monitoring:
+                runs.append(monitor_loop(svc, tid, adapter))
+                m = svc.monitoring[tid]
+                roles = "、".join(m.notify.alarm_roles)
+                print(f"{tid}: [{adapter.name}] 窑炉监控每 {m.alarms.poll_seconds:g}s 判定，推给 {roles}")
     if not runs:
         print("没有可启动的信道", file=sys.stderr)
         await svc.aclose()
