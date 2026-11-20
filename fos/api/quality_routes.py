@@ -64,19 +64,26 @@ def _http_err(e: Exception) -> HTTPException:
     raise e
 
 
-async def _submit_approval(request: Request, session: SessionDep, p: Principal, err: ApprovalRequired):
-    ap, notices = await request.app.state.approvals.submit(
+async def _submit_approval(
+    request: Request, session: SessionDep, p: Principal, req: Any, err: ApprovalRequired
+):
+    lookup = lookup_for(request)
+    sub = await request.app.state.approvals.submit(
         session,
         p,
-        err.request,
+        req,
         err.decision,
         source="api:quality",
-        lookup=lookup_for(request),
+        lookup=lookup,
     )
     await session.commit()
-    await send_notices(notices)
+    await send_notices(lookup, p.tenant_id, sub.notices)
     return JSONResponse(
-        {"approval": approval_out(ap), "message": f"{err}，已提交审批单 {ap.id[:8]}"},
+        {
+            "status": "pending_approval",
+            "approval": approval_out(sub.approval),
+            "message": sub.message(),
+        },
         status_code=202,
     )
 
@@ -165,10 +172,11 @@ async def dispose_ncr(
 ):
     _cfg(request, p.tenant_id)
     try:
-        res = await qs.disposition_ncr(session, p, request.app.state.ledger, ncr_id, body)
+        req = await qs.disposition_ncr_request(session, p, ncr_id, body)
+        res = await request.app.state.ledger.append(session, p, req)
         return res.model_dump()
     except ApprovalRequired as err:
-        return await _submit_approval(request, session, p, err)
+        return await _submit_approval(request, session, p, req, err)
     except (qs.QualityError, LedgerError) as e:
         raise _http_err(e) from e
 

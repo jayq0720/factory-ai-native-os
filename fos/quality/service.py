@@ -460,31 +460,34 @@ async def open_ncr(
     return {"id": ncr_id, "event_id": res.event_id, "seq": res.seq}
 
 
-async def disposition_ncr(
-    session: AsyncSession, principal: Principal, ledger: Ledger, ncr_id: str, body: NcrDispositionIn
-) -> AppendResult:
+async def disposition_ncr_request(
+    session: AsyncSession, principal: Principal, ncr_id: str, body: NcrDispositionIn
+) -> AppendRequest:
     o = await get(session, principal.tenant_id, "ncr", ncr_id)
     if o is None:
         raise QualityNotFound(f"不合格品报告 {ncr_id} 不存在")
     if o.state.get("status") == "closed":
         raise QualityConflict("不合格品报告已关闭")
     ev = body.evidence or [Evidence(kind="manual", ref=f"ncr:{ncr_id}:disp", note=body.disposition_note)]
-    return await ledger.append(
-        session,
-        principal,
-        AppendRequest(
-            type=NCR_DISPOSE_EVENT,
-            object_id=ncr_id,
-            payload={
-                "disposition": body.disposition,
-                "disposition_note": body.disposition_note,
-                "status": "dispositioned",
-            },
-            evidence=ev,
-            expected_version=o.version,
-            data_mode=o.data_mode,
-        ),
+    return AppendRequest(
+        type=NCR_DISPOSE_EVENT,
+        object_id=ncr_id,
+        payload={
+            "disposition": body.disposition,
+            "disposition_note": body.disposition_note,
+            "status": "dispositioned",
+        },
+        evidence=ev,
+        expected_version=o.version,
+        data_mode=o.data_mode,
     )
+
+
+async def disposition_ncr(
+    session: AsyncSession, principal: Principal, ledger: Ledger, ncr_id: str, body: NcrDispositionIn
+) -> AppendResult:
+    req = await disposition_ncr_request(session, principal, ncr_id, body)
+    return await ledger.append(session, principal, req)
 
 
 async def update_8d(
