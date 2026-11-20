@@ -160,7 +160,7 @@ class Decision:
         return [rid for rid, _ in self.rules]
 
     def steps(self) -> list[dict[str, Any]]:
-        """审批步骤快照：多条规则命中时按规则顺序串联，跨规则完全相同的步骤只保留一个（单规则内同角色多人复核保留）。"""
+        """审批步骤快照：多条规则按顺序串联，跨规则完全相同的步骤去重（单规则内同角色复核保留）。"""
         out: list[dict[str, Any]] = []
         seen: set[tuple] = set()
         for rid, r in self.rules:

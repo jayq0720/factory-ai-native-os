@@ -684,7 +684,8 @@ async def analyze(
             if o and o.get("by"):
                 it.update({k: o.get(k) for k in _KEEP})
                 if (o.get("deviation") or {}).get("manual"):
-                    base_dev = dict(it.get("deviation") or {"name": "人工判断", "required": "-", "basis": "人工判断"})
+                    fallback = {"name": "人工判断", "required": "-", "basis": "人工判断"}
+                    base_dev = dict(it.get("deviation") or fallback)
                     base_dev.update({k: o["deviation"][k] for k in ("status", "manual", "manual_note")})
                     it["deviation"] = base_dev
                     data["deviations"] = _sync_deviation(data["deviations"], it, base_dev)

@@ -102,7 +102,8 @@ class AppendResult(BaseModel):
     duplicate: bool = False
 
 
-# 守卫：(会话, 主体, 本体, 规范化后的 payload, 对象当前状态, *, object_id, data_mode) → 阻断原因列表（空 = 通过）
+# 守卫：(会话, 主体, 本体, 规范化 payload, 对象当前状态, *, object_id, data_mode)
+# 返回阻断原因列表（空 = 通过）
 Guard = Callable[..., Awaitable[list[str]]]
 
 
