@@ -34,6 +34,16 @@ from fos.planning.config import PlanningConfig, load_planning_config
 from fos.planning.guard import RUN_EVENT, PlannedRunGuard
 from fos.policy import Policy, load_policy
 from fos.policy.approvals import ApprovalService
+from fos.quality import tools as quality_tools  # noqa: F401  注册质量体系工具
+from fos.quality.config import QualityConfig, load_quality_config
+from fos.quality.guards import (
+    INST_CAL_EVENT,
+    NCR_8D_EVENT,
+    NCR_CLOSE_EVENT,
+    NCR_DISPOSE_EVENT,
+    CalibrationGuard,
+    NcrGuard,
+)
 from fos.reports.daily import DailyConfig, load_daily_config
 from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
@@ -76,6 +86,7 @@ class Services:
     supply: dict[str, SupplyConfig]
     tenders: dict[str, TenderConfig]
     monitoring: dict[str, MonitorConfig]
+    quality: dict[str, QualityConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -182,6 +193,15 @@ class Services:
             for tid in registry.ids()
             if (t := registry.get(tid)) is not None and "monitor_point" in ontologies[tid].objects
         }
+        # 质量体系（W22）：只给本体里有不合格品报告（ncr）的租户开
+        quality = {
+            tid: load_quality_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None and "ncr" in ontologies[tid].objects
+        }
+        for ev in (NCR_DISPOSE_EVENT, NCR_8D_EVENT, NCR_CLOSE_EVENT):
+            ledger.add_guard(ev, NcrGuard(ev, quality))
+        ledger.add_guard(INST_CAL_EVENT, CalibrationGuard())
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -212,6 +232,7 @@ class Services:
                 supply=supply,
                 tenders=tenders,
                 monitoring=monitoring,
+                quality=quality,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -225,6 +246,7 @@ class Services:
                         "orders": orders[tid],
                         "planning": planning.get(tid),
                         "supply": supply.get(tid),
+                        "quality": quality.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -243,6 +265,7 @@ class Services:
             supply=supply,
             tenders=tenders,
             monitoring=monitoring,
+            quality=quality,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 

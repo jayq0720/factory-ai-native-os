@@ -51,6 +51,15 @@ rules:
       - {name: 总经理审批, role: gm}
     expires_hours: 48
 
+  ncr_concession:
+    name: 不合格品让步放行需总经理审批
+    events: [quality.ncr_dispositioned]
+    when:
+      - {field: disposition, op: eq, value: concession}
+    steps:
+      - {name: 总经理审批, role: gm}
+    expires_hours: 48
+
   # ---------- 工程报价（方案 4.2 第 8 步：报价需销售负责人二次确认）----------
   # 毛利率 = (材料净价 - 材料成本) / 材料净价，由报价代码确定性计算后写在事件里。
   # 15% 与“低于成本不能报价”都是占位值，待试点确认。

@@ -1,0 +1,48 @@
+# 隔热耐火材料行业包：质量体系配置（W22）。租户可在 tenants/<id>/quality.yaml 覆盖。
+# 所有判定阈值与周期均为确定性规则（不交由模型计算）。
+
+# 默认与按产品类别的理化指标判定标准（未填 min/max 的一侧不限）
+standards:
+  default:
+    bulk_density: {name: 体积密度, unit: "g/cm³", min: 0.2, max: 1.5}
+    cold_crushing_strength: {name: 常温耐压强度, unit: MPa, min: 0.5}
+    thermal_conductivity: {name: 导热系数, unit: "W/(m·K)", max: 0.35}
+    permanent_linear_change: {name: 加热永久线变化, unit: "%", min: -3.0, max: 2.0}
+    al2o3: {name: "Al₂O₃ 含量", unit: "%", min: 30.0}
+    fe2o3: {name: "Fe₂O₃ 含量", unit: "%", max: 2.5}
+  insulating_brick:
+    bulk_density: {name: 体积密度, unit: "g/cm³", min: 0.4, max: 1.1}
+    cold_crushing_strength: {name: 常温耐压强度, unit: MPa, min: 1.0}
+    thermal_conductivity: {name: 导热系数, unit: "W/(m·K)", max: 0.30}
+    permanent_linear_change: {name: 加热永久线变化, unit: "%", min: -2.0, max: 1.0}
+    al2o3: {name: "Al₂O₃ 含量", unit: "%", min: 35.0}
+    fe2o3: {name: "Fe₂O₃ 含量", unit: "%", max: 1.8}
+  ceramic_fiber:
+    bulk_density: {name: 体积密度, unit: "g/cm³", min: 0.12, max: 0.45}
+    thermal_conductivity: {name: 导热系数, unit: "W/(m·K)", max: 0.18}
+    permanent_linear_change: {name: 加热永久线变化, unit: "%", min: -3.5, max: 0.5}
+    al2o3: {name: "Al₂O₃ 含量", unit: "%", min: 42.0}
+    fe2o3: {name: "Fe₂O₃ 含量", unit: "%", max: 1.2}
+  castable:
+    bulk_density: {name: 体积密度, unit: "g/cm³", min: 0.8, max: 2.8}
+    cold_crushing_strength: {name: 常温耐压强度, unit: MPa, min: 5.0}
+    thermal_conductivity: {name: 导热系数, unit: "W/(m·K)", max: 0.60}
+    permanent_linear_change: {name: 加热永久线变化, unit: "%", min: -1.5, max: 1.5}
+
+# 产品自带 bulk_density 标称值时的相对偏差容差（±10%）
+density_tolerance_pct: 10.0
+
+ncr:
+  auto_open_on_fail: true
+  require_8d_severities: [major, critical]
+  notify_roles: [qc, shift_lead]
+
+calibration:
+  remind_days: 30        # 到期前 30 天进入“即将到期”并提醒
+  urgent_days: 7         # 到期前 7 天标记紧急
+  notify_roles: [qc]
+
+certificate:
+  issuer_title: 产品质量证明书（质保书）
+  standard_ref: GB/T 3003 / 企业内控标准
+  footer_note: 本质保书数据全部取自事件账本留痕的出厂检验与窑次记录，可按批号全程追溯。
