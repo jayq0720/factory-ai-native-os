@@ -32,6 +32,7 @@ USERS = [
     ("engineer", "luneng", ["engineer"]),
     ("kb_admin", "luneng", ["kb_admin"]),
     ("planner", "luneng", ["planner"]),
+    ("finance", "luneng", ["finance"]),
     ("edge", "luneng", ["edge"]),
     ("edge2", "luneng", ["edge"]),
     ("edge_demo", "luneng", ["edge"]),

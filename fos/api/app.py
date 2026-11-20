@@ -21,6 +21,7 @@ from fos.api.channel_routes import router as channel_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
 from fos.api.document_routes import router as document_router
 from fos.api.eng_routes import router as eng_router
+from fos.api.finance_routes import router as finance_router
 from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
 from fos.api.monitor_routes import router as monitor_router
@@ -177,6 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tender_router)
     app.include_router(monitor_router)
     app.include_router(quality_router)
+    app.include_router(finance_router)
     return app
 
 

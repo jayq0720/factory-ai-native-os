@@ -37,6 +37,7 @@ from fos.config import Settings
 from fos.db.models import CardRecord, ChannelIdentity, Event, ObjectState, Thread, Trigger, User, utcnow
 from fos.entry.draft import build_draft, draft_card
 from fos.extraction.service import Extractor, load_fields
+from fos.finance.config import FinanceConfig
 from fos.governance.principal import Principal, principal_for_user
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, find_root, report_card, trace_report
@@ -121,6 +122,7 @@ class TriggerIntake:
         tenders: dict[str, TenderConfig] | None = None,
         monitoring: dict[str, MonitorConfig] | None = None,
         quality: dict[str, QualityConfig] | None = None,
+        finance: dict[str, FinanceConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -138,6 +140,7 @@ class TriggerIntake:
         self.tenders = tenders or {}
         self.monitoring = monitoring or {}
         self.quality = quality or {}
+        self.finance = finance or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -251,6 +254,12 @@ class TriggerIntake:
                 and (qm := _quality_word(msg.text.strip()))
             ):
                 await self._quality(session, msg, out, principal, *qm)
+            elif (
+                msg.kind == "text"
+                and msg.tenant_id in self.finance
+                and (fm := _finance_word(msg.text.strip()))
+            ):
+                await self._finance(session, msg, out, principal, *fm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -825,6 +834,55 @@ class TriggerIntake:
         trig.result = {"batch": arg, "certificate_no": coa["certificate_no"]}
         await self._reply(None, msg, out, qc.coa_card(coa))
 
+    # ---------------- 财务与成本（只读 Fast Path） ----------------
+
+    async def _finance(
+        self, session, msg: InboundMessage, out: Outcome, principal: Principal, kind: str, arg: str
+    ):
+        from fos.finance import cards as fc
+        from fos.finance import service as fs
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"finance_{kind}", "done"
+        tid = msg.tenant_id
+        cfg = self.finance[tid]
+        if kind == "ar":
+            if not principal.can("finance.ar:read"):
+                await self._reply(None, msg, out, "你没有查看应收账款的权限（finance.ar:read）。")
+                return
+            board = await fs.ar_board(session, tid, self._today(msg))
+            trig.result = board["summary"]
+            await self._reply(None, msg, out, fc.ar_card(board))
+            return
+        if kind == "ap":
+            if not principal.can("finance.ap:read"):
+                await self._reply(None, msg, out, "你没有查看应付账款的权限（finance.ap:read）。")
+                return
+            board = await fs.ap_board(session, tid, self._today(msg))
+            trig.result = board["summary"]
+            await self._reply(None, msg, out, fc.ap_card(board))
+            return
+        if kind == "vouchers":
+            if not principal.can("finance.voucher:read"):
+                await self._reply(None, msg, out, "你没有查看凭证草稿的权限（finance.voucher:read）。")
+                return
+            rows = await fs.vouchers_board(session, tid)
+            trig.result = {"total": len(rows)}
+            await self._reply(None, msg, out, fc.vouchers_card(rows))
+            return
+        if not principal.can("finance.cost:read"):
+            await self._reply(None, msg, out, "你没有查看批次成本的权限（finance.cost:read）。")
+            return
+        try:
+            rep = await fs.batch_cost_report(session, tid, cfg, arg)
+        except fs.FinanceError as e:
+            trig.status = "rejected"
+            await self._reply(None, msg, out, str(e))
+            return
+        trig.result = {"batch": arg, "total_cost": rep["total_cost"]}
+        await self._reply(None, msg, out, fc.batch_cost_card(rep))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -899,6 +957,20 @@ def _quality_word(text: str) -> tuple[str, str] | None:
         return "calibration", ""
     if m := COA.match(text):
         return "coa", m.group(1)
+    return None
+
+
+def _finance_word(text: str) -> tuple[str, str] | None:
+    from fos.finance.cards import AP_SUMMARY, AR_SUMMARY, BATCH_COST, VOUCHERS
+
+    if AR_SUMMARY.match(text):
+        return "ar", ""
+    if AP_SUMMARY.match(text):
+        return "ap", ""
+    if VOUCHERS.match(text):
+        return "vouchers", ""
+    if m := BATCH_COST.match(text):
+        return "cost", m.group(1)
     return None
 
 

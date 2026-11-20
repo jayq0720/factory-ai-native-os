@@ -1,0 +1,120 @@
+# 耐火材料行业财务本体扩展（W23）：应收、应付、凭证草稿。
+# 所有财务业务事实走事件账本，由 fos/finance/guards.py 强制防超收、防超付、借贷必相等。
+
+objects:
+  receivable:
+    name: 应收单
+    domain: finance
+    description: 面向客户的应收账款与开票、回款进度（按订单/发货单挂账，不替代财务总账）
+    properties:
+      ar_no: {type: string, name: 应收单号, required: true}
+      customer: {type: ref, target: customer, name: 客户, required: true}
+      order: {type: ref, target: sales_order, name: 销售订单}
+      contract: {type: ref, target: contract, name: 合同}
+      shipment: {type: ref, target: shipment, name: 发货单}
+      amount: {type: number, name: 应收金额（含税）, unit: 元, required: true}
+      received_amount: {type: number, name: 已收金额, unit: 元, required: true}
+      last_receipt_amount: {type: number, name: 最近一次收款金额, unit: 元}
+      due_date: {type: date, name: 约定回款日, required: true}
+      invoice_no: {type: string, name: 发票号}
+      invoiced_at: {type: date, name: 开票日期}
+      status: {type: enum, name: 状态, values: [open, partial, paid, void], required: true}
+      note: {type: text, name: 备注}
+
+  payable:
+    name: 应付单
+    domain: finance
+    description: 面向供应商的应付账款与付款进度（关联采购单，大额付款走审批）
+    properties:
+      ap_no: {type: string, name: 应付单号, required: true}
+      supplier: {type: ref, target: supplier, name: 供应商, required: true}
+      purchase_order: {type: ref, target: purchase_order, name: 采购单}
+      amount: {type: number, name: 应付金额（含税）, unit: 元, required: true}
+      paid_amount: {type: number, name: 已付金额, unit: 元, required: true}
+      last_payment_amount: {type: number, name: 本次付款金额, unit: 元}
+      due_date: {type: date, name: 约定付款日, required: true}
+      invoice_no: {type: string, name: 进项发票号}
+      status: {type: enum, name: 状态, values: [open, partial, paid, void], required: true}
+      note: {type: text, name: 备注}
+
+  voucher_draft:
+    name: 凭证草稿
+    domain: finance
+    description: 确定性生成的借贷平衡凭证草稿，供导出至金蝶/用友/畅捷通后由财务过账
+    properties:
+      voucher_no: {type: string, name: 凭证草稿号, required: true}
+      voucher_date: {type: date, name: 凭证日期, required: true}
+      summary: {type: string, name: 摘要, required: true}
+      source_type: {type: enum, name: 来源类型, values: [ar, ar_receipt, ap, ap_payment, cost, manual], required: true}
+      source_id: {type: string, name: 来源单据编号}
+      lines: {type: json, name: 分录明细, required: true}
+      total_debit: {type: number, name: 借方合计, unit: 元, required: true}
+      total_credit: {type: number, name: 贷方合计, unit: 元, required: true}
+      status: {type: enum, name: 状态, values: [draft, exported, posted, void], required: true}
+      external_system: {type: enum, name: 对接财务软件, values: [generic, kingdee, yonyou, chanjet]}
+      external_ref: {type: string, name: 外部凭证号}
+      note: {type: text, name: 备注}
+
+events:
+  finance.ar_recorded:
+    name: 登记应收单
+    object: receivable
+    op: create
+    permission: finance.ar:write
+    evidence: required
+    fields: [ar_no, customer, order, contract, shipment, amount, received_amount, due_date, invoice_no, invoiced_at, status, note]
+
+  finance.ar_invoiced:
+    name: 登记销项开票
+    object: receivable
+    op: update
+    permission: finance.ar:write
+    evidence: required
+    fields: [invoice_no, invoiced_at, note]
+
+  finance.ar_received:
+    name: 登记客户回款
+    object: receivable
+    op: update
+    permission: finance.ar:write
+    evidence: required
+    fields: [received_amount, last_receipt_amount, status, note]
+
+  finance.ap_recorded:
+    name: 登记应付单
+    object: payable
+    op: create
+    permission: finance.ap:write
+    evidence: required
+    fields: [ap_no, supplier, purchase_order, amount, paid_amount, due_date, invoice_no, status, note]
+
+  finance.ap_paid:
+    name: 登记供应商付款
+    object: payable
+    op: update
+    permission: finance.ap:write
+    evidence: required
+    fields: [paid_amount, last_payment_amount, status, note]
+
+  finance.voucher_drafted:
+    name: 生成凭证草稿
+    object: voucher_draft
+    op: create
+    permission: finance.voucher:write
+    evidence: required
+    fields: [voucher_no, voucher_date, summary, source_type, source_id, lines, total_debit, total_credit, status, external_system, note]
+
+  finance.voucher_exported:
+    name: 标记凭证已导出
+    object: voucher_draft
+    op: update
+    permission: finance.voucher:write
+    fields: [status, external_system, note]
+
+  finance.voucher_posted:
+    name: 登记凭证外部过账
+    object: voucher_draft
+    op: update
+    permission: finance.voucher:write
+    evidence: required
+    fields: [status, external_system, external_ref, note]

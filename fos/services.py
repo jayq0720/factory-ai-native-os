@@ -15,6 +15,17 @@ from fos.engineering.service import QUOTE_EVENT, EngQuoteGuard
 from fos.entry.spec import check_entry
 from fos.extraction.schema import ExtractionSchema, load_schemas
 from fos.extraction.service import Extractor
+from fos.finance import tools as finance_tools  # noqa: F401  注册财务与成本工具
+from fos.finance.config import FinanceConfig, load_finance_config
+from fos.finance.guards import (
+    AP_PAY_EVENT,
+    AP_RECORD_EVENT,
+    AR_RECEIVE_EVENT,
+    AR_RECORD_EVENT,
+    VOUCHER_DRAFT_EVENT,
+    VOUCHER_POST_EVENT,
+    FinanceGuard,
+)
 from fos.gateway.llm import LLMClient
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, load_trace_config
@@ -87,6 +98,7 @@ class Services:
     tenders: dict[str, TenderConfig]
     monitoring: dict[str, MonitorConfig]
     quality: dict[str, QualityConfig]
+    finance: dict[str, FinanceConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -202,6 +214,26 @@ class Services:
         for ev in (NCR_DISPOSE_EVENT, NCR_8D_EVENT, NCR_CLOSE_EVENT):
             ledger.add_guard(ev, NcrGuard(ev, quality))
         ledger.add_guard(INST_CAL_EVENT, CalibrationGuard())
+        # 财务集成与成本核算（W23）：只给本体里有应收单（receivable）的租户开
+        finance = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "receivable" in ontologies[tid].objects
+            and (
+                cfg := load_finance_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
+            )
+            is not None
+        }
+        for ev in (
+            AR_RECORD_EVENT,
+            AR_RECEIVE_EVENT,
+            AP_RECORD_EVENT,
+            AP_PAY_EVENT,
+            VOUCHER_DRAFT_EVENT,
+            VOUCHER_POST_EVENT,
+        ):
+            ledger.add_guard(ev, FinanceGuard(ev))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -233,6 +265,7 @@ class Services:
                 tenders=tenders,
                 monitoring=monitoring,
                 quality=quality,
+                finance=finance,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -247,6 +280,7 @@ class Services:
                         "planning": planning.get(tid),
                         "supply": supply.get(tid),
                         "quality": quality.get(tid),
+                        "finance": finance.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -266,6 +300,7 @@ class Services:
             tenders=tenders,
             monitoring=monitoring,
             quality=quality,
+            finance=finance,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 
