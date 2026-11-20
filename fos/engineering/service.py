@@ -512,9 +512,7 @@ class EngQuoteGuard:
         if d.data_mode != "real":
             return ["模拟数据方案不能发布报价"]
         proj = (
-            await session.get(ObjectState, (tenant_id, "eng_project", d.project_id))
-            if d.project_id
-            else None
+            await session.get(ObjectState, (tenant_id, "eng_project", d.project_id)) if d.project_id else None
         )
         if proj is not None and d.project_version != proj.version:
             return ["工程项目工况在方案计算后已变更，请重新计算"]
