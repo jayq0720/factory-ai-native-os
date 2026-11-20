@@ -15,8 +15,8 @@ tools:
   - quality.ncrs
   - quality.instruments
   - quality.iso_summary
-  - ledger.query
-  - ledger.trace
+  - objects.list
+  - objects.trace
 keywords:
   - 待检任务
   - 不合格品
