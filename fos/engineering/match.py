@@ -87,7 +87,7 @@ def _layer_pool(
         if price_per_m3(p) is None:
             why[f"{p.code} 没有可用价格"] += 1
             continue
-        if any(a == u or u in a for a in cond.atmosphere for u in p.unsuitable):
+        if any(a == u or u in a or a in u for a in cond.atmosphere for u in p.unsuitable):
             why[f"{p.code} 不适用于{'、'.join(cond.atmosphere)}气氛"] += 1
             continue
         if first and (p.classification_temp or 0) < cond.max_temp + cfg.safety_margin:
@@ -128,8 +128,8 @@ def search(cond: Conditions, cfg: EngineeringConfig, kb: dict[str, Product]) -> 
             continue
         for combo in itertools.product(*options):
             layers = [(r, p, t) for r, p, t in combo if p is not None]
-            if len({p.id for _, p, _ in layers}) < len(layers):
-                continue  # 同一产品不重复出现在两层
+            if not layers or len({p.id for _, p, _ in layers}) < len(layers):
+                continue  # 空方案或同一产品不重复出现在两层
             tried += 1
             checks, normal, _peak = thermal_checks(cond, cfg, layers)
             bad = [c for c in checks if not c["ok"] and c["severity"] == "high"]

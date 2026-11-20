@@ -10,6 +10,7 @@ import io
 from typing import Any
 
 from fos.engineering.review import DISPOSITIONS
+from fos.excel_safe import excel_row, xml_safe
 
 SEVERITY = {"high": "高", "medium": "中", "low": "低"}
 
@@ -59,18 +60,18 @@ def to_docx(project: dict[str, Any], design: dict[str, Any], label: str, version
     from docx import Document
 
     doc = Document()
-    doc.add_heading(f"{project.get('name', '')} 技术方案（{label} 第 {version} 版）", level=1)
+    doc.add_heading(xml_safe(f"{project.get('name', '')} 技术方案（{label} 第 {version} 版）"), level=1)
     for title, blocks in proposal_sections(project, design, label):
-        doc.add_heading(title, level=2)
+        doc.add_heading(xml_safe(title), level=2)
         for b in blocks:
             if isinstance(b, list):
                 t = doc.add_table(rows=len(b), cols=len(b[0]))
                 t.style = "Table Grid"
                 for r, row in enumerate(b):
                     for col, v in enumerate(row):
-                        t.cell(r, col).text = str(v)
+                        t.cell(r, col).text = xml_safe(str(v))
             else:
-                doc.add_paragraph(str(b))
+                doc.add_paragraph(xml_safe(str(b)))
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -85,7 +86,7 @@ def to_xlsx(
     wb = Workbook()
     ws = wb.active
     ws.title = "BOM"
-    ws.append([f"{project.get('name', '')} 材料清单（{label} 第 {version} 版）"])
+    ws.append(excel_row([f"{project.get('name', '')} 材料清单（{label} 第 {version} 版）"]))
     ws["A1"].font = Font(bold=True, size=13)
     ws.append(
         [
@@ -107,22 +108,24 @@ def to_xlsx(
     )
     for b in design["bom"]:
         ws.append(
-            [
-                b["line"],
-                b["role"],
-                b["code"],
-                b["name"],
-                b.get("spec"),
-                b.get("thickness_mm"),
-                b.get("area_m2"),
-                b.get("net_volume_m3"),
-                b.get("loss_rate"),
-                b.get("volume_m3"),
-                b.get("weight_t"),
-                b.get("qty"),
-                b.get("unit"),
-                b.get("formula"),
-            ]
+            excel_row(
+                [
+                    b["line"],
+                    b["role"],
+                    b["code"],
+                    b["name"],
+                    b.get("spec"),
+                    b.get("thickness_mm"),
+                    b.get("area_m2"),
+                    b.get("net_volume_m3"),
+                    b.get("loss_rate"),
+                    b.get("volume_m3"),
+                    b.get("weight_t"),
+                    b.get("qty"),
+                    b.get("unit"),
+                    b.get("formula"),
+                ]
+            )
         )
 
     q = design["quote"]
@@ -130,16 +133,18 @@ def to_xlsx(
     wq.append(["序号", "牌号", "名称", "数量", "单位", "单价（元）", "金额（元）", "价格版本"])
     for ln in q["lines"]:
         wq.append(
-            [
-                ln["line"],
-                ln["code"],
-                ln["name"],
-                ln["qty"],
-                ln["unit"],
-                ln.get("unit_price"),
-                ln.get("amount"),
-                ln.get("price_ref"),
-            ]
+            excel_row(
+                [
+                    ln["line"],
+                    ln["code"],
+                    ln["name"],
+                    ln["qty"],
+                    ln["unit"],
+                    ln.get("unit_price"),
+                    ln.get("amount"),
+                    ln.get("price_ref"),
+                ]
+            )
         )
     wq.append([])
     o = q["options"]
@@ -153,24 +158,26 @@ def to_xlsx(
         (f"税额 {o['tax_rate']:g}%", q["tax"]),
         ("含税合计", q["total"]),
     ]:
-        wq.append(["", k, "", "", "", "", v])
+        wq.append(excel_row(["", k, "", "", "", "", v]))
     wq.append([])
     for f in q.get("formulas", []):
-        wq.append(["", f])
+        wq.append(excel_row(["", f]))
 
     wr = wb.create_sheet("审核")
     wr.append(["级别", "类型", "问题", "建议", "处理", "处理人", "说明"])
     for it in review:
         wr.append(
-            [
-                SEVERITY.get(it["severity"], it["severity"]),
-                it["type"],
-                it["message"],
-                it["suggestion"],
-                DISPOSITIONS.get(it.get("disposition") or "", "未处理"),
-                it.get("by_name", ""),
-                it.get("note", ""),
-            ]
+            excel_row(
+                [
+                    SEVERITY.get(it["severity"], it["severity"]),
+                    it["type"],
+                    it["message"],
+                    it["suggestion"],
+                    DISPOSITIONS.get(it.get("disposition") or "", "未处理"),
+                    it.get("by_name", ""),
+                    it.get("note", ""),
+                ]
+            )
         )
     buf = io.BytesIO()
     wb.save(buf)

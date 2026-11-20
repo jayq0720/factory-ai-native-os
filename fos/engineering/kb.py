@@ -101,19 +101,24 @@ class Product:
 async def load_kb(
     session: AsyncSession, tenant_id: str, *, customer_class: str | None = None
 ) -> dict[str, Product]:
-    """读取租户的产品与价格。同一产品多条价格时：优先匹配客户类别，其次取生效日期最新的。"""
-    rows = (
-        await session.execute(
-            select(ObjectState).where(
-                ObjectState.tenant_id == tenant_id, ObjectState.object_type.in_(["product", "price_item"])
+    """读取租户的产品与价格。同一产品多条价格时：优先真实数据与客户类别价，其次取生效日期最新的。"""
+    rows = list(
+        (
+            await session.execute(
+                select(ObjectState).where(
+                    ObjectState.tenant_id == tenant_id, ObjectState.object_type.in_(["product", "price_item"])
+                )
             )
-        )
-    ).scalars()
+        ).scalars()
+    )
+    has_real_products = any(o.object_type == "product" and o.data_mode == "real" for o in rows)
     products: dict[str, Product] = {}
     prices: list[tuple[str, Price, str | None]] = []
     for o in rows:
         s = o.state
         if o.object_type == "product":
+            if has_real_products and o.data_mode == "mock":
+                continue
             products[o.object_id] = Product(
                 id=o.object_id,
                 version=o.version,
@@ -150,9 +155,11 @@ async def load_kb(
                 )
             )
 
-    # 只用通用价格和该客户类别的价格；客户类别价优先，同级取生效日期最新的
+    # 只用通用价格和该客户类别的价格；真实价优先于模拟价、客户类别价优先、同级取生效日期最新的
     usable = [x for x in prices if not x[2] or x[2] == customer_class]
-    for pid, price, _cls in sorted(usable, key=lambda x: (bool(x[2]), x[1].effective_from)):
+    for pid, price, _cls in sorted(
+        usable, key=lambda x: (x[1].data_mode == "real", bool(x[2]), x[1].effective_from)
+    ):
         if pid in products:
             products[pid].price = price  # 排序靠后的覆盖靠前的
     return products

@@ -38,13 +38,20 @@ def _r(x: float) -> float:
     return round(x, 3)
 
 
+EPS = 1e-9
+
+
 def can_read(onto: Ontology, principal: Principal, object_type: str) -> bool:
     return principal.can(f"{onto.objects[object_type].domain}.{object_type}:read")
 
 
-async def final_inspection(session: AsyncSession, tenant: str, batch_id: str) -> ObjectState | None:
-    """批次最近一次出厂检验。"""
-    rows = await referrers(session, tenant, "inspection", "batch", "production_batch", [batch_id])
+async def final_inspection(
+    session: AsyncSession, tenant: str, batch_id: str, *, data_mode: str | None = None
+) -> ObjectState | None:
+    """批次最近一次出厂检验（严格隔离 mock 与 real，防止模拟合格记录放行真实发货）。"""
+    rows = await referrers(
+        session, tenant, "inspection", "batch", "production_batch", [batch_id], data_mode=data_mode
+    )
     finals = [r for r in rows if r.state.get("kind") == "final"]
     return max(finals, key=lambda o: o.updated_seq) if finals else None
 
@@ -65,8 +72,11 @@ async def order_progress(
     principal: Principal,
     order: ObjectState,
     today: date,
+    *,
+    allowed=None,
 ) -> dict[str, Any]:
     tenant = principal.tenant_id
+    mode = order.data_mode
     s = order.state
     unit = s.get("unit")
     qty = num(s.get("qty"))
@@ -74,9 +84,18 @@ async def order_progress(
     product = await get(session, tenant, "product", s.get("product"))
     contract = await get(session, tenant, "contract", s.get("contract"))
 
-    batches = await referrers(session, tenant, "production_batch", "order", "sales_order", [order.object_id])
-    shipments = await referrers(session, tenant, "shipment", "order", "sales_order", [order.object_id])
+    batches = await referrers(
+        session, tenant, "production_batch", "order", "sales_order", [order.object_id], data_mode=mode
+    )
+    shipments = await referrers(
+        session, tenant, "shipment", "order", "sales_order", [order.object_id], data_mode=mode
+    )
 
+    def _allow(obj_type: str) -> bool:
+        perm = f"{onto.objects[obj_type].domain}.{obj_type}:read"
+        return allowed(perm) if allowed is not None else principal.can(perm)
+
+    show_insp = _allow("inspection")
     planned = produced = stocked = 0.0
     other_unit: list[str] = []
     batch_rows: list[dict[str, Any]] = []
@@ -86,7 +105,7 @@ async def order_progress(
         bs = b.state
         st = bs.get("status")
         same = cfg.same_unit(bs.get("unit"), unit)
-        insp = await final_inspection(session, tenant, b.object_id)
+        insp = await final_inspection(session, tenant, b.object_id, data_mode=mode)
         if st != "scrapped" and same:
             planned += num(bs.get("planned_qty")) or (num(bs.get("good_qty")) if st in PRODUCED else 0)
             if st in PRODUCED:
@@ -116,7 +135,7 @@ async def order_progress(
                         "result": insp.state.get("result"),
                         "report_no": insp.state.get("report_no"),
                     }
-                    if insp
+                    if insp and show_insp
                     else None
                 ),
             }
@@ -135,7 +154,7 @@ async def order_progress(
             else:
                 shipped += q
                 if st == "delivered":
-                    delivered += num(ss.get("received_qty")) or q
+                    delivered += num(ss["received_qty"]) if ss.get("received_qty") is not None else q
                 else:
                     in_transit += q
         else:
@@ -155,19 +174,21 @@ async def order_progress(
         )
 
     remaining = max(qty - shipped, 0.0)
+    if remaining <= EPS:
+        remaining = 0.0
     due = date.fromisoformat(s["due_date"]) if s.get("due_date") else None
     days = (due - today).days if due else None
 
     status = s.get("status") or "open"
     if status in CLOSED:
         stage = status
-    elif qty > 0 and delivered >= qty:
+    elif qty > 0 and delivered >= qty - EPS:
         stage = "delivered"
-    elif qty > 0 and shipped >= qty:
+    elif qty > 0 and shipped >= qty - EPS:
         stage = "shipped"
-    elif shipped > 0:
+    elif shipped > EPS:
         stage = "partly_shipped"
-    elif qty > 0 and stocked >= qty:
+    elif qty > 0 and stocked >= qty - EPS:
         stage = "ready"
     elif any(b.state.get("status") in ("in_progress", *PRODUCED) for b in batches):
         stage = "in_production"
@@ -181,17 +202,17 @@ async def order_progress(
     def risk(code: str, level: str, text: str) -> None:
         risks.append({"code": code, "level": level, "text": text})
 
-    open_ = stage not in CLOSED and remaining > 0
+    open_ = stage not in CLOSED and remaining > EPS
     if open_ and days is not None:
         if days < 0:
             risk("overdue", "high", f"已逾期 {-days} 天，还有 {_r(remaining):g} {unit} 未发")
-        elif days <= cfg.risk.warn_days and planned < qty:
+        elif days <= cfg.risk.warn_days and planned < qty - EPS:
             risk(
                 "under_planned",
                 "high",
                 f"{days} 天后交期，排产计划 {_r(planned):g} / {qty:g} {unit}",
             )
-        elif days <= cfg.risk.stock_days and stocked - shipped < remaining:
+        elif days <= cfg.risk.stock_days and stocked - shipped < remaining - EPS:
             avail = max(stocked - shipped, 0.0)
             risk(
                 "not_stocked",
@@ -204,13 +225,13 @@ async def order_progress(
         risk("final_fail", "high", f"批次出厂检验不合格：{'、'.join(failed)}")
     if uninspected:
         risk("final_missing", "medium", f"已入库批次没有出厂检验：{'、'.join(uninspected)}")
-    if refused > 0:
+    if refused > EPS:
         risk("refused", "high", f"客户拒收 {_r(refused):g} {unit}")
     if other_unit:
         risk("unit_mismatch", "medium", f"单位和订单（{unit}）不同，未计入进度：{'、'.join(other_unit)}")
 
-    show_batches = can_read(onto, principal, "production_batch")
-    show_ships = can_read(onto, principal, "shipment")
+    show_batches = _allow("production_batch")
+    show_ships = _allow("shipment")
     return {
         "order_id": order.object_id,
         "order_no": s.get("order_no") or order.object_id,

@@ -13,10 +13,11 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from fos.api.deps import SessionDep, require
-from fos.db.models import Approval, EngDesign, Event, ObjectState
+from fos.db.models import Approval, EngDesign, Event, ObjectState, utcnow
 from fos.engineering import service as es
 from fos.engineering.config import EngineeringConfig
 from fos.engineering.export import proposal_sections, to_docx, to_xlsx
@@ -24,6 +25,7 @@ from fos.engineering.heat import HeatError, Layer, solve
 from fos.engineering.kb import load_kb
 from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, ApprovalRequired, Conflict, Forbidden, Invalid, NotFound
+from fos.policy.approvals import is_open
 
 router = APIRouter(prefix="/v1")
 
@@ -66,7 +68,7 @@ async def _stage(session, project: ObjectState, designs: list[EngDesign]) -> str
     for d in designs:
         if d.status == "submitted" and d.approval_id:
             ap = await session.get(Approval, d.approval_id)
-            if ap is not None and ap.status == "pending":
+            if ap is not None and is_open(ap):
                 return "reviewing"
     return "editing" if designs else "matching"
 
@@ -170,6 +172,8 @@ async def update_project(
     _cfg(request, principal)
     try:
         o = await es.get_project(session, principal.tenant_id, project_id)
+        if o.state.get("status") != "open":
+            raise es.EngConflict("工程项目已发布报价或关闭，不能修改工况")
         note = str(body.pop("note", "") or "")[:200]
         res = await request.app.state.ledger.append(
             session,
@@ -198,6 +202,8 @@ async def match(project_id: str, request: Request, session: SessionDep, principa
     cfg = _cfg(request, principal)
     try:
         r = await es.match_project(session, principal, project_id, cfg)
+    except IntegrityError as e:
+        raise HTTPException(409, detail="并发匹配冲突，请重试") from e
     except es.EngError as e:
         raise _err(e) from e
     o = await es.get_project(session, principal.tenant_id, project_id)
@@ -212,9 +218,13 @@ async def match(project_id: str, request: Request, session: SessionDep, principa
 
 @router.get("/eng/projects/{project_id}/designs")
 async def list_designs(
-    project_id: str, session: SessionDep, principal: Reader, all: bool = False
+    project_id: str, request: Request, session: SessionDep, principal: Reader, all: bool = False
 ) -> dict[str, Any]:
-    o = await session.get(ObjectState, (principal.tenant_id, "eng_project", project_id))
+    _cfg(request, principal)
+    try:
+        o = await es.get_project(session, principal.tenant_id, project_id)
+    except es.EngError as e:
+        raise _err(e) from e
     ds = await _designs(session, principal.tenant_id, project_id, all_versions=all)
     return {"items": [es.design_out(d, o, full=False) for d in ds]}
 
@@ -269,6 +279,8 @@ async def revise(
             options=body.options,
             note=body.note,
         )
+    except IntegrityError as e:
+        raise HTTPException(409, detail="并发修改方案冲突，请刷新后重试") from e
     except es.EngError as e:
         raise _err(e) from e
     o = await es.get_project(session, principal.tenant_id, nd.project_id)
@@ -284,7 +296,9 @@ class DisposeIn(BaseModel):
 async def dispose(
     design_id: str, item_id: str, body: DisposeIn, session: SessionDep, principal: Writer
 ) -> dict[str, Any]:
-    d, _o = await _load(session, principal, design_id)
+    d, o = await _load(session, principal, design_id)
+    if o.state.get("status") != "open":
+        raise HTTPException(409, detail="工程项目已发布报价或关闭")
     await es.reopen_if_returned(session, d)
     try:
         it = es.dispose(d, principal, item_id, body.disposition, body.note)
@@ -316,6 +330,18 @@ async def publish(
         req = es.publish_request(d, o, body.quote_no if body else None)
         res = await request.app.state.ledger.append(session, principal, req)
     except ApprovalRequired as e:
+        # 原子抢占 draft -> submitted，防止并发双提交生成重复审批单
+        claimed = await session.execute(
+            update(EngDesign)
+            .where(
+                EngDesign.id == d.id,
+                EngDesign.tenant_id == principal.tenant_id,
+                EngDesign.status == "draft",
+            )
+            .values(status="submitted", updated_at=utcnow())
+        )
+        if claimed.rowcount != 1:
+            raise HTTPException(409, detail="这个方案已经提交审批或状态已变更") from None
         lookup = lookup_for(request)
         sub = await request.app.state.approvals.submit(
             session, principal, req, e.decision, source=f"eng_design:{d.id}", lookup=lookup

@@ -186,7 +186,12 @@ class ApprovalService:
         # 抢占这一级：并发审批时只有一个人生效（PostgreSQL 下在这里串行）
         claimed = await session.execute(
             update(Approval)
-            .where(Approval.id == ap.id, Approval.status == "pending", Approval.current_step == step)
+            .where(
+                Approval.id == ap.id,
+                Approval.tenant_id == principal.tenant_id,
+                Approval.status == "pending",
+                Approval.current_step == step,
+            )
             .values(current_step=step + 1, updated_at=utcnow())
             .execution_options(synchronize_session=False)
         )
@@ -233,12 +238,27 @@ class ApprovalService:
         *,
         lookup: AdapterLookup = no_channels,
     ) -> DecideResult:
-        if principal.subject_id != ap.requester_id:
+        if ap.tenant_id != principal.tenant_id or principal.subject_id != ap.requester_id:
             return DecideResult("not_eligible", "只有申请人可以撤回")
         if ap.status != "pending":
             return DecideResult("closed", f"这张审批单{STATUS_TEXT.get(ap.status, ap.status)}，不能撤回")
         now = utcnow()
-        ap.status, ap.decided_at, ap.updated_at = "cancelled", now, now
+        claimed = await session.execute(
+            update(Approval)
+            .where(
+                Approval.id == ap.id,
+                Approval.tenant_id == principal.tenant_id,
+                Approval.requester_id == principal.subject_id,
+                Approval.status == "pending",
+                Approval.current_step == ap.current_step,
+            )
+            .values(status="cancelled", decided_at=now, updated_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        if claimed.rowcount != 1:
+            await session.refresh(ap)
+            return DecideResult("closed", f"这张审批单{STATUS_TEXT.get(ap.status, ap.status)}，不能撤回")
+        await session.refresh(ap)
         await self._close_cards(session, ap)
         return DecideResult("cancelled", f"已撤回：{ap.title}")
 
@@ -248,7 +268,7 @@ class ApprovalService:
         ap.decided_at = ap.updated_at = now
         tenant = self.registry.get(ap.tenant_id)
         requester = await session.get(User, ap.requester_id)
-        if tenant is None or requester is None or not requester.is_active:
+        if tenant is None or requester is None or requester.tenant_id != ap.tenant_id or not requester.is_active:
             ap.status, ap.result = "failed", {"error": "申请人账号已停用，没有记账"}
             return DecideResult("failed", "审批已通过，但申请人账号已停用，没有记账")
         rp = principal_for_user(requester, tenant)
@@ -268,6 +288,8 @@ class ApprovalService:
         try:
             async with session.begin_nested():
                 res = await self.ledger.append(session, rp, req, approval=grant)
+                if res.duplicate and req.object_id and res.object_id != req.object_id:
+                    raise LedgerError("幂等键已被其他对象使用，审批未能记账")
         except ApprovalRequired as e:
             err = f"审批规则已变化，请重新提交（{e}）"
         except LedgerError as e:

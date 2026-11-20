@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from typing import Any
 
+from fos.excel_safe import excel_row
 from fos.tender.service import LEVEL_TEXT
 
 STATUS_TEXT = {"open": "未处理", "responded": "已响应", "accepted": "接受偏离", "na": "不适用"}
@@ -19,7 +20,9 @@ def to_xlsx(tender: dict[str, Any], analysis: dict[str, Any]) -> bytes:
     ws = wb.active
     ws.title = "需求矩阵"
     ws.append(
-        [f"{tender.get('name', '')}  招标编号 {tender.get('tender_no') or '-'}  拆解 v{analysis['version']}"]
+        excel_row(
+            [f"{tender.get('name', '')}  招标编号 {tender.get('tender_no') or '-'}  拆解 v{analysis['version']}"]
+        )
     )
     ws.append(
         [
@@ -40,34 +43,38 @@ def to_xlsx(tender: dict[str, Any], analysis: dict[str, Any]) -> bytes:
     for it in analysis["items"]:
         dev = it.get("deviation") or {}
         ws.append(
-            [
-                it["no"],
-                it["page"],
-                it["section_name"],
-                it["category"],
-                LEVEL_TEXT.get(it["level"], it["level"]),
-                "是" if it["disqualify"] else "",
-                it["text"],
-                dev.get("status", ""),
-                it["response"],
-                it.get("assignee") or it.get("owner_role") or "",
-                STATUS_TEXT.get(it["status"], it["status"]),
-                it.get("note") or "",
-            ]
+            excel_row(
+                [
+                    it["no"],
+                    it["page"],
+                    it["section_name"],
+                    it["category"],
+                    LEVEL_TEXT.get(it["level"], it["level"]),
+                    "是" if it["disqualify"] else "",
+                    it["text"],
+                    dev.get("status", ""),
+                    it["response"],
+                    it.get("assignee") or it.get("owner_role") or "",
+                    STATUS_TEXT.get(it["status"], it["status"]),
+                    it.get("note") or "",
+                ]
+            )
         )
     ws2 = wb.create_sheet("偏离表")
     ws2.append(["条款号", "指标", "招标要求", "我方", "依据", "偏离", "原文"])
     for d in analysis["deviations"]:
         ws2.append(
-            [
-                d["no"],
-                d["name"],
-                d["required"],
-                d.get("ours"),
-                d["basis"],
-                d["status"],
-                d["source"].get("quote", ""),
-            ]
+            excel_row(
+                [
+                    d["no"],
+                    d["name"],
+                    d["required"],
+                    d.get("ours"),
+                    d["basis"],
+                    d["status"],
+                    d["source"].get("quote", ""),
+                ]
+            )
         )
     ws3 = wb.create_sheet("资料清单")
     ws3.append(["资料", "页码", "要求", "资料库匹配", "状态", "处理"])
@@ -81,20 +88,24 @@ def to_xlsx(tender: dict[str, Any], analysis: dict[str, Any]) -> bytes:
             f"{m['name']}（{m.get('valid_until') or '长期'}）{m.get('problem') or ''}" for m in d["matches"]
         )
         ws3.append(
-            [
-                ("★ " if d.get("star") else "") + d["name"],
-                d["sources"][0]["page"] if d["sources"] else "",
-                "，".join(req),
-                matches,
-                d["status_text"],
-                DOC_TEXT.get(d.get("disposition") or "", ""),
-            ]
+            excel_row(
+                [
+                    ("★ " if d.get("star") else "") + d["name"],
+                    d["sources"][0]["page"] if d["sources"] else "",
+                    "，".join(req),
+                    matches,
+                    d["status_text"],
+                    DOC_TEXT.get(d.get("disposition") or "", ""),
+                ]
+            )
         )
     ws4 = wb.create_sheet("评分点")
     ws4.append(["得分项", "分值", "页码", "需要的证明材料"])
     names = {d["id"]: d["name"] for d in analysis["checklist"]}
     for s in analysis["scoring"]:
-        ws4.append([s["item"], s["points"], s["page"], "、".join(names.get(e, e) for e in s["evidence"])])
+        ws4.append(
+            excel_row([s["item"], s["points"], s["page"], "、".join(names.get(e, e) for e in s["evidence"])])
+        )
     for sheet, widths in (
         (ws, [8, 6, 12, 8, 10, 8, 60, 8, 40, 12, 10, 20]),
         (ws2, [10, 14, 16, 10, 40, 8, 50]),

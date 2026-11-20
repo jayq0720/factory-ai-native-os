@@ -166,12 +166,19 @@ async def trace_report(
         if node not in role and len(role) < MAX_NODES:
             role[node] = ("related", role[(link.to_type, link.to_id)][1] + 1, rel_name(link))
 
+    root_obj = await session.get(ObjectState, (tenant, object_type, object_id))
+    root_is_real = root_obj is not None and root_obj.data_mode == "real"
     nodes = []
     alerts = []
+    keep: set[tuple[str, str]] = set()
     for (t, i), (direction, dist, via) in role.items():
         known = t in onto.objects
         readable = known and principal.can(_read_perm(onto, t))
-        obj = await session.get(ObjectState, (tenant, t, i))
+        obj = root_obj if (t, i) == root else await session.get(ObjectState, (tenant, t, i))
+        # 真实对象的追溯报告不混入模拟检验/下游记录，避免模拟数据污染真实追溯或制造假告警
+        if root_is_real and (t, i) != root and obj is not None and obj.data_mode == "mock":
+            continue
+        keep.add((t, i))
         n: dict[str, Any] = {
             "object_type": t,
             "type_name": onto.objects[t].name if known else t,
@@ -192,7 +199,6 @@ async def trace_report(
         nodes.append(n)
     order = {"root": 0, "upstream": 1, "downstream": 2, "related": 3}
     nodes.sort(key=lambda n: (order[n["direction"]], n["distance"], n["object_type"], n["object_id"]))
-    keep = set(role)
     return {
         "root": {"object_type": object_type, "object_id": object_id},
         "alerts": alerts,

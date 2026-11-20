@@ -39,12 +39,21 @@ TriggerReader = Annotated[Principal, Depends(require("platform.trigger:read"))]
 ChannelTester = Annotated[Principal, Depends(require("platform.channel:write"))]
 
 
+def _mock_for(request: Request, tenant_id: str):
+    from fos.channels.mock import MockChannel
+
+    channels: dict[str, MockChannel] = request.app.state.mock_channels
+    if tenant_id not in channels:
+        channels[tenant_id] = MockChannel()
+    return channels[tenant_id]
+
+
 def adapter_for(request: Request, tenant_id: str, channel: str) -> ChannelAdapter:
     st = request.app.state
     if not st.intake.channel_enabled(tenant_id, channel):
         raise HTTPException(422, detail=f"没有启用信道 {channel}")
     if channel == "mock":
-        return st.mock_channel
+        return _mock_for(request, tenant_id)
     if channel == "dingtalk":
         cache: dict[str, ChannelAdapter] = st.adapters
         if tenant_id not in cache:
@@ -78,7 +87,11 @@ class IdentityIn(BaseModel):
 
 
 @router.put("/channels/identities")
-async def bind_identity(body: IdentityIn, session: SessionDep, principal: IdentityAdmin) -> dict[str, Any]:
+async def bind_identity(
+    body: IdentityIn, request: Request, session: SessionDep, principal: IdentityAdmin
+) -> dict[str, Any]:
+    if body.channel == "mock" and request.app.state.settings.env == "prod":
+        raise HTTPException(422, detail="生产环境不允许绑定 mock 信道")
     user = (
         await session.scalars(
             select(User).where(User.tenant_id == principal.tenant_id, User.login == body.login)
@@ -138,8 +151,10 @@ async def create_card(
     body: CardIn, request: Request, session: SessionDep, principal: CardWriter
 ) -> dict[str, Any]:
     """发一张需要人确认的卡片。确认后的动作以点击人的权限执行，发卡片的人不需要写权限。"""
-    if body.required_permission and not is_valid_permission(body.required_permission):
-        raise HTTPException(422, detail="required_permission 格式不对")
+    if body.required_permission and (
+        not is_valid_permission(body.required_permission) or "*" in body.required_permission
+    ):
+        raise HTTPException(422, detail="required_permission 必须是不带通配符的合法权限串")
     allowed = None
     if body.allowed_login:
         u = (
@@ -150,10 +165,13 @@ async def create_card(
         if u is None:
             raise HTTPException(404, detail="allowed_login 用户不存在")
         allowed = u.id
+    req_perm = body.required_permission
     if body.action is not None:
         onto = request.app.state.ontologies[principal.tenant_id]
-        if body.action.request.type not in onto.events:
+        evdef = onto.events.get(body.action.request.type)
+        if evdef is None:
             raise HTTPException(422, detail=f"未知事件类型：{body.action.request.type}")
+        req_perm = req_perm or evdef.permission
     adapter = adapter_for(request, principal.tenant_id, body.to.channel)
     thread_id = await thread_for(session, principal.tenant_id, body.to)
     try:
@@ -165,7 +183,7 @@ async def create_card(
             card=body.card,
             created_by=principal.subject_id,
             action=body.action,
-            required_permission=body.required_permission,
+            required_permission=req_perm,
             allowed_user_id=allowed,
             ttl=timedelta(hours=body.ttl_hours),
         )
@@ -248,12 +266,18 @@ async def mock_message(
     st = request.app.state
     if st.settings.env == "prod":
         raise HTTPException(404)
-    mock = st.mock_channel
+    mock = _mock_for(request, principal.tenant_id)
+    max_bytes = st.settings.max_upload_mb * 1024 * 1024
     for ref, b64 in body.files.items():
+        if len(b64) > (max_bytes * 4 // 3) + 16:
+            raise HTTPException(413, detail=f"附件 {ref} 超过大小上限")
         try:
-            mock.files[ref] = base64.b64decode(b64, validate=True)
+            raw = base64.b64decode(b64, validate=True)
         except binascii.Error as e:
             raise HTTPException(422, detail=f"附件 {ref} 不是合法的 base64") from e
+        if len(raw) > max_bytes:
+            raise HTTPException(413, detail=f"附件 {ref} 超过大小上限")
+        mock.files[ref] = raw
     msg = InboundMessage(
         channel="mock",
         tenant_id=principal.tenant_id,
@@ -289,4 +313,4 @@ async def mock_message(
 async def mock_outbox(request: Request, principal: ChannelTester) -> dict[str, Any]:
     if request.app.state.settings.env == "prod":
         raise HTTPException(404)
-    return {"items": request.app.state.mock_channel.outbox[-100:]}
+    return {"items": _mock_for(request, principal.tenant_id).outbox[-100:]}

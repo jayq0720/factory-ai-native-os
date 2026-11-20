@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -49,9 +50,11 @@ class Condition(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> Condition:
         if self.op in _NUMERIC_OPS and (
-            isinstance(self.value, bool) or not isinstance(self.value, int | float)
+            isinstance(self.value, bool)
+            or not isinstance(self.value, int | float)
+            or not math.isfinite(self.value)
         ):
-            raise ValueError(f"{self.op} 的 value 必须是数字")
+            raise ValueError(f"{self.op} 的 value 必须是有限数字")
         if self.op in ("in", "not_in") and not isinstance(self.value, list):
             raise ValueError(f"{self.op} 的 value 必须是列表")
         if self.op == "exists" and self.value is None:
@@ -65,7 +68,7 @@ class Condition(BaseModel):
         if v is None:
             return False
         if self.op in _NUMERIC_OPS:
-            if isinstance(v, bool) or not isinstance(v, int | float):
+            if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v):
                 return False
             return {
                 "gt": v > self.value,
@@ -141,7 +144,7 @@ class PolicyLayer(BaseModel):
     @classmethod
     def _ids(cls, v: dict[str, Rule]) -> dict[str, Rule]:
         for k in v:
-            if not _RULE_ID.match(k):
+            if not _RULE_ID.fullmatch(k):
                 raise ValueError(f"规则 id 不合法：{k}")
         return v
 
@@ -157,16 +160,18 @@ class Decision:
         return [rid for rid, _ in self.rules]
 
     def steps(self) -> list[dict[str, Any]]:
-        """审批步骤快照：多条规则命中时按规则顺序串联，完全相同的步骤只保留一个。"""
+        """审批步骤快照：多条规则命中时按规则顺序串联，跨规则完全相同的步骤只保留一个（单规则内同角色多人复核保留）。"""
         out: list[dict[str, Any]] = []
         seen: set[tuple] = set()
         for rid, r in self.rules:
+            rule_keys: set[tuple] = set()
             for s in r.steps:
                 key = (s.role, s.permission, s.login)
                 if key in seen:
                     continue
-                seen.add(key)
+                rule_keys.add(key)
                 out.append({**s.model_dump(), "rule": rid})
+            seen |= rule_keys
         return out
 
     def allow_self(self) -> bool:

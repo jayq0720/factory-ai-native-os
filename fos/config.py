@@ -5,6 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,7 +25,7 @@ class OCRMode(StrEnum):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="FOS_", env_file=".env", extra="ignore")
 
-    env: str = "dev"
+    env: Literal["dev", "test", "staging", "prod"] = "dev"
     database_url: str = "postgresql+asyncpg://fos:fos@localhost:5432/fos"
     tenants_dir: Path = Field(default=Path("tenants"))
     packs_dir: Path = Field(default=Path("packs"))

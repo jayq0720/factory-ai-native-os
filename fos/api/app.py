@@ -65,7 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.dailies, st.imports = svc.dailies, svc.imports
         st.orders, st.planning, st.supply = svc.orders, svc.planning, svc.supply
         await svc.jobs.recover()  # 上次没跑完的解析任务接着跑
-        st.mock_channel = MockChannel()  # 模拟信道（非 prod 环境），见 channel_routes
+        st.mock_channels = {"luneng": MockChannel()}  # 按租户隔离的模拟信道（非 prod 环境）
+        st.mock_channel = st.mock_channels["luneng"]
         st.adapters = {}  # 按租户缓存的真实信道适配器（发卡片用）
         try:
             yield
@@ -82,6 +83,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.state.request_id = rid
         response = await call_next(request)
         response.headers["x-request-id"] = rid
+        response.headers.setdefault("x-content-type-options", "nosniff")
+        response.headers.setdefault("x-frame-options", "DENY")
+        response.headers.setdefault("referrer-policy", "no-referrer")
         return response
 
     @app.get("/healthz")
@@ -118,7 +122,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         principal: Annotated[Principal, Depends(require("platform.llm:write"))],
     ) -> dict[str, Any]:
-        """调试用：经网关调用模型。正式业务由 Worker 调用，不直接暴露给前端。"""
+        """调试用：经网关调用模型。正式业务由 Worker 调用，不直接暴露给前端；prod 环境关闭。"""
+        if settings.env == "prod":
+            return JSONResponse({"detail": "生产环境已关闭调试对话接口"}, status_code=404)
         if body.model not in MODEL_ALIASES:
             return JSONResponse({"detail": f"未知模型别名 {body.model!r}"}, status_code=400)
         llm: LLMClient = request.app.state.llm

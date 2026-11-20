@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import secrets
 from datetime import UTC, date, datetime
@@ -22,10 +23,36 @@ from fos.engineering.kb import load_kb
 from fos.engineering.match import customer_spec, search
 from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
+from fos.policy.approvals import is_open
 
 HUMAN = {"confirmed", "corrected"}
 # 参与计算的字段：有值就必须人工核对过（确认或改正），否则不能建项目
 CRITICAL = ["normal_temp", "max_temp", "atmosphere", "shell_temp", "area", "total_thickness"]
+# 建项目时允许人工覆盖的工况/商务字段白名单（禁止通过 overrides 伪造 status / quote_* / source_documents）
+ALLOWED_OVERRIDES = frozenset(
+    {
+        "name",
+        "customer_name",
+        "location",
+        "furnace_type",
+        "positions",
+        "normal_temp",
+        "max_temp",
+        "atmosphere",
+        "shell_temp",
+        "ambient_temp",
+        "area",
+        "thickness_limit",
+        "thickness_rule",
+        "lining_spec",
+        "standards",
+        "delivery_period",
+        "payment_terms",
+        "quote_validity",
+        "tax_rate",
+        "note",
+    }
+)
 # 文件字段 → 工程项目属性
 TEXT_MAP = {
     "customer_name": "customer_name",
@@ -46,6 +73,9 @@ NUM_MAP = {
     "tax_rate": "tax_rate",
 }
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
+_POS_NUM = re.compile(r"\d+(?:\.\d+)?")
+_AREA_UNIT = re.compile(r"(?:m2|m²|㎡|平方米|平米)", re.I)
+_RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*[-~～至]\s*(\d+(?:\.\d+)?)")
 
 
 class EngError(Exception):
@@ -63,6 +93,19 @@ class EngConflict(EngError):
 def _num(v: str | None) -> float | None:
     m = _NUM.search(v or "")
     return float(m.group()) if m else None
+
+
+def _parse_area(raw: str | None) -> float | None:
+    """解析面积：先去掉 m2 单位防把 2 计入，区间取较大值，等式取等号后结果，多部位相加。"""
+    s = _AREA_UNIT.sub("", raw or "").strip()
+    if not s:
+        return None
+    if "=" in s:
+        s = s.rsplit("=", 1)[-1]
+    if m := _RANGE.fullmatch(s.strip()):
+        return round(max(float(m.group(1)), float(m.group(2))), 3)
+    nums = [float(x) for x in _POS_NUM.findall(s)]
+    return round(sum(nums), 3) if nums else None
 
 
 def _thickness_rule(quote: str) -> str:
@@ -144,11 +187,9 @@ def project_payload(
         if k in by and (v := _num(by[k].value)) is not None:
             payload[prop] = v
             cite(by[k])
-    if "area" in by:
-        nums = [float(x) for x in _NUM.findall(by["area"].value or "")]
-        if nums:
-            payload["area"] = round(sum(nums), 3)
-            cite(by["area"])
+    if "area" in by and (area_val := _parse_area(by["area"].value)) is not None:
+        payload["area"] = area_val
+        cite(by["area"])
     if "total_thickness" in by and "thickness_limit" in payload:
         q = " ".join(s.get("quote") or "" for s in by["total_thickness"].sources or []) or (
             by["total_thickness"].value or ""
@@ -190,7 +231,7 @@ async def create_project(
     if unchecked:
         raise EngConflict("请先在字段核对页确认或改正这些字段：" + "、".join(unchecked))
     for k, v in (overrides or {}).items():
-        if v in (None, ""):
+        if k not in ALLOWED_OVERRIDES or v in (None, ""):
             continue
         payload[k] = v
         evidence.append(Evidence(kind="manual", ref=f"eng_project:{k}", note=f"建项目时人工填写 {k}"))
@@ -267,6 +308,8 @@ async def match_project(
 ) -> dict[str, Any]:
     """知识库匹配并生成方案草稿（第 1 版）。重新匹配时旧草稿标为 superseded。"""
     project = await get_project(session, principal.tenant_id, project_id)
+    if project.state.get("status") != "open":
+        raise EngConflict("工程项目已发布报价或关闭，不能重新匹配")
     kb, cond, fields = await _context(session, project, cfg)
     result = search(cond, cfg, kb)
     options = default_options(cond, cfg)
@@ -346,9 +389,18 @@ async def revise_design(
             "只能修改最新的草稿版本" if d.status == "superseded" else "方案已提交审批或已发布，不能修改"
         )
     project = await get_project(session, principal.tenant_id, d.project_id)
+    if project.state.get("status") != "open":
+        raise EngConflict("工程项目已发布报价或关闭，不能修改方案")
     kb, cond, fields = await _context(session, project, cfg)
     opts = {**d.inputs.get("options", {}), **(options or {})}
-    qo = QuoteOptions(**{k: float(v) for k, v in opts.items() if k in QuoteOptions.__dataclass_fields__})
+    opt_vals: dict[str, float] = {}
+    for k, v in opts.items():
+        if k in QuoteOptions.__dataclass_fields__:
+            fv = float(v)
+            if not math.isfinite(fv):
+                raise EngError("报价选项必须是有限数字")
+            opt_vals[k] = fv
+    qo = QuoteOptions(**opt_vals)
     if not (
         0 <= qo.discount_pct < 100
         and 0 <= qo.tax_rate <= 30
@@ -361,9 +413,16 @@ async def revise_design(
         data = evaluate(cond, cfg, kb, new_layers, qo, project_mode=project.data_mode)
     except ValueError as e:
         raise EngError(str(e)) from e
-    for k in ("reasons", "notes", "template"):
-        if k in d.data:
-            data[k] = d.data[k]
+    if layers is not None and layers != d.inputs.get("layers"):
+        data["reasons"] = ["人工调整衬里结构后重算。"]
+        if "notes" in d.data:
+            data["notes"] = d.data["notes"]
+        if "template" in d.data:
+            data["template"] = d.data["template"]
+    else:
+        for k in ("reasons", "notes", "template"):
+            if k in d.data:
+                data[k] = d.data[k]
     review = rv.build_review(project.state, data, fields, cfg, previous=d.review)
     nd = _new_design(
         principal,
@@ -387,8 +446,8 @@ async def reopen_if_returned(session: AsyncSession, d: EngDesign) -> None:
     """审批被驳回 / 撤回 / 过期的方案回到草稿，可以修改后重新提交。"""
     if d.status == "submitted" and d.approval_id:
         ap = await session.get(Approval, d.approval_id)
-        if ap is None or ap.status not in ("pending", "approved"):
-            d.status, d.updated_at = "draft", utcnow()
+        if ap is None or (ap.status != "approved" and not is_open(ap)):
+            d.status, d.approval_id, d.updated_at = "draft", None, utcnow()
 
 
 def dispose(
@@ -417,12 +476,71 @@ def dispose(
     raise EngNotFound("审核条目不存在")
 
 
+QUOTE_EVENT = "eng.quote_issued"
+
+
+class EngQuoteGuard:
+    """账本守卫：防止绕过 /publish 接口直接 POST /v1/events 伪造毛利率或发布未审完/模拟方案。"""
+
+    async def __call__(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        payload: dict[str, Any],
+        state: dict[str, Any] | None,
+        *,
+        object_id: str | None = None,
+        data_mode: str = "real",
+    ) -> str | None:
+        if data_mode != "real":
+            return "模拟数据不能发布报价"
+        if state is None or state.get("status") != "open":
+            return "工程项目已发布报价或关闭，不能重复发布"
+        design_id = payload.get("quote_design")
+        if not design_id or not isinstance(design_id, str):
+            return "发布报价必须关联已核算的工程方案 quote_design"
+        d = await session.get(EngDesign, design_id)
+        if d is None or d.tenant_id != tenant_id:
+            return f"工程方案 {design_id} 不存在"
+        if object_id and d.project_id != object_id:
+            return f"方案 {design_id} 不属于工程项目 {object_id}"
+        if d.status not in ("draft", "submitted"):
+            return "只能发布最新草稿或审批中的工程方案"
+        if d.data_mode != "real":
+            return "模拟数据方案不能发布报价"
+        proj = (
+            await session.get(ObjectState, (tenant_id, "eng_project", d.project_id))
+            if d.project_id
+            else None
+        )
+        if proj is not None and d.project_version != proj.version:
+            return "工程项目工况在方案计算后已变更，请重新计算"
+        s = rv.summary(d.review)
+        if s["blocking"] or s["open"]:
+            return "工程方案审核清单尚未全部处理完成"
+        q = d.data.get("quote") or {}
+        if q.get("gross_margin_pct") is None or q.get("total") is None:
+            return "方案缺成本价或报价总额，不能发布"
+        try:
+            gm = float(payload.get("gross_margin_pct"))
+            amt = float(payload.get("quote_amount"))
+        except (TypeError, ValueError):
+            return "报价金额与毛利率必须是有效数字"
+        if not math.isclose(gm, float(q["gross_margin_pct"]), abs_tol=0.01):
+            return "毛利率与方案核算结果不一致"
+        if not math.isclose(amt, float(q["total"]), abs_tol=0.01):
+            return "报价金额与方案核算结果不一致"
+        return None
+
+
 def publish_request(design: EngDesign, project: ObjectState, quote_no: str | None) -> AppendRequest:
     """发布前检查，生成 eng.quote_issued 事件。审批规则在 Ledger.append() 里生效。"""
     if design.status == "superseded":
         raise EngConflict("这是旧版本，请发布最新版本")
     if design.status == "published" or project.state.get("quote_design") == design.id:
         raise EngConflict("这个方案已经发布")
+    if project.state.get("status") != "open":
+        raise EngConflict("工程项目已发布报价或关闭")
     if design.data_mode == "mock":
         raise EngConflict("模拟数据不能发布报价")
     if design.project_version != project.version:
@@ -437,7 +555,7 @@ def publish_request(design: EngDesign, project: ObjectState, quote_no: str | Non
         raise EngConflict("缺成本价，无法计算毛利率")
     letter = design.label.replace("方案", "").strip() or "S"
     return AppendRequest(
-        type="eng.quote_issued",
+        type=QUOTE_EVENT,
         object_id=project.object_id,
         payload={
             "status": "quoted",

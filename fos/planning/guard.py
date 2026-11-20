@@ -29,11 +29,16 @@ def _group(product) -> str:
     return str(product.state.get("firing_group") or f"product:{product.object_id}") if product else ""
 
 
-async def check_run(session: AsyncSession, tenant: str, ocfg: OrdersConfig, p: dict[str, Any]) -> list[str]:
+async def check_run(
+    session: AsyncSession, tenant: str, ocfg: OrdersConfig, p: dict[str, Any], *, data_mode: str | None = None
+) -> list[str]:
     problems: list[str] = []
     start, end = datetime.fromisoformat(p["start_at"]), datetime.fromisoformat(p["end_at"])
     if end <= start:
         problems.append("出窑时间要晚于装窑时间")
+    qty = num(p.get("qty"))
+    if qty <= 0:
+        problems.append("装窑数量必须大于 0")
     plan = await get(session, tenant, "kiln_plan", p["plan"])
     if plan is not None and plan.state.get("status") != "confirmed":
         problems.append("排窑计划已被替代，不能再加装窑行")
@@ -63,8 +68,11 @@ async def check_run(session: AsyncSession, tenant: str, ocfg: OrdersConfig, p: d
             if not ocfg.same_unit(order.state.get("unit"), p["unit"]):
                 problems.append("装窑单位和订单单位不同")
 
-    total = num(p.get("qty"))
-    for r in await referrers(session, tenant, "planned_run", "plan", "kiln_plan", [p["plan"]]):
+    mode = data_mode or (plan.data_mode if plan is not None else None)
+    total = qty
+    for r in await referrers(
+        session, tenant, "planned_run", "plan", "kiln_plan", [p["plan"]], data_mode=mode
+    ):
         rs = r.state
         if rs.get("kiln") != p["kiln"]:
             continue
@@ -96,8 +104,11 @@ class PlannedRunGuard:
         onto: Ontology,
         payload: dict[str, Any],
         state: dict[str, Any] | None,
+        *,
+        object_id: str = "",
+        data_mode: str = "real",
     ) -> list[str]:
         cfg = self.configs.get(principal.tenant_id)
         if cfg is None:
             return []
-        return await check_run(session, principal.tenant_id, cfg, payload)
+        return await check_run(session, principal.tenant_id, cfg, payload, data_mode=data_mode)

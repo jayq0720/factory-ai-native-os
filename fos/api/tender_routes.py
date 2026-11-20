@@ -14,8 +14,9 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, Field, FiniteFloat
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from fos.api.deps import SessionDep, require
 from fos.db.models import Event, ObjectState, TenderAnalysis, Todo, utcnow
@@ -236,6 +237,8 @@ async def analyze(tender_id: str, request: Request, session: SessionDep, princip
     try:
         a = await ts.analyze(session, principal, tender_id, cfg, today=_today(tz))
         o = await ts.get_tender(session, principal.tenant_id, tender_id)
+    except IntegrityError as e:
+        raise HTTPException(409, detail="并发重新拆解冲突，请刷新后重试") from e
     except ts.TenderError as e:
         raise _err(e) from e
     return await _analysis_view(session, a, o, cfg)
@@ -248,6 +251,9 @@ async def to_eng_project(tender_id: str, request: Request, session: SessionDep, 
     if not principal.can("eng.project:write"):
         raise HTTPException(403, detail="需要权限 eng.project:write")
     try:
+        o = await ts.get_tender(session, principal.tenant_id, tender_id)
+        if o.state.get("status") != "open" and not o.state.get("eng_project"):
+            raise ts.TenderConflict("招标项目已经提交或结束")
         pid, created = await ts.to_eng_project(session, principal, request.app.state.ledger, tender_id)
     except (ts.TenderError, Forbidden, NotFound, Conflict, Invalid) as e:
         raise _err(e) from e
@@ -343,7 +349,9 @@ async def update_item(
     """逐条处理需求：响应、负责人、状态；技术人员可以人工改偏离结论（留痕）。"""
     _cfg(request, principal)
     _can_edit(principal)
-    a, _ = await _load(session, principal, analysis_id)
+    a, o = await _load(session, principal, analysis_id)
+    if o.state.get("status") != "open":
+        raise HTTPException(409, detail="招标项目已经提交或结束")
     await ts.reopen_if_returned(session, a)
     try:
         it = ts.update_item(a, principal, item_id, body.model_dump(exclude_none=True))
@@ -362,7 +370,9 @@ async def update_document(
     analysis_id: str, doc_id: str, body: DocIn, request: Request, session: SessionDep, principal: Writer
 ) -> dict[str, Any]:
     _cfg(request, principal)
-    a, _ = await _load(session, principal, analysis_id)
+    a, o = await _load(session, principal, analysis_id)
+    if o.state.get("status") != "open":
+        raise HTTPException(409, detail="招标项目已经提交或结束")
     await ts.reopen_if_returned(session, a)
     try:
         d = ts.update_document(a, principal, doc_id, body.disposition, body.note)
@@ -372,7 +382,7 @@ async def update_document(
 
 
 class SubmitIn(BaseModel):
-    bid_amount: float | None = None
+    bid_amount: FiniteFloat | None = None
 
 
 @router.post("/tender-analyses/{analysis_id}/submit", responses={202: {"description": "已提交审批"}})
@@ -393,6 +403,17 @@ async def submit(
         req = ts.submit_request(a, o, body.bid_amount if body else None, utcnow())
         res = await request.app.state.ledger.append(session, principal, req)
     except ApprovalRequired as e:
+        claimed = await session.execute(
+            update(TenderAnalysis)
+            .where(
+                TenderAnalysis.id == a.id,
+                TenderAnalysis.tenant_id == principal.tenant_id,
+                TenderAnalysis.status == "draft",
+            )
+            .values(status="submitted", updated_at=utcnow())
+        )
+        if claimed.rowcount != 1:
+            raise HTTPException(409, detail="投标已经提交审批或状态已变更") from None
         lookup = lookup_for(request)
         sub = await request.app.state.approvals.submit(
             session, principal, req, e.decision, source=f"tender_analysis:{a.id}", lookup=lookup

@@ -163,13 +163,16 @@ async def act_on_card(
     approvals: ApprovalService | None = None,
     lookup: AdapterLookup | None = None,
 ) -> ActOutcome:
+    if rec.tenant_id != principal.tenant_id:
+        return ActOutcome("rejected", "卡片不存在")
     card = Card.model_validate(rec.card)
     button = card.button(action_id)
     if button is None:
         return ActOutcome("rejected", f"卡片上没有「{action_id}」这个选项")
     if rec.status != "open":
         return ActOutcome("already", f"这张卡片已经处理过了（{_STATUS_TEXT.get(rec.status, rec.status)}）")
-    if _aware(rec.expires_at) < utcnow():
+    now = utcnow()
+    if _aware(rec.expires_at) < now:
         rec.status = "expired"
         await session.flush()
         return ActOutcome("expired", "这张卡片已过期，请重新发起")
@@ -181,7 +184,12 @@ async def act_on_card(
     # 抢占：只有一个点击能把 open 改成 acting（PostgreSQL 下并发点击会在这里串行）
     claimed = await session.execute(
         update(CardRecord)
-        .where(CardRecord.id == rec.id, CardRecord.status == "open")
+        .where(
+            CardRecord.id == rec.id,
+            CardRecord.tenant_id == principal.tenant_id,
+            CardRecord.status == "open",
+            CardRecord.expires_at >= now,
+        )
         .values(status="acting")
         .execution_options(synchronize_session=False)
     )

@@ -9,6 +9,7 @@
 name: fos
 
 x-fos-env: &fos-env
+  FOS_ENV: ${FOS_ENV:-prod}
   FOS_DATABASE_URL: postgresql+asyncpg://fos:${POSTGRES_PASSWORD:?请在 deploy/.env 设置}@db:5432/fos
   FOS_LLM_MODE: ${FOS_LLM_MODE:-mock}
   FOS_LITELLM_BASE_URL: http://litellm:4000

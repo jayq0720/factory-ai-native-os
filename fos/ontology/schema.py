@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import date, datetime
 from typing import Any, Literal
@@ -55,11 +56,18 @@ class ObjectTypeDef(BaseModel):
     description: str = ""
     properties: dict[str, PropertyDef] = Field(default_factory=dict)
 
+    @field_validator("domain")
+    @classmethod
+    def _domain(cls, v: str) -> str:
+        if not _KEY.fullmatch(v):
+            raise ValueError(f"权限域不合法：{v}")
+        return v
+
     @field_validator("properties")
     @classmethod
     def _keys(cls, v: dict[str, PropertyDef]) -> dict[str, PropertyDef]:
         for k in v:
-            if not _KEY.match(k):
+            if not _KEY.fullmatch(k):
                 raise ValueError(f"属性名不合法：{k}")
         return v
 
@@ -151,7 +159,11 @@ class Ontology:
             raise OntologyError(f"{event_type} 不接受字段：{sorted(unknown)}")
         out: dict[str, Any] = {}
         for k, v in payload.items():
-            out[k] = _coerce(f"{ev.object}.{k}", obj.properties[k], v)
+            prop = obj.properties[k]
+            coerced = _coerce(f"{ev.object}.{k}", prop, v)
+            if not creating and prop.required and coerced in ("", []):
+                raise OntologyError(f"{ev.object}.{k} 为必填字段，不能为空")
+            out[k] = coerced
         if creating:
             missing = [k for k, p in obj.properties.items() if p.required and out.get(k) in (None, "", [])]
             if missing:
@@ -185,7 +197,7 @@ def _coerce(path: str, p: PropertyDef, v: Any) -> Any:
                 raise err
             return v
         case "number":
-            if isinstance(v, bool) or not isinstance(v, int | float):
+            if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v):
                 raise err
             return float(v)
         case "bool":

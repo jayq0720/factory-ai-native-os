@@ -133,10 +133,11 @@ async def inbox(
     login = me.login if me else None
     items: list[dict[str, Any]] = []
 
+    now = utcnow()
     pending = (
         await session.scalars(
             select(Approval)
-            .where(Approval.tenant_id == tid, Approval.status == "pending")
+            .where(Approval.tenant_id == tid, Approval.status == "pending", Approval.expires_at > now)
             .order_by(Approval.created_at)
             .limit(500)
         )
@@ -165,12 +166,11 @@ async def inbox(
     cards = (
         await session.scalars(
             select(CardRecord)
-            .where(CardRecord.tenant_id == tid, CardRecord.status == "open")
+            .where(CardRecord.tenant_id == tid, CardRecord.status == "open", CardRecord.expires_at > now)
             .order_by(CardRecord.created_at.desc())
             .limit(300)
         )
     ).all()
-    now = utcnow()
     for c in cards:
         if (_aware(c.expires_at) or now) <= now or not _card_for_me(c, principal, onto):
             continue
@@ -236,10 +236,16 @@ def _card_for_me(c: CardRecord, principal: Principal, onto) -> bool:
         return False
     if action is not None and action.kind == "approval.decide":
         return False  # 审批卡片：审批单本身已在收件箱里
-    if c.allowed_user_id:
-        return c.allowed_user_id == principal.subject_id
-    if c.required_permission and not principal.can(c.required_permission):
+    if c.allowed_user_id and c.allowed_user_id != principal.subject_id:
         return False
+    if c.required_permission:
+        try:
+            if not principal.can(c.required_permission):
+                return False
+        except ValueError:
+            return False
+    if c.allowed_user_id:
+        return True
     if action is not None:
         ev = onto.events.get(action.request.type)
         return ev is not None and principal.can(ev.permission)
@@ -360,8 +366,8 @@ async def create_todo(
                 select(User).where(User.tenant_id == tid, User.login == body.assignee_login)
             )
         ).one_or_none()
-        if u is None:
-            raise HTTPException(404, detail="被指派的用户不存在")
+        if u is None or not u.is_active:
+            raise HTTPException(404, detail="被指派的用户不存在或已停用")
         users, assignee_user_id = [u], u.id
     else:
         tenant = request.app.state.registry.get(tid)
@@ -379,7 +385,7 @@ async def create_todo(
         assignee_role=body.assignee_role,
         object_type=body.object_type,
         object_id=body.object_id,
-        due_at=body.due_at,
+        due_at=body.due_at.astimezone(UTC) if body.due_at is not None else None,
         status="open",
         source="api",
         data_mode=body.data_mode,
@@ -416,6 +422,8 @@ async def close_todo(
     todo_id: str, body: TodoCloseIn, session: SessionDep, principal: PrincipalDep
 ) -> dict[str, Any]:
     """被指派人（或同角色的人）、创建人可以关闭。"""
+    from sqlalchemy import update
+
     t = await session.get(Todo, todo_id)
     if t is None or t.tenant_id != principal.tenant_id:
         raise HTTPException(404, detail="待办不存在")
@@ -426,7 +434,14 @@ async def close_todo(
     )
     if not mine:
         raise HTTPException(403, detail="这条待办不是你的")
-    if t.status != "open":
+    now = utcnow()
+    claimed = await session.execute(
+        update(Todo)
+        .where(Todo.id == t.id, Todo.tenant_id == principal.tenant_id, Todo.status == "open")
+        .values(status=body.status, note=body.note, closed_by=principal.subject_id, closed_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if claimed.rowcount != 1:
         raise HTTPException(409, detail="这条待办已经关闭")
-    t.status, t.note, t.closed_by, t.closed_at = body.status, body.note, principal.subject_id, utcnow()
+    await session.refresh(t)
     return _todo_out(t)
