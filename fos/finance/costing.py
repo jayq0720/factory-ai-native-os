@@ -145,7 +145,10 @@ def compute_batch_cost(
     # 2. 窑炉能耗成本（电费 + 燃气费，按同窑次产量占比分摊）
     energy_cost = 0.0
     if kiln_run_state:
-        kwh = _finite(kiln_run_state.get("energy_kwh") or 0.0, "窑次用电量")
+        kwh_raw = kiln_run_state.get("electricity_kwh")
+        if kwh_raw is None:
+            kwh_raw = kiln_run_state.get("energy_kwh")
+        kwh = _finite(kwh_raw or 0.0, "窑次用电量")
         gas = _finite(kiln_run_state.get("gas_m3") or 0.0, "窑次燃气量")
         if kwh == 0.0 and gas == 0.0:
             warnings.append("关联窑次尚未登记用电/燃气能耗读数")

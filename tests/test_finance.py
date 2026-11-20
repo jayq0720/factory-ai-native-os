@@ -128,25 +128,33 @@ def test_finance_ar_ap_vouchers_cost_and_im_flow(client, keys):
             "status": "accepted",
         },
     )
-    _ev(client, keys, "production.kiln_registered", "K-F1", {"name": "1号梭式窑", "kind": "shuttle"})
+    _ev(
+        client,
+        keys,
+        "production.kiln_registered",
+        "K-F1",
+        {"name": "1号梭式窑", "kiln_type": "shuttle", "access_path": "direct"},
+    )
     _ev(
         client,
         keys,
         "production.kiln_run_started",
         "KR-F1",
-        {"kiln": "K-F1", "run_no": "R-01", "started_at": "2026-11-18T09:00:00+08:00", "status": "running"},
+        {"kiln": "K-F1", "run_no": "R-01", "started_at": "2026-11-18T09:00:00+08:00", "status": "firing"},
     )
     _ev(
         client,
         keys,
         "production.kiln_run_finished",
         "KR-F1",
-        {
-            "finished_at": "2026-11-19T09:00:00+08:00",
-            "energy_kwh": 1000,
-            "gas_m3": 100,
-            "status": "finished",
-        },
+        {"ended_at": "2026-11-19T09:00:00+08:00", "status": "finished"},
+    )
+    _ev(
+        client,
+        keys,
+        "production.kiln_run_summarized",
+        "KR-F1",
+        {"electricity_kwh": 1000, "gas_m3": 100},
     )
     _ev(
         client,
