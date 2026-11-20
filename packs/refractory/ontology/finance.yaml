@@ -47,7 +47,7 @@ objects:
       summary: {type: string, name: 摘要, required: true}
       source_type: {type: enum, name: 来源类型, values: [ar, ar_receipt, ap, ap_payment, cost, manual], required: true}
       source_id: {type: string, name: 来源单据编号}
-      lines: {type: json, name: 分录明细, required: true}
+      lines: {type: text, name: 分录明细（JSON）, required: true}
       total_debit: {type: number, name: 借方合计, unit: 元, required: true}
       total_credit: {type: number, name: 贷方合计, unit: 元, required: true}
       status: {type: enum, name: 状态, values: [draft, exported, posted, void], required: true}

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, time
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -600,6 +601,14 @@ def _voucher_out(o: ObjectState) -> dict[str, Any]:
     s = o.state
     st = s.get("status") or "draft"
     stype = s.get("source_type") or "manual"
+    raw_lines = s.get("lines")
+    if isinstance(raw_lines, str):
+        try:
+            parsed_lines = json.loads(raw_lines)
+        except json.JSONDecodeError:
+            parsed_lines = []
+    else:
+        parsed_lines = raw_lines or []
     return {
         "id": o.object_id,
         "voucher_no": s.get("voucher_no") or o.object_id,
@@ -608,7 +617,7 @@ def _voucher_out(o: ObjectState) -> dict[str, Any]:
         "source_type": stype,
         "source_type_text": SOURCE_TYPE_TEXT.get(stype, stype),
         "source_id": s.get("source_id"),
-        "lines": s.get("lines") or [],
+        "lines": parsed_lines,
         "total_debit": round(float(s.get("total_debit") or 0.0), 2),
         "total_credit": round(float(s.get("total_credit") or 0.0), 2),
         "status": st,
@@ -643,7 +652,7 @@ async def draft_voucher_manual(
         "voucher_date": body.voucher_date.isoformat(),
         "summary": body.summary,
         "source_type": body.source_type,
-        "lines": lines,
+        "lines": json.dumps(lines, ensure_ascii=False),
         "total_debit": td,
         "total_credit": tc,
         "status": "draft",

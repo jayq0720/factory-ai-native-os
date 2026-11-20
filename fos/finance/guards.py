@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any
 
@@ -111,6 +112,11 @@ class FinanceGuard:
 
 def _check_voucher_balance(payload: dict[str, Any]) -> list[str]:
     lines = payload.get("lines")
+    if isinstance(lines, str):
+        try:
+            lines = json.loads(lines)
+        except json.JSONDecodeError:
+            return ["凭证分录 JSON 格式非法"]
     if not isinstance(lines, list) or len(lines) < 2:
         return ["凭证分录至少需要 2 行（有借必有贷）"]
     debit_sum = 0.0
