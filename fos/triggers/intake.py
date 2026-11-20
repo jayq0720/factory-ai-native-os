@@ -51,6 +51,7 @@ from fos.perception.ocr import OCRProvider
 from fos.perception.service import IngestError, IngestResult, ingest_document
 from fos.planning.cards import EVALUATE, PLAN, SHORTAGE, evaluation_card, plan_card, shortage_card
 from fos.planning.config import PlanningConfig
+from fos.quality.config import QualityConfig
 from fos.reports.daily import DAILY, DailyConfig, daily_report, parse_day
 from fos.reports.daily import report_card as daily_card
 from fos.supply.cards import STOCK, SUGGEST, low_stock_card, material_card, suggestion_card
@@ -119,6 +120,7 @@ class TriggerIntake:
         supply: dict[str, SupplyConfig] | None = None,
         tenders: dict[str, TenderConfig] | None = None,
         monitoring: dict[str, MonitorConfig] | None = None,
+        quality: dict[str, QualityConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -135,6 +137,7 @@ class TriggerIntake:
         self.supply = supply or {}
         self.tenders = tenders or {}
         self.monitoring = monitoring or {}
+        self.quality = quality or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -242,6 +245,12 @@ class TriggerIntake:
                 and (km := _kiln_word(msg.text.strip()))
             ):
                 await self._kiln(session, msg, out, principal, *km)
+            elif (
+                msg.kind == "text"
+                and msg.tenant_id in self.quality
+                and (qm := _quality_word(msg.text.strip()))
+            ):
+                await self._quality(session, msg, out, principal, *qm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -765,6 +774,57 @@ class TriggerIntake:
         trig.result = {"kiln": hits[0]["kiln"]}
         await self._reply(None, msg, out, kiln_card(hits[0], mode=b["data_mode"]))
 
+    # ---------------- 质量体系（只读 Fast Path） ----------------
+
+    async def _quality(
+        self, session, msg: InboundMessage, out: Outcome, principal: Principal, kind: str, arg: str
+    ):
+        from fos.quality import cards as qc
+        from fos.quality import service as qs
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"quality_{kind}", "done"
+        tid = msg.tenant_id
+        cfg = self.quality[tid]
+        if kind == "pending":
+            if not principal.can("quality.inspection:read"):
+                await self._reply(None, msg, out, "你没有查看待检任务的权限（quality.inspection:read）。")
+                return
+            data = await qs.pending_tasks(session, tid)
+            trig.result = {"total": data["total"]}
+            await self._reply(None, msg, out, qc.pending_card(data))
+            return
+        if kind == "ncr":
+            if not principal.can("quality.ncr:read"):
+                await self._reply(None, msg, out, "你没有查看不合格品的权限（quality.ncr:read）。")
+                return
+            rows = await qs.ncr_board(session, tid)
+            trig.result = {"ncrs": len(rows)}
+            await self._reply(None, msg, out, qc.ncr_card(rows))
+            return
+        if kind == "calibration":
+            if not principal.can("quality.measuring_instrument:read"):
+                await self._reply(
+                    None, msg, out, "你没有查看计量器具的权限（quality.measuring_instrument:read）。"
+                )
+                return
+            board = await qs.instruments_board(session, tid, cfg, self._today(msg))
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, qc.calibration_card(board))
+            return
+        if not principal.can("quality.inspection:read"):
+            await self._reply(None, msg, out, "你没有查看质保书的权限（quality.inspection:read）。")
+            return
+        try:
+            coa = await qs.certificate_data(session, tid, cfg, arg)
+        except qs.QualityError as e:
+            trig.status = "rejected"
+            await self._reply(None, msg, out, str(e))
+            return
+        trig.result = {"batch": arg, "certificate_no": coa["certificate_no"]}
+        await self._reply(None, msg, out, qc.coa_card(coa))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -825,6 +885,20 @@ def _kiln_word(text: str) -> tuple[str, tuple] | None:
         if any(c in arg for c in "？?吗呢怎么"):
             return None  # 像一句话，交给 Agent
         return "board", (arg,)
+    return None
+
+
+def _quality_word(text: str) -> tuple[str, str] | None:
+    from fos.quality.cards import CALIBRATION, COA, NCR_LIST, PENDING
+
+    if PENDING.match(text):
+        return "pending", ""
+    if NCR_LIST.match(text):
+        return "ncr", ""
+    if CALIBRATION.match(text):
+        return "calibration", ""
+    if m := COA.match(text):
+        return "coa", m.group(1)
     return None
 
 

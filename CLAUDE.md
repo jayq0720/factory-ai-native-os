@@ -38,6 +38,7 @@
 - `fos/services.py`：API 进程与信道进程共用的服务装配
 - `crates/fos-protocol`：云边数据契约（读数、上行批次 / 回执、签名命令）；`crates/fos-edge`：厂端 daemon v0.1（W20）。`modbus.rs` Modbus RTU / TCP 采集（仪表参数全在 edge.toml）、`buffer.rs` SQLite 断网缓存（先落盘再上行，seq 不变，云端去重）、`daemon.rs` 采集 / 封批 / 上行任务、`commands.rs` Ed25519 验签只读命令（执行结果随下一批上行，重签同一 id 只回报不重做）、`sim.rs` 仪表模拟器（`fos-edge simulate`）；配置 `edge.example.toml` / `edge.sim.toml`，systemd `deploy/edge/fos-edge.service`；说明见 `docs/fos-edge.md`
 - `fos/monitoring/edge.py`：云端给 fos-edge 的签名只读命令（W21）。排队（`edge_commands` 表，迁移 0011）→ 随上行回执签名下发（私钥 `FOS_EDGE_COMMAND_KEY`，`fos edge-keygen` 生成）→ 收结果；厂端状态存 `edge_batches.status`，Watchdog 定时要状态、积压 / 被拒批次告警；API `/v1/edge/gateways`、`/v1/edge/commands`（权限 `production.edge:*`）
+- `fos/quality/`：质量体系（W22）。`judge.py` 理化指标确定性判定、`guards.py` NCR/8D 与计量校准账本守卫、`service.py` 待检任务队列 / 自动开 NCR / 8D 追溯草稿 / 处置与让步审批 / 质保书 / 计量器具校准提醒 / ISO 9001 审核证据包、`export.py` 质保书 Word/Excel 与 ISO 证据包 Excel、`cards.py` IM「待检」「不合格」「校准」「质保书 <批号>」、`tools.py` 质检员只读工具；本体 `packs/<pack>/ontology/quality.yaml`，配置 `packs/<pack>/quality.yaml`，Skill `packs/<pack>/skills/quality_inspector/`；API `/v1/quality/*`，网页 `/app/quality.html`；说明见 `docs/quality.md`
 
 ## 规则（不要破坏）
 

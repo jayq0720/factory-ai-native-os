@@ -1,0 +1,116 @@
+# 质量体系（W22）：不合格品报告（NCR / 8D）、计量器具校准台账。
+#
+# - 检验记录沿用 core.yaml 的 inspection 对象与 refractory/ontology.yaml 的理化指标；
+# - 不合格品报告（ncr）和计量器具（measuring_instrument）的所有变更均通过事件账本入账；
+# - 让步放行命中 policy.yaml 需总经理审批；重大/严重不合格品关闭前由账本守卫强制要求完成 8D。
+
+objects:
+  ncr:
+    name: 不合格品报告
+    domain: quality
+    description: 来料、过程、出厂检验不合格或客户质量异议时开启的不合格品报告（含处置与 8D 整改闭环）
+    properties:
+      ncr_no: {type: string, name: NCR 编号}
+      source: {type: enum, name: 来源, values: [incoming, in_process, final, customer], required: true}
+      severity: {type: enum, name: 严重程度, values: [minor, major, critical], required: true}
+      inspection: {type: ref, target: inspection, name: 关联检验}
+      material_lot: {type: ref, target: material_lot, name: 原料批次}
+      batch: {type: ref, target: production_batch, name: 生产批次}
+      product: {type: ref, target: product, name: 产品}
+      supplier: {type: ref, target: supplier, name: 供应商}
+      summary: {type: text, name: 不合格描述, required: true}
+      qty: {type: number, name: 不合格数量}
+      unit: {type: string, name: 单位}
+      disposition:
+        type: enum
+        name: 处置方式
+        values: [pending, rework, scrap, concession, return_supplier]
+      disposition_note: {type: text, name: 处置说明}
+      containment: {type: text, name: 围堵措施（D3）}
+      root_cause: {type: text, name: 根本原因（D4）}
+      corrective_action: {type: text, name: 纠正措施（D5/D6）}
+      preventive_action: {type: text, name: 预防措施（D7）}
+      verification: {type: text, name: 效果验证（D8）}
+      d8_status: {type: enum, name: 8D 状态, values: [not_required, draft, completed]}
+      status: {type: enum, name: 状态, values: [open, dispositioned, closed], required: true}
+      opened_at: {type: datetime, name: 开启时间, required: true}
+      closed_at: {type: datetime, name: 关闭时间}
+
+  measuring_instrument:
+    name: 计量器具
+    domain: quality
+    description: 检测与生产用计量器具台账（热电偶、天平、压力试验机、导热仪等），跟踪校准周期与到期提醒
+    properties:
+      code: {type: string, name: 器具编号, required: true}
+      name: {type: string, name: 器具名称, required: true}
+      category:
+        type: enum
+        name: 类别
+        values: [thermocouple, balance, press, caliper, conductivity, other]
+      serial_no: {type: string, name: 出厂编号}
+      location: {type: string, name: 使用位置}
+      calibration_cycle_days: {type: integer, name: 校准周期（天）}
+      last_calibrated_on: {type: date, name: 上次校准日期}
+      next_due_date: {type: date, name: 下次校准到期日, required: true}
+      certificate_no: {type: string, name: 校准证书号}
+      agency: {type: string, name: 校准机构}
+      status: {type: enum, name: 状态, values: [ok, out_of_service], required: true}
+      note: {type: text, name: 备注}
+
+events:
+  quality.ncr_opened:
+    name: 开启不合格品报告
+    object: ncr
+    op: create
+    permission: quality.ncr:write
+    evidence: required
+    fields: [ncr_no, source, severity, inspection, material_lot, batch, product, supplier,
+             summary, qty, unit, disposition, d8_status, status, opened_at]
+
+  quality.ncr_dispositioned:
+    name: 判定不合格品处置
+    object: ncr
+    op: update
+    permission: quality.ncr:write
+    evidence: required
+    description: 处置方式为让步放行（concession）时命中 policy.yaml 需总经理审批
+    fields: [disposition, disposition_note, status]
+
+  quality.ncr_8d_updated:
+    name: 更新 8D 整改记录
+    object: ncr
+    op: update
+    permission: quality.ncr:write
+    fields: [containment, root_cause, corrective_action, preventive_action, verification, d8_status]
+
+  quality.ncr_closed:
+    name: 关闭不合格品报告
+    object: ncr
+    op: update
+    permission: quality.ncr:write
+    evidence: required
+    description: 重大/严重不合格品关闭前须完成 8D（由账本守卫强制）
+    fields: [status, closed_at, verification]
+
+  quality.instrument_registered:
+    name: 登记计量器具
+    object: measuring_instrument
+    op: create
+    permission: quality.instrument:write
+    fields: [code, name, category, serial_no, location, calibration_cycle_days,
+             last_calibrated_on, next_due_date, certificate_no, agency, status, note]
+
+  quality.instrument_calibrated:
+    name: 登记校准记录
+    object: measuring_instrument
+    op: update
+    permission: quality.instrument:write
+    evidence: required
+    fields: [last_calibrated_on, next_due_date, certificate_no, agency, status, note]
+
+  quality.instrument_status_changed:
+    name: 变更计量器具状态
+    object: measuring_instrument
+    op: update
+    permission: quality.instrument:write
+    fields: [status, note]

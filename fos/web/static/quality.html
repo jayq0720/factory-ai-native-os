@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>质量体系 · 工厂 AI OS</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .pilot { max-width: 1120px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
+  .pilot > .card { padding: 16px 20px; }
+  .pilot h3 { margin: 12px 0 6px; font-size: 15px; }
+  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .pilot .row > * { flex: 0 0 auto; width: auto; }
+  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .pilot .bad { color: #b91c1c; }
+  .pilot .warn { color: #b45309; }
+  .pilot .ok { color: #15803d; }
+</style>
+</head>
+<body>
+<div id="mock-banner" class="mock-banner" hidden>模拟数据：仅用于演示，不能签发正式质保书</div>
+<header class="top">
+  <div class="brand"><span class="logo">工</span><b>质量体系</b><span class="muted">工厂 AI OS</span></div>
+  <div class="top-right">
+    <a class="btn small" href="./">文档解析</a>
+    <a class="btn small" href="eng.html">工程方案</a>
+    <a class="btn small" href="pilot.html">试点上线</a>
+    <a class="btn small" href="plan.html">计划排窑</a>
+    <a class="btn small" href="supply.html">采购仓储</a>
+    <a class="btn small" href="tender.html">招标拆解</a>
+    <a class="btn small" href="kiln.html">窑炉监控</a>
+    <span id="who" class="muted"></span>
+    <button id="logout" class="btn ghost small" hidden>退出</button>
+  </div>
+</header>
+
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>登录</h1>
+    <p class="muted">输入 API Key（和其他页面共用，只保存在本机浏览器）。</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required>
+    <button class="btn primary" type="submit">进入</button>
+    <p id="login-err" class="err" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="pilot" hidden>
+  <section class="card">
+    <div class="row">
+      <label class="muted small">数据模式
+        <select id="mode"><option value="real">正式数据</option><option value="mock">模拟数据</option></select>
+      </label>
+      <button id="b-refresh" class="btn small">刷新</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>待检任务（来料 / 出厂）</h2>
+    <div id="pending"></div>
+  </section>
+
+  <section class="card">
+    <h2>不合格品报告（NCR / 8D）</h2>
+    <div id="ncrs"></div>
+    <div id="d8-box" class="small muted" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card">
+    <h2>质保书（CoA）与 ISO 9001 审核证据包</h2>
+    <div class="row">
+      <input id="coa-batch" placeholder="生产批号，如 B20261120-01">
+      <button id="b-coa-docx" class="btn primary small">导出质保书 Word</button>
+      <button id="b-coa-xlsx" class="btn small">导出质保书 Excel</button>
+      <button id="b-iso-xlsx" class="btn small">导出近 30 天 ISO 审核包</button>
+    </div>
+    <div id="iso" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card">
+    <h2>计量器具校准台账</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button id="b-remind" class="btn small">生成到期校准待办</button>
+    </div>
+    <div id="insts"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="quality.js"></script>
+</body>
+</html>
