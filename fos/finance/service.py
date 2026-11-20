@@ -915,10 +915,7 @@ async def remind_overdue_ar_ap(
                 else None
             )
             name = it.get("customer_name") or it.get("supplier_name") or ""
-            body = (
-                f"已逾期 {it['overdue_days']} 天，到期日 {it['due_date']}，"
-                f"未结余额 {it['balance']:.2f} 元。"
-            )
+            body = f"已逾期 {it['overdue_days']} 天，到期日 {it['due_date']}，未结余额 {it['balance']:.2f} 元。"
             session.add(
                 Todo(
                     tenant_id=tenant,

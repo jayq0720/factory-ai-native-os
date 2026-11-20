@@ -142,9 +142,18 @@ def reconciliation_xlsx(factory: str, statement: dict[str, Any]) -> bytes:
     ws.append([])
     is_cust = statement["party_type"] == "customer"
     settled_col = "已收金额" if is_cust else "已付金额"
-    ws.append(
-        ["单号", "关联单据", "到期日", "含税金额", settled_col, "未结余额", "逾期天数", "发票号", "状态"]
-    )
+    cols = [
+        "单号",
+        "关联单据",
+        "到期日",
+        "含税金额",
+        settled_col,
+        "未结余额",
+        "逾期天数",
+        "发票号",
+        "状态",
+    ]
+    ws.append(cols)
     for c in ws[ws.max_row]:
         c.font = Font(bold=True)
     for it in statement.get("items") or []:
