@@ -65,7 +65,7 @@ def test_quality_end_to_end_flow(client, keys):
     _ev(
         client,
         keys,
-        "sales.product_registered",
+        "sales.product_defined",
         "P-B1",
         {"code": "LN-1260B", "name": "轻质隔热砖", "unit": "块"},
     )
@@ -99,16 +99,28 @@ def test_quality_end_to_end_flow(client, keys):
     _ev(
         client,
         keys,
-        "production.batch_created",
+        "production.batch_started",
         "B-Q1",
-        {"product": "P-B1", "planned_qty": 1000, "unit": "块", "status": "completed"},
+        {
+            "product": "P-B1",
+            "planned_qty": 1000,
+            "unit": "块",
+            "started_at": "2026-11-18T09:00:00+08:00",
+            "status": "completed",
+        },
     )
     _ev(
         client,
         keys,
-        "production.batch_created",
+        "production.batch_started",
         "B-Q2",
-        {"product": "P-B1", "planned_qty": 500, "unit": "块", "status": "completed"},
+        {
+            "product": "P-B1",
+            "planned_qty": 500,
+            "unit": "块",
+            "started_at": "2026-11-18T10:00:00+08:00",
+            "status": "completed",
+        },
     )
 
     # 1. 待检任务队列：1 个待检来料 + 2 个待出厂检批次
@@ -234,9 +246,15 @@ def test_quality_end_to_end_flow(client, keys):
     _ev(
         client,
         keys,
-        "production.batch_created",
+        "production.batch_started",
         "B-MOCK",
-        {"product": "P-B1", "planned_qty": 100, "unit": "块", "status": "completed"},
+        {
+            "product": "P-B1",
+            "planned_qty": 100,
+            "unit": "块",
+            "started_at": "2026-11-18T11:00:00+08:00",
+            "status": "completed",
+        },
         mode="mock",
     )
     assert client.get("/v1/quality/batches/B-MOCK/certificate", headers=_h(keys, "qc")).status_code == 409

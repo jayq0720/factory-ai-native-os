@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fos.db.models import Event, ObjectState, Todo, utcnow
 from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
-from fos.ledger.report import TraceConfig, trace_report
+from fos.ledger.report import TraceConfig, report_lines, trace_report
 from fos.ontology import Ontology
 from fos.orders.data import get, new_id
 from fos.quality.config import QualityConfig
@@ -163,7 +163,7 @@ async def pending_tasks(session: AsyncSession, tenant: str, *, mode: str = "real
 
 
 class InspectionIn(BaseModel):
-    kind: Literal["incoming", "in_process", "final"]
+    kind: Literal["incoming", "process", "final"]
     batch: str | None = Field(default=None, max_length=64)
     material_lot: str | None = Field(default=None, max_length=64)
     report_no: str | None = Field(default=None, max_length=64)
@@ -268,12 +268,13 @@ async def record_inspection(
     if final_result == "fail" and body.auto_ncr and cfg.ncr.auto_open_on_fail:
         ncr_id = new_id("NCR", tz)
         need_8d = body.severity in cfg.ncr.require_8d_severities
+        src = "in_process" if body.kind == "process" else body.kind
         ncr_payload: dict[str, Any] = {
             "ncr_no": ncr_id,
-            "source": body.kind,
+            "source": src,
             "severity": body.severity,
             "inspection": ins_id,
-            "summary": f"{SOURCE_TEXT.get(body.kind, body.kind)}不合格：{judged.summary}"[:500],
+            "summary": f"{SOURCE_TEXT.get(src, src)}不合格：{judged.summary}"[:500],
             "disposition": "pending",
             "d8_status": "draft" if need_8d else "not_required",
             "status": "open",
@@ -560,8 +561,8 @@ async def draft_8d(
         alerts = rep.get("alerts") or []
         for a in alerts:
             clues.append(f"追溯告警：{a['object_id']} {a['text']}")
-        for line in rep.get("lines") or []:
-            clues.append(f"[{line['group']}] {line['text']}")
+        for group, text in report_lines(onto, trace_cfg, rep):
+            clues.append(f"[{group}] {text}")
 
     containment_hint = (
         f"隔离批次 {s.get('batch') or s.get('material_lot') or '相关在制品'}，暂停发货/领用并排查同窑次产品。"
