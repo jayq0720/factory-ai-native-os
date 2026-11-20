@@ -45,9 +45,7 @@ class WeComApp:
     encoding_aes_key: str | None = None
 
     def __repr__(self) -> str:
-        return (
-            f"WeComApp(tenant_id={self.tenant_id!r}, corp_id={self.corp_id!r}, agent_id={self.agent_id!r})"
-        )
+        return f"WeComApp(tenant_id={self.tenant_id!r}, corp_id={self.corp_id!r}, agent_id={self.agent_id!r})"
 
     @classmethod
     def from_env(cls, tenant_id: str, env: dict[str, str] | None = None) -> WeComApp | None:
