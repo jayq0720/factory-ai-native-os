@@ -161,7 +161,8 @@ async def ar_board(
     customer: str | None = None,
     mode: str = "real",
 ) -> dict[str, Any]:
-    custs = {c.object_id: c.state.get("name") or c.object_id for c in await _scan(session, tenant, "customer", mode)}
+    cust_rows = await _scan(session, tenant, "customer", mode)
+    custs = {c.object_id: c.state.get("name") or c.object_id for c in cust_rows}
     items = [_ar_out(o, today, custs) for o in await _scan(session, tenant, "receivable", mode)]
     if status:
         items = [x for x in items if x["status"] == status]
@@ -358,7 +359,8 @@ async def ap_board(
     supplier: str | None = None,
     mode: str = "real",
 ) -> dict[str, Any]:
-    sups = {s.object_id: s.state.get("name") or s.object_id for s in await _scan(session, tenant, "supplier", mode)}
+    sup_rows = await _scan(session, tenant, "supplier", mode)
+    sups = {s.object_id: s.state.get("name") or s.object_id for s in sup_rows}
     items = [_ap_out(o, today, sups) for o in await _scan(session, tenant, "payable", mode)]
     if status:
         items = [x for x in items if x["status"] == status]
@@ -489,9 +491,8 @@ async def batch_cost_report(
     moves = [
         m.state for m in await _scan(session, tenant, "stock_move", mode) if m.state.get("batch") == batch_id
     ]
-    mat_names = {
-        m.object_id: m.state.get("name") or m.object_id for m in await _scan(session, tenant, "material", mode)
-    }
+    mat_rows = await _scan(session, tenant, "material", mode)
+    mat_names = {m.object_id: m.state.get("name") or m.object_id for m in mat_rows}
     mat_prices = await _material_price_map(session, tenant, mode)
 
     kr_state: dict[str, Any] | None = None
@@ -709,7 +710,9 @@ async def draft_voucher_from_source(
         else:
             summary = f"收到客户回款（{body.source_id}）"
             lines = [
-                VoucherLineIn(account_code=acc.bank.code, account_name=acc.bank.name, debit=gross, memo=summary),
+                VoucherLineIn(
+                    account_code=acc.bank.code, account_name=acc.bank.name, debit=gross, memo=summary
+                ),
                 VoucherLineIn(account_code=acc.ar.code, account_name=acc.ar.name, credit=gross, memo=summary),
             ]
         mode = src.data_mode
@@ -896,7 +899,11 @@ async def remind_overdue_ar_ap(
     }
     created: list[str] = []
     role = cfg.reminders.notify_roles[0] if cfg.reminders.notify_roles else "finance"
-    for kind, obj_type, rows in (("应收逾期", "receivable", ar["items"]), ("应付逾期", "payable", ap["items"])):
+    groups = (
+        ("应收逾期", "receivable", ar["items"]),
+        ("应付逾期", "payable", ap["items"]),
+    )
+    for kind, obj_type, rows in groups:
         for it in rows:
             if it["overdue_days"] <= 0 or it["balance"] <= 0:
                 continue
@@ -908,11 +915,15 @@ async def remind_overdue_ar_ap(
                 else None
             )
             name = it.get("customer_name") or it.get("supplier_name") or ""
+            body = (
+                f"已逾期 {it['overdue_days']} 天，到期日 {it['due_date']}，"
+                f"未结余额 {it['balance']:.2f} 元。"
+            )
             session.add(
                 Todo(
                     tenant_id=tenant,
                     title=f"【{kind}】{it['id']} {name}（余 ¥{it['balance']:,.2f}）"[:80],
-                    body=f"已逾期 {it['overdue_days']} 天，到期日 {it['due_date']}，未结余额 {it['balance']:.2f} 元。",
+                    body=body,
                     assignee_role=role,
                     object_type=obj_type,
                     object_id=it["id"],

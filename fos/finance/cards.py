@@ -16,6 +16,7 @@ VOUCHERS = re.compile(r"^(?:凭证|凭证草稿)$")
 def ar_card(board: dict[str, Any]) -> Card:
     s = board["summary"]
     ag = s["aging"]
+    over60 = ag["61_90d"] + ag["over_90d"]
     fields = [
         CardField(label="应收总额", value=f"¥{s['total_amount']:,.2f}"),
         CardField(label="已回款", value=f"¥{s['total_received']:,.2f}"),
@@ -23,7 +24,7 @@ def ar_card(board: dict[str, Any]) -> Card:
         CardField(label="逾期笔数 / 金额", value=f"{s['overdue_count']} 笔 / ¥{s['overdue_balance']:,.2f}"),
         CardField(
             label="逾期账龄",
-            value=f"1-30天 ¥{ag['1_30d']:,.0f} · 31-60天 ¥{ag['31_60d']:,.0f} · >60天 ¥{ag['61_90d'] + ag['over_90d']:,.0f}",
+            value=f"1-30天 ¥{ag['1_30d']:,.0f} · 31-60天 ¥{ag['31_60d']:,.0f} · >60天 ¥{over60:,.0f}",
         ),
     ]
     return Card(

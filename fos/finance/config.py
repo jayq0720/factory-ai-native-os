@@ -67,9 +67,7 @@ def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def load_finance_config(
-    tenant: TenantConfig, *, packs_dir: Path, tenants_dir: Path
-) -> FinanceConfig | None:
+def load_finance_config(tenant: TenantConfig, *, packs_dir: Path, tenants_dir: Path) -> FinanceConfig | None:
     p1 = packs_dir / tenant.industry_pack / "finance.yaml"
     p2 = tenants_dir / tenant.id / "finance.yaml"
     if not p1.exists() and not p2.exists():

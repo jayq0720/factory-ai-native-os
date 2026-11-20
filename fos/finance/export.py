@@ -8,9 +8,7 @@ from typing import Any
 from fos.excel_safe import excel_row
 
 
-def vouchers_export_xlsx(
-    factory: str, vouchers: list[dict[str, Any]], *, target: str = "generic"
-) -> bytes:
+def vouchers_export_xlsx(factory: str, vouchers: list[dict[str, Any]], *, target: str = "generic") -> bytes:
     """导出借贷平衡的凭证草稿表（适配金蝶云星空 / 用友 U8 / 通用导入格式，防公式注入）。"""
     from openpyxl import Workbook
     from openpyxl.styles import Font
@@ -142,13 +140,16 @@ def reconciliation_xlsx(factory: str, statement: dict[str, Any]) -> bytes:
         )
     )
     ws.append([])
-    settled_col = "已收金额" if statement["party_type"] == "customer" else "已付金额"
-    ws.append(["单号", "关联单据", "到期日", "含税金额", settled_col, "未结余额", "逾期天数", "发票号", "状态"])
+    is_cust = statement["party_type"] == "customer"
+    settled_col = "已收金额" if is_cust else "已付金额"
+    ws.append(
+        ["单号", "关联单据", "到期日", "含税金额", settled_col, "未结余额", "逾期天数", "发票号", "状态"]
+    )
     for c in ws[ws.max_row]:
         c.font = Font(bold=True)
     for it in statement.get("items") or []:
         ref = it.get("order") or it.get("purchase_order") or ""
-        settled = it.get("received_amount") if statement["party_type"] == "customer" else it.get("paid_amount")
+        settled = it.get("received_amount") if is_cust else it.get("paid_amount")
         ws.append(
             excel_row(
                 [
