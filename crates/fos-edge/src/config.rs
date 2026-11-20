@@ -181,13 +181,17 @@ impl EdgeConfig {
 }
 
 fn uplink_url_ok(url: &str) -> bool {
-    if url.starts_with("https://") {
-        return true;
+    let Ok(u) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    if !u.username().is_empty() || u.password().is_some() {
+        return false;
     }
-    ["http://127.0.0.1", "http://localhost"].iter().any(|p| {
-        url.strip_prefix(p)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
-    })
+    match u.scheme() {
+        "https" => u.host_str().is_some(),
+        "http" => matches!(u.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -231,6 +235,10 @@ mod tests {
         ));
         assert!(uplink_url_ok("http://127.0.0.1:8000/v1/edge/uplink"));
         assert!(!uplink_url_ok("http://127.0.0.1.evil.com/x"));
+        assert!(!uplink_url_ok(
+            "http://localhost:pass@evil.com/v1/edge/uplink"
+        ));
+        assert!(!uplink_url_ok("http://127.0.0.1@evil.com/x"));
     }
 
     #[test]

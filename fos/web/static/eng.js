@@ -234,7 +234,7 @@ function profile(data) {
   const h = data.heat_max; if (!h) return el("p", { class: "muted small" }, "缺少热工参数，无法计算");
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 400 170"); svg.setAttribute("class", "profile");
-  const total = data.total_thickness_mm; const T0 = h.hot_temp; const x = (mm) => 30 + (mm / total) * 350; const y = (t) => 150 - (t / T0) * 130;
+  const total = data.total_thickness_mm || 1; const T0 = h.hot_temp || 1; const x = (mm) => 30 + (mm / total) * 350; const y = (t) => 150 - (t / T0) * 130;
   let acc = 0; const pts = [[x(0), y(h.interface_temps[0])]];
   data.layers.forEach((ly, i) => { acc += ly.thickness_mm; pts.push([x(acc), y(h.interface_temps[i + 1])]); });
   const add = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; svg.append(e); return e; };
@@ -257,8 +257,10 @@ async function download(d, fmt) {
   try {
     const r = await api(`/v1/eng/designs/${d.id}/export?format=${fmt}`);
     const cd = r.headers.get("content-disposition") || ""; const m = cd.match(/filename\*=UTF-8''(.+)$/);
-    const a = el("a", { href: URL.createObjectURL(await r.blob()), download: m ? decodeURIComponent(m[1]) : `方案.${fmt}` });
+    const url = URL.createObjectURL(await r.blob());
+    const a = el("a", { href: url, download: m ? decodeURIComponent(m[1]) : `方案.${fmt}` });
     document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   } catch (e) { toast(e.message, 5000); }
 }
 

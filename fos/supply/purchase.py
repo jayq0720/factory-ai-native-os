@@ -14,17 +14,18 @@ from decimal import Decimal
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.db.models import Approval, ObjectState
 from fos.engineering.design import money
 from fos.governance.principal import Principal
-from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
+from fos.ledger import AppendRequest, AppendResult, ApprovalRequired, Conflict, Evidence, Ledger
 from fos.orders.config import OrdersConfig
 from fos.orders.data import get, num, referrers
 from fos.orders.service import new_id
+from fos.policy.approvals import is_open
 from fos.supply.config import SupplyConfig
 from fos.supply.guards import RECEIVE_EVENT, check_receipt, po_lots
 from fos.supply.stock import EPS, _scan, material_stock
@@ -109,10 +110,12 @@ async def po_rows(
 
 
 async def _pending_po_reqs(session: AsyncSession, tenant: str) -> dict[str, str]:
-    """审批中的采购单引用的请购单 → 审批单 id。"""
+    """审批中的采购单引用的请购单 → 审批单 id（跳过已过期的审批单）。"""
     q = select(Approval).where(Approval.tenant_id == tenant, Approval.status == "pending")
     out: dict[str, str] = {}
     for ap in await session.scalars(q):
+        if not is_open(ap):
+            continue
         req = ap.request or {}
         if req.get("type") == PO_EVENT:
             for rid in (req.get("payload") or {}).get("requisitions") or []:
@@ -126,7 +129,9 @@ async def requisition_rows(
     reqs = [r for r in await _scan(session, tenant, "purchase_requisition") if r.data_mode == mode]
     ids = [r.object_id for r in reqs]
     ordered: dict[str, str] = {}
-    for po in await referrers(session, tenant, "purchase_order", "requisitions", "purchase_requisition", ids):
+    for po in await referrers(
+        session, tenant, "purchase_order", "requisitions", "purchase_requisition", ids, data_mode=mode
+    ):
         if po.state.get("status") != "cancelled":
             for rid in po.state.get("requisitions") or []:
                 ordered.setdefault(rid, po.object_id)
@@ -167,7 +172,7 @@ async def requisition_rows(
 
 class RequisitionLine(BaseModel):
     material: str = Field(min_length=1, max_length=64)
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     need_date: date | None = None
     source: str | None = Field(default=None, max_length=64)
     reason: str | None = Field(default=None, max_length=500)
@@ -350,15 +355,22 @@ async def suggestions(
     }
     on_order: dict[str, float] = {}
     for po in await po_rows(session, tenant, ocfg, today, mode=mode, status="open"):
+        st_m = stock.get(po["material"])
+        if st_m and not ocfg.same_unit(po["unit"], st_m["unit"]):
+            continue
         on_order[po["material"]] = on_order.get(po["material"], 0.0) + po["remaining"]
     reqd: dict[str, float] = {}
     for r in await requisition_rows(session, tenant, mode=mode, only_open=True):
+        st_m = stock.get(r["material"])
+        if st_m and not ocfg.same_unit(r["unit"], st_m["unit"]):
+            continue
         reqd[r["material"]] = reqd.get(r["material"], 0.0) + r["qty"]
     out = []
     for mid, st in stock.items():
         pr = (plan_rows or {}).get(mid)
         m = await get(session, tenant, "material", mid)
-        assert m is not None
+        if m is None:
+            continue
         safety = num(m.state.get("safety_stock"))
         plan_gap = pr["shortage"] if pr else 0.0
         need = pr["need"] if pr else 0.0
@@ -438,8 +450,8 @@ async def suggestions(
 class PurchaseOrderIn(BaseModel):
     supplier: str = Field(min_length=1, max_length=64)
     material: str = Field(min_length=1, max_length=64)
-    qty: float = Field(gt=0)
-    unit_price: float = Field(ge=0)
+    qty: FiniteFloat = Field(gt=0)
+    unit_price: FiniteFloat = Field(ge=0)
     due_date: date | None = None
     requisitions: list[str] = Field(default_factory=list, max_length=50)
     quote: str | None = Field(default=None, max_length=64)
@@ -527,7 +539,7 @@ async def po_request(
 
 
 class ReceiptIn(BaseModel):
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     supplier_lot_no: str | None = Field(default=None, max_length=64)
     received_at: datetime | None = None
     location: str | None = Field(default=None, max_length=64)
@@ -561,7 +573,7 @@ async def receipt_request(
         payload["supplier_lot_no"] = body.supplier_lot_no
     if body.location:
         payload["location"] = body.location
-    problems, info = await check_receipt(session, tenant, cfg, ocfg, payload)
+    problems, info = await check_receipt(session, tenant, cfg, ocfg, payload, data_mode=po.data_mode)
     if problems:
         raise SupplyConflict("；".join(problems))
     req = AppendRequest(
@@ -581,23 +593,27 @@ async def after_receipt(
 ) -> list[str]:
     """到齐了：有采购单权限就把采购单标为已到货，否则提示采购。"""
     po = await get(session, principal.tenant_id, "purchase_order", po_id)
-    assert po is not None
+    if po is None:
+        return []
     row = await po_row(session, principal.tenant_id, ocfg, po, today)
     if row["status"] != "open" or row["received"] < row["qty"] - EPS:
         return [f"采购单 {row['po_no']} 已到 {row['received']:g} / {row['qty']:g} {row['unit']}"]
     if not principal.can("purchase.order:write"):
         return [f"采购单 {row['po_no']} 已到齐，请采购把采购单标为已到货"]
-    await ledger.append(
-        session,
-        principal,
-        AppendRequest(
-            type="purchase.order_status_changed",
-            object_id=po.object_id,
-            payload={"status": "received"},
-            causation_id=res.event_id,
-            idempotency_key=f"po_received:{po.object_id}",
-            expected_version=po.version,
-            data_mode=po.data_mode,
-        ),
-    )
+    try:
+        await ledger.append(
+            session,
+            principal,
+            AppendRequest(
+                type="purchase.order_status_changed",
+                object_id=po.object_id,
+                payload={"status": "received"},
+                causation_id=res.event_id,
+                idempotency_key=f"po_received:{po.object_id}",
+                expected_version=po.version,
+                data_mode=po.data_mode,
+            ),
+        )
+    except (ApprovalRequired, Conflict):
+        return [f"采购单 {row['po_no']} 已到齐，状态未能自动更新，请采购核对"]
     return [f"采购单 {row['po_no']} 已到齐，已标为已到货"]

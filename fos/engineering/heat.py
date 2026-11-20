@@ -95,7 +95,7 @@ def solve(
     for ly in layers:
         if ly.thickness_mm <= 0:
             raise HeatError(f"{ly.name} 厚度必须大于 0")
-        if ly.tc_a <= 0 or ly.tc_a + ly.tc_b * hot_temp <= 0:
+        if ly.tc_a <= 0 or ly.tc_a + ly.tc_b * hot_temp <= 0 or ly.tc_a + ly.tc_b * ambient <= 0:
             raise HeatError(f"{ly.name} 导热系数不合法")
     if geometry == "cylinder" and not (inner_radius_m and inner_radius_m > 0):
         raise HeatError("圆筒需要内半径")
@@ -122,6 +122,15 @@ def solve(
         return temps
 
     lo, hi = 0.0, 200000.0
+    # 薄层/高导热高温工况热流可能超过 200 kW/m²：动态倍增上界直到包住平衡点
+    for _ in range(16):
+        ts_hi = march(hi)
+        if ts_hi is None:
+            break
+        q_out_hi = surface_h(ts_hi[-1], ambient, emissivity=emissivity, conv=conv) * (ts_hi[-1] - ambient)
+        if q_out_hi <= hi:
+            break
+        lo, hi = hi, hi * 2
     best: list[float] | None = None
     best_q = 0.0
     for _ in range(100):
@@ -141,5 +150,8 @@ def solve(
             break
     if best is None:
         raise HeatError("传热计算不收敛")
+    q_chk = surface_h(best[-1], ambient, emissivity=emissivity, conv=conv) * (best[-1] - ambient)
+    if abs(q_chk - best_q) > max(1.0, best_q * 1e-3):
+        raise HeatError("传热计算超出收敛范围")
     ks = [ly.tc_a + ly.tc_b * (best[i] + best[i + 1]) / 2 for i, ly in enumerate(layers)]
     return HeatResult(hot_temp, ambient, best_q, best, ks, geometry)

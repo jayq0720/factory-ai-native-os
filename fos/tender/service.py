@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import secrets
 from datetime import UTC, date, datetime, timedelta
@@ -28,12 +29,37 @@ from fos.db.models import (
 )
 from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
+from fos.ontology import Ontology
+from fos.policy.approvals import is_open
 from fos.tender import decompose as dc
 from fos.tender.config import Capability, TenderConfig
 
 HUMAN = {"confirmed", "corrected"}
 # 登记前必须人工核对的字段：截止时间错了就是丢标
 CRITICAL = ["bid_deadline"]
+# 登记招标时允许人工覆盖的字段白名单（禁止伪造 status / analysis / star_* / source_documents）
+ALLOWED_OVERRIDES = frozenset(
+    {
+        "name",
+        "tender_no",
+        "purchaser",
+        "agency",
+        "budget",
+        "bid_bond",
+        "bid_deadline",
+        "opening_time",
+        "clarification_deadline",
+        "evaluation_method",
+        "delivery_period",
+        "delivery_place",
+        "qualification",
+        "payment_terms",
+        "warranty",
+        "contact",
+        "phone",
+        "note",
+    }
+)
 TEXT_MAP = {
     "tender_no": "tender_no",
     "purchaser": "purchaser",
@@ -63,6 +89,8 @@ _DATE = re.compile(
     r"(\d{4})\s*[年\-/.]\s*(\d{1,2})\s*[月\-/.]\s*(\d{1,2})\s*日?\s*(?:(\d{1,2})\s*[:：时点]\s*(\d{1,2})?)?"
 )
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
+_UPPER_PAREN = re.compile(r"[（(][^）)]*大写[^）)]*[）)]")
+_MONEY_TOKEN = re.compile(r"(-?\d+(?:\.\d+)?)\s*(亿元|亿|万元|万)?")
 
 
 class TenderError(Exception):
@@ -81,15 +109,18 @@ class TenderConflict(TenderError):
 
 
 def parse_money(value: str | None, unit: str | None = None) -> float | None:
-    """“186.5 万元”→ 1865000（元）。"""
-    text = f"{value or ''}{unit or ''}"
-    m = _NUM.search((value or "").replace(",", ""))
+    """“186.5 万元”→ 1865000（元）；忽略括号内中文大写防止把“壹拾捌万”误当“万元”。"""
+    cleaned = _UPPER_PAREN.sub("", value or "").replace(",", "")
+    m = _MONEY_TOKEN.search(cleaned)
     if not m:
         return None
-    v = float(m.group())
-    if "亿" in text:
+    v = float(m.group(1))
+    if not math.isfinite(v):
+        return None
+    scale_text = m.group(2) or (unit or "")
+    if "亿" in scale_text:
         v *= 1e8
-    elif "万" in text:
+    elif "万" in scale_text:
         v *= 1e4
     return round(v, 2)
 
@@ -207,7 +238,7 @@ async def register(
     if unchecked:
         raise TenderConflict("请先在字段核对页确认或改正这些字段：" + "、".join(unchecked))
     for k, v in (overrides or {}).items():
-        if v in (None, ""):
+        if k not in ALLOWED_OVERRIDES or v in (None, ""):
             continue
         payload[k] = v
         evidence.append(Evidence(kind="manual", ref=f"tender:{k}", note=f"登记时人工填写 {k}"))
@@ -345,6 +376,9 @@ def _age_months(issued: str | None, on: date) -> float | None:
     return round((on - d).days / 30.44, 1)
 
 
+_DEV_RANK = {"负偏离": 3, "待确认": 2, "无偏离": 1, "正偏离": 0}
+
+
 def match_documents(
     needs: list[dict[str, Any]], creds: list[ObjectState], deadline: date
 ) -> tuple[list[dict[str, Any]], bool]:
@@ -361,6 +395,9 @@ def match_documents(
             out.append(row)
             continue
         cands = [c for c in creds if c.state.get("kind") == kind]
+        real_cands = [c for c in cands if c.data_mode == "real"]
+        if real_cands:
+            cands = real_cands
         valid = []
         for c in sorted(cands, key=lambda c: c.state.get("issued_on") or "", reverse=True):
             s = c.state
@@ -387,7 +424,7 @@ def match_documents(
             )
             if not problem:
                 valid.append(c)
-        if any(c.data_mode == "mock" for c in valid):
+        if any(m["data_mode"] == "mock" for m in row["matches"]):
             mock = True
         need_n = n.get("min_count") or 1
         if len(valid) >= need_n:
@@ -406,9 +443,10 @@ def match_documents(
 
 
 def _kb_value(cap: Capability, products: list[ObjectState], offered: bool) -> tuple[float | None, str, bool]:
-    """知识库能力值：已选定产品（已发布报价的方案）取最差的一个；没选定取知识库里最好的一个。"""
-    vals = [(p, p.state.get(cap.property or "")) for p in products]
-    vals = [(p, float(v)) for p, v in vals if isinstance(v, int | float)]
+    """知识库能力值：已选定产品（已发布报价的方案）取最差的一个（分类温度只校核工作层）；没选定取最好。"""
+    pool = products[:1] if (offered and cap.property == "classification_temp" and products) else products
+    vals = [(p, p.state.get(cap.property or "")) for p in pool]
+    vals = [(p, float(v)) for p, v in vals if isinstance(v, int | float) and not isinstance(v, bool)]
     if not vals:
         return None, "知识库里没有这项参数", False
     pick_max = (cap.better == "higher") != offered
@@ -420,6 +458,9 @@ def _kb_value(cap: Capability, products: list[ObjectState], offered: bool) -> tu
 
 def _cred_age(cap: Capability, creds: list[ObjectState], deadline: date) -> tuple[float | None, str, bool]:
     cs = [c for c in creds if c.state.get("kind") == cap.credential_kind and c.state.get("issued_on")]
+    real_cs = [c for c in cs if c.data_mode == "real"]
+    if real_cs:
+        cs = real_cs
     if not cs:
         return None, "资料库里没有这类资料", False
     c = max(cs, key=lambda c: c.state["issued_on"])
@@ -473,6 +514,35 @@ def suggest_response(
     return "完全响应，承诺满足"
 
 
+def _sync_deviation(
+    deviations: list[dict[str, Any]], it: dict[str, Any], dev: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """人工修改条款偏离时，同步更新 data['deviations'] 以免偏离表和导出 Excel 陈旧。"""
+    out = [dict(d) for d in deviations]
+    matched = False
+    for d in out:
+        if d.get("item") == it["id"] and (
+            not dev.get("capability") or d.get("capability") == dev.get("capability")
+        ):
+            d.update(
+                status=dev["status"],
+                manual=True,
+                manual_note=dev.get("manual_note", ""),
+            )
+            matched = True
+            break
+    if not matched:
+        out.append(
+            {
+                **dev,
+                "item": it["id"],
+                "no": it.get("no", ""),
+                "level": it.get("level", "normal"),
+            }
+        )
+    return out
+
+
 async def build(
     session: AsyncSession, tender: ObjectState, cfg: TenderConfig, *, today: date
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
@@ -489,7 +559,12 @@ async def build(
     checklist, cred_mock = match_documents(dc.requested_documents(lines, cfg), creds, deadline)
     docs = {d["id"]: d for d in checklist}
     offered = await _offered_products(session, tender)
-    products = offered or [p for p in await _objects(session, tender.tenant_id, "product")]
+    if offered is not None:
+        products = offered
+    else:
+        all_prods = await _objects(session, tender.tenant_id, "product")
+        real_prods = [p for p in all_prods if p.data_mode == "real"]
+        products = real_prods or all_prods
     used_mock = cred_mock
 
     def ours(cap: Capability) -> tuple[float | None, str, bool]:
@@ -520,12 +595,14 @@ async def build(
     items: list[dict[str, Any]] = []
     deviations: list[dict[str, Any]] = []
     for c in raw:
-        dev = None
+        matched_devs: list[dict[str, Any]] = []
         for cap in cfg.capabilities:
             if (req := dc.parse_requirement(c["text"], cap)) is not None:
-                dev = deviation(cap, req, {"item": c["id"], "page": c["page"], "quote": c["text"][:200]})
-                deviations.append({**dev, "item": c["id"], "no": c["no"], "level": c["level"]})
-                break
+                d = deviation(cap, req, {"item": c["id"], "page": c["page"], "quote": c["text"][:200]})
+                deviations.append({**d, "item": c["id"], "no": c["no"], "level": c["level"]})
+                matched_devs.append(d)
+        # 一条条款包含多个指标时，取最严重偏离挂在条款上（负偏离 > 待确认 > 无偏离 > 正偏离）
+        dev = max(matched_devs, key=lambda x: _DEV_RANK.get(x["status"], 0)) if matched_devs else None
         items.append(
             {
                 **c,
@@ -606,11 +683,12 @@ async def analyze(
             o = old.get(it["id"])
             if o and o.get("by"):
                 it.update({k: o.get(k) for k in _KEEP})
-                if (o.get("deviation") or {}).get("manual") and it.get("deviation"):
-                    it["deviation"] = {
-                        **it["deviation"],
-                        **{k: o["deviation"][k] for k in ("status", "manual", "manual_note")},
-                    }
+                if (o.get("deviation") or {}).get("manual"):
+                    fallback = {"name": "人工判断", "required": "-", "basis": "人工判断"}
+                    base_dev = dict(it.get("deviation") or fallback)
+                    base_dev.update({k: o["deviation"][k] for k in ("status", "manual", "manual_note")})
+                    it["deviation"] = base_dev
+                    data["deviations"] = _sync_deviation(data["deviations"], it, base_dev)
         old_docs = {d["id"]: d for d in prev.data.get("checklist", [])}
         for d in data["checklist"]:
             if (o := old_docs.get(d["id"])) and o.get("disposition"):
@@ -648,8 +726,8 @@ async def reopen_if_returned(session: AsyncSession, a: TenderAnalysis) -> None:
     """投标审批被驳回 / 撤回 / 过期的回到草稿。"""
     if a.status == "submitted" and a.approval_id:
         ap = await session.get(Approval, a.approval_id)
-        if ap is None or ap.status not in ("pending", "approved"):
-            a.status, a.updated_at = "draft", utcnow()
+        if ap is None or (ap.status != "approved" and not is_open(ap)):
+            a.status, a.approval_id, a.updated_at = "draft", None, utcnow()
 
 
 def _editable(a: TenderAnalysis) -> None:
@@ -686,6 +764,9 @@ def update_item(
                 status=change["deviation"], manual=True, manual_note=str(change.get("note") or "")[:300]
             )
             it["deviation"] = dev
+            data = dict(a.data)
+            data["deviations"] = _sync_deviation(data.get("deviations", []), it, dev)
+            a.data = data
         it.update(by=principal.subject_id, by_name=principal.display_name, at=datetime.now(UTC).isoformat())
         a.items = items
         a.updated_at = utcnow()
@@ -817,6 +898,62 @@ def risks(a: TenderAnalysis, tender: ObjectState, cfg: TenderConfig, now: dateti
     return out
 
 
+SUBMIT_EVENT = "sales.tender_submitted"
+
+
+class TenderSubmitGuard:
+    """账本守卫：防止绕过 /submit 接口直接 POST /v1/events 伪造 star_negative/docs_missing 绕过红线。"""
+
+    async def __call__(
+        self,
+        session: AsyncSession,
+        principal: Principal,
+        onto: Ontology,
+        payload: dict[str, Any],
+        state: dict[str, Any] | None,
+        *,
+        object_id: str = "",
+        data_mode: str = "real",
+    ) -> list[str]:
+        tenant_id = principal.tenant_id
+        if data_mode != "real":
+            return ["模拟数据不能提交投标"]
+        if state is None or state.get("status") != "open":
+            return ["招标项目已提交或已结束"]
+        analysis_id = payload.get("analysis")
+        if not analysis_id or not isinstance(analysis_id, str):
+            return ["提交投标必须关联拆解结果 analysis"]
+        a = await session.get(TenderAnalysis, analysis_id)
+        if a is None or a.tenant_id != tenant_id:
+            return [f"招标拆解结果 {analysis_id} 不存在"]
+        if object_id and a.tender_id != object_id:
+            return [f"拆解结果 {analysis_id} 不属于招标项目 {object_id}"]
+        if a.status not in ("draft", "submitted"):
+            return ["只能在最新草稿或审批中的拆解结果上提交投标"]
+        if a.data_mode != "real":
+            return ["模拟数据拆解结果不能提交投标"]
+        tender = await session.get(ObjectState, (tenant_id, "tender", a.tender_id))
+        if tender is not None and a.tender_version != tender.version:
+            return ["招标项目在拆解之后改过，请先重新拆解"]
+        s = summary(a)
+        if s["must_open"]:
+            return [f"还有 {s['must_open']} 条★/▲/必须条款没有处理"]
+        if s["docs_missing"]:
+            return [f"资料清单还有 {s['docs_missing']} 项缺失或过期"]
+        if payload.get("star_negative") != s["star_negative"]:
+            return ["★负偏离数量与拆解结果不一致"]
+        if payload.get("docs_missing") != s["docs_missing"]:
+            return ["缺失资料数量与拆解结果不一致"]
+        if payload.get("bid_amount") is not None:
+            try:
+                amt = float(payload["bid_amount"])
+            except (TypeError, ValueError):
+                return ["投标报价必须是有效数字"]
+            if not math.isfinite(amt) or amt <= 0:
+                return ["投标报价必须大于 0"]
+        return []
+
+
 def submit_request(
     a: TenderAnalysis, tender: ObjectState, bid_amount: float | None, now: datetime
 ) -> AppendRequest:
@@ -844,11 +981,11 @@ def submit_request(
         "docs_missing": s["docs_missing"],
     }
     if bid_amount is not None:
-        if bid_amount <= 0:
+        if not math.isfinite(bid_amount) or bid_amount <= 0:
             raise TenderError("投标报价必须大于 0")
         payload["bid_amount"] = round(float(bid_amount), 2)
     return AppendRequest(
-        type="sales.tender_submitted",
+        type=SUBMIT_EVENT,
         object_id=tender.object_id,
         payload=payload,
         evidence=[

@@ -20,7 +20,7 @@ from fos.channels.cards import Card, CardButton, CardField
 from fos.channels.types import ConversationRef
 from fos.config import Settings
 from fos.db.models import CardRecord, Run, Trigger, User, utcnow
-from fos.gateway.llm import LLMClient
+from fos.gateway.llm import LLMClient, LLMError
 from fos.governance.principal import principal_for_user
 from fos.ledger.service import AppendRequest, Evidence
 from fos.ontology import Ontology
@@ -31,6 +31,11 @@ from fos.triggers.cards import LedgerAppendAction, propose_card, send_card_recor
 from fos.triggers.intake import Outcome, deliver
 
 log = logging.getLogger(__name__)
+
+
+def _escape_tags(s: str) -> str:
+    """防止用户输入或历史消息里夹带 </task> / </user_reply> 伪造分隔符。"""
+    return s.replace("<", "＜").replace(">", "＞")
 
 
 @dataclass
@@ -81,7 +86,7 @@ class AgentRuntime:
             return RunOutcome(decision="skip")
         tenant = self.registry.get(trig.tenant_id)
         user = await session.get(User, trig.user_id)
-        if tenant is None or user is None:
+        if tenant is None or user is None or not user.is_active or user.tenant_id != trig.tenant_id:
             return RunOutcome(decision="skip")
         principal = principal_for_user(user, tenant)
         to = ConversationRef(
@@ -92,6 +97,7 @@ class AgentRuntime:
         )
         out = RunOutcome(to=to)
         skills = self.skills.get(trig.tenant_id, {})
+        extras = {**self.tool_extras.get(tenant.id, {}), "autonomy": tenant.autonomy}
 
         waiting = (
             await session.scalars(
@@ -111,19 +117,25 @@ class AgentRuntime:
             run = waiting
             run.messages = [
                 *run.messages,
-                {"role": "user", "content": f"<user_reply>\n{trig.text}\n</user_reply>"},
+                {"role": "user", "content": f"<user_reply>\n{_escape_tags(trig.text)}\n</user_reply>"},
             ]
         else:
             context = await self._recent(session, trig)
-            d, res = await decide(
-                self.llm,
-                factory=tenant.name,
-                tenant_id=tenant.id,
-                text=trig.text,
-                context=context,
-                skills=skills,
-            )
-            if d.action != "dispatch":
+            try:
+                d, res = await decide(
+                    self.llm,
+                    factory=tenant.name,
+                    tenant_id=tenant.id,
+                    text=trig.text,
+                    context=context,
+                    skills=skills,
+                )
+            except LLMError:
+                trig.route, trig.status = "router", "failed"
+                out.decision = "failed"
+                out.replies.append("模型服务暂时不可用，请稍后再试。")
+                return out
+            if d.action != "dispatch" or (d.skill or "") not in skills:
                 out.decision = d.action
                 trig.route, trig.status = "router", "done"
                 trig.result = {
@@ -140,7 +152,7 @@ class AgentRuntime:
                 user=principal,
                 skill=skill,
                 ontology=self.ontologies[tenant.id],
-                extras=self.tool_extras.get(tenant.id, {}),
+                extras=extras,
             )
             run = Run(
                 tenant_id=tenant.id,
@@ -168,14 +180,17 @@ class AgentRuntime:
             user=principal,
             skill=skill,
             ontology=self.ontologies[tenant.id],
-            extras=self.tool_extras.get(tenant.id, {}),
+            extras=extras,
         )
+        # 累计统计多轮追问的 token 消耗，防止反复 waiting 绕过预算上限
+        used_tokens = (run.prompt_tokens or 0) + (run.completion_tokens or 0)
+        remaining_tokens = max(0, self.settings.agent_max_tokens - used_tokens)
         wr = await run_worker(
             self.llm,
             ctx,
             factory=tenant.name,
             messages=run.messages,
-            max_tokens=self.settings.agent_max_tokens,
+            max_tokens=remaining_tokens,
             result_chars=self.settings.agent_tool_result_chars,
         )
         run.messages = wr.messages
@@ -188,13 +203,14 @@ class AgentRuntime:
         if wr.reply:
             out.replies.append(wr.reply)
 
+        onto = self.ontologies[tenant.id]
         for p in ctx.proposals if wr.status == "done" else []:
             rec = await propose_card(
                 session,
                 tenant_id=tenant.id,
                 to=to,
                 thread_id=run.thread_id,
-                card=_proposal_card(self.ontologies[tenant.id], p, run.data_mode, skill),
+                card=_proposal_card(onto, p, run.data_mode, skill),
                 created_by=f"agent:{skill.id}",
                 action=LedgerAppendAction(
                     request=AppendRequest(
@@ -206,6 +222,7 @@ class AgentRuntime:
                         correlation_id=run.thread_id,
                     )
                 ),
+                required_permission=onto.events[p.type].permission,
             )
             out.cards.append(rec)
         run.result = {"reply": wr.reply, "cards": [c.id for c in out.cards]}
@@ -224,6 +241,8 @@ class AgentRuntime:
                     Trigger.thread_id == trig.thread_id,
                     Trigger.id != trig.id,
                     Trigger.kind == "text",
+                    Trigger.status == "done",
+                    Trigger.user_id == trig.user_id,
                 )
                 .order_by(Trigger.created_at.desc())
                 .limit(5)
@@ -233,8 +252,8 @@ class AgentRuntime:
 
 
 def _task_block(task: str, context: list[str]) -> str:
-    recent = "\n".join(f"- {c}" for c in context)
-    return f"<task>\n{task}\n</task>\n<recent_messages>\n{recent}\n</recent_messages>"
+    recent = "\n".join(f"- {_escape_tags(c)}" for c in context)
+    return f"<task>\n{_escape_tags(task)}\n</task>\n<recent_messages>\n{recent}\n</recent_messages>"
 
 
 def _proposal_card(onto: Ontology, p: Proposal, data_mode: str, skill: SkillDef) -> Card:

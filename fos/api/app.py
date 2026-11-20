@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -49,6 +51,20 @@ class ChatIn(BaseModel):
     model: str = "fos-chat"
 
 
+def _json_safe(v: Any) -> Any:
+    if isinstance(v, float) and not math.isfinite(v):
+        return str(v)
+    if isinstance(v, dict):
+        return {k: _json_safe(val) for k, val in v.items()}
+    if isinstance(v, list | tuple):
+        return [_json_safe(x) for x in v]
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    if isinstance(v, BaseException):
+        return str(v)
+    return v
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -65,7 +81,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.dailies, st.imports = svc.dailies, svc.imports
         st.orders, st.planning, st.supply = svc.orders, svc.planning, svc.supply
         await svc.jobs.recover()  # 上次没跑完的解析任务接着跑
-        st.mock_channel = MockChannel()  # 模拟信道（非 prod 环境），见 channel_routes
+        st.mock_channels = {"luneng": MockChannel()}  # 按租户隔离的模拟信道（非 prod 环境）
+        st.mock_channel = st.mock_channels["luneng"]
         st.adapters = {}  # 按租户缓存的真实信道适配器（发卡片用）
         try:
             yield
@@ -76,12 +93,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Factory AI Native OS", version=__version__, lifespan=lifespan)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"detail": _json_safe(exc.errors())}, status_code=422)
+
     @app.middleware("http")
     async def request_id(request: Request, call_next):
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex
         request.state.request_id = rid
         response = await call_next(request)
         response.headers["x-request-id"] = rid
+        response.headers.setdefault("x-content-type-options", "nosniff")
+        response.headers.setdefault("x-frame-options", "DENY")
+        response.headers.setdefault("referrer-policy", "no-referrer")
         return response
 
     @app.get("/healthz")
@@ -118,7 +142,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         principal: Annotated[Principal, Depends(require("platform.llm:write"))],
     ) -> dict[str, Any]:
-        """调试用：经网关调用模型。正式业务由 Worker 调用，不直接暴露给前端。"""
+        """调试用：经网关调用模型。正式业务由 Worker 调用，不直接暴露给前端；prod 环境关闭。"""
+        if settings.env == "prod":
+            return JSONResponse({"detail": "生产环境已关闭调试对话接口"}, status_code=404)
         if body.model not in MODEL_ALIASES:
             return JSONResponse({"detail": f"未知模型别名 {body.model!r}"}, status_code=400)
         llm: LLMClient = request.app.state.llm

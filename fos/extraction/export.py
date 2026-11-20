@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fos.db.models import Document, DocumentField, DocumentPage
+from fos.excel_safe import excel_row
 
 STATUS_TEXT = {"extracted": "待核对", "missing": "缺失", "corrected": "人工修改", "confirmed": "已确认"}
 METHOD_TEXT = {
@@ -111,19 +112,21 @@ def to_xlsx(
     warn = PatternFill("solid", fgColor="FDECEC")
     for f in sorted(fields, key=lambda x: order.get(x.group_name, 99)):
         ws.append(
-            [
-                f.group_name,
-                f.name,
-                f.value or "",
-                f.unit or "",
-                STATUS_TEXT.get(f.status, f.status),
-                "是" if f.required else "",
-                "是" if f.conflict else "",
-                round(f.confidence or 0.0, 2) if f.status != "missing" else "",
-                METHOD_TEXT.get(f.method, f.method),
-                _pages_text(f),
-                _quotes(f),
-            ]
+            excel_row(
+                [
+                    f.group_name,
+                    f.name,
+                    f.value or "",
+                    f.unit or "",
+                    STATUS_TEXT.get(f.status, f.status),
+                    "是" if f.required else "",
+                    "是" if f.conflict else "",
+                    round(f.confidence or 0.0, 2) if f.status != "missing" else "",
+                    METHOD_TEXT.get(f.method, f.method),
+                    _pages_text(f),
+                    _quotes(f),
+                ]
+            )
         )
         if (f.status == "missing" and f.required) or f.conflict:
             for c in ws[ws.max_row]:
@@ -140,7 +143,7 @@ def to_xlsx(
     for c in wp[1]:
         c.font = Font(bold=True)
     for p in pages:
-        wp.append([p.page, METHOD_TEXT.get(p.method, p.method), p.markdown[:EXCEL_CELL_MAX]])
+        wp.append(excel_row([p.page, METHOD_TEXT.get(p.method, p.method), p.markdown[:EXCEL_CELL_MAX]]))
     wp.column_dimensions["C"].width = 120
     for row in wp.iter_rows(min_row=2):
         row[2].alignment = Alignment(wrap_text=True, vertical="top")
@@ -162,7 +165,7 @@ def to_xlsx(
         ("导出时间（UTC）", datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")),
         ("说明", "每个字段都标了原文页码与片段；缺失和冲突行标红，请在使用前人工核对。"),
     ]:
-        wi.append([k, v])
+        wi.append(excel_row([k, v]))
     wi.column_dimensions["A"].width = 18
     wi.column_dimensions["B"].width = 80
     buf = io.BytesIO()

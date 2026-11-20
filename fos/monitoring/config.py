@@ -48,7 +48,7 @@ class Notify(BaseModel):
 class Edge(BaseModel):
     """云端发给 fos-edge 的只读命令与厂端状态（W21）。"""
 
-    command_ttl_s: int = Field(default=300, ge=30, le=3600)  # 每次签名的有效期（厂端上限 1 小时）
+    command_ttl_s: int = Field(default=300, ge=30, le=1800)  # 签名有效期（留足偏差余量，低于 1 小时上限）
     queue_minutes: int = Field(default=30, ge=1, le=60)  # 排队多久没结果就作废（厂端按 id 去重的窗口内）
     status_every_minutes: float = Field(default=60, ge=0)  # 多久自动要一次状态；0 = 不自动要
     backlog_minutes: float = Field(default=30, gt=0)  # 网关在线但积压最早一批超过这么久 → 告警

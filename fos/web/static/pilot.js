@@ -66,7 +66,9 @@ async function upload(commit) {
     const r = await api(commit ? "/v1/import/commit" : "/v1/import/preview", { method: "POST", body: fd });
     if (r.status !== 200 && r.status !== 201 && !(commit && r.status === 422)) return toast(await detail(r));
     const rep = await r.json();
-    if (r.status === 422 && !rep.sheets) return toast(await detail(r));
+    if (r.status === 422 && !rep.sheets) {
+      return toast(typeof rep.detail === "string" ? rep.detail : JSON.stringify(rep.detail || rep));
+    }
     render(rep);
     state.previewOk = rep.ok && !rep.committed;
     if (rep.committed) toast(`已入账：新增 ${rep.counts.created} 条，跳过已存在 ${rep.counts.exists} 条`);

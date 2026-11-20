@@ -12,13 +12,13 @@ from decimal import Decimal
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.db.models import EngDesign
 from fos.engineering.design import money
 from fos.governance.principal import Principal
-from fos.ledger import AppendRequest, AppendResult, ApprovalRequired, Evidence, Ledger
+from fos.ledger import AppendRequest, AppendResult, ApprovalRequired, Conflict, Evidence, Ledger
 from fos.ontology import Ontology
 from fos.orders.config import OrdersConfig
 from fos.orders.data import get, num
@@ -41,7 +41,7 @@ class OrderConflict(OrderError):
 
 
 def new_id(prefix: str, tz: ZoneInfo) -> str:
-    return f"{prefix}-{datetime.now(tz).strftime('%y%m%d')}-{secrets.token_hex(2).upper()}"
+    return f"{prefix}-{datetime.now(tz).strftime('%y%m%d')}-{secrets.token_hex(4).upper()}"
 
 
 # ---------------- 工程报价 → 合同草稿 ----------------
@@ -135,7 +135,7 @@ class ContractIn(BaseModel):
     contract_no: str = Field(min_length=1, max_length=64)
     customer: str = Field(min_length=1, max_length=64)
     signed_date: date
-    amount: float = Field(ge=0)
+    amount: FiniteFloat = Field(ge=0)
     due_date: date | None = None
     payment_terms: str | None = None
     warranty: str | None = None
@@ -190,18 +190,22 @@ async def after_contract(
         return notes
     if not principal.can("eng.project:write"):
         return ["工程项目状态还是“已报价”，请工程技术改为赢单"]
-    await ledger.append(
-        session,
-        principal,
-        AppendRequest(
-            type="eng.project_closed",
-            object_id=project.object_id,
-            payload={"status": "won"},
-            causation_id=res.event_id,
-            idempotency_key=f"won:{project.object_id}:{res.object_id}",
-            data_mode=project.data_mode,
-        ),
-    )
+    try:
+        await ledger.append(
+            session,
+            principal,
+            AppendRequest(
+                type="eng.project_closed",
+                object_id=project.object_id,
+                payload={"status": "won"},
+                causation_id=res.event_id,
+                idempotency_key=f"won:{project.object_id}:{res.object_id}",
+                expected_version=project.version,
+                data_mode=project.data_mode,
+            ),
+        )
+    except (ApprovalRequired, Conflict):
+        return ["工程项目状态未能自动改为赢单（需审批或版本已变），请人工核对"]
     notes.append("工程项目已标为赢单")
     return notes
 
@@ -211,10 +215,10 @@ async def after_contract(
 
 class LineIn(BaseModel):
     product: str = Field(min_length=1, max_length=64)
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     unit: str = Field(min_length=1, max_length=16)
-    unit_price: float | None = Field(default=None, ge=0)
-    amount: float | None = Field(default=None, ge=0)
+    unit_price: FiniteFloat | None = Field(default=None, ge=0)
+    amount: FiniteFloat | None = Field(default=None, ge=0)
     due_date: date | None = None
     order_no: str | None = Field(default=None, max_length=64)
     note: str | None = None
@@ -300,7 +304,7 @@ async def create_lines(
 class ShipmentIn(BaseModel):
     order: str = Field(min_length=1, max_length=64)
     batches: list[str] = Field(default_factory=list, max_length=50)
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     shipped_at: datetime | None = None
     shipment_no: str | None = Field(default=None, max_length=64)
     carrier: str | None = Field(default=None, max_length=64)
@@ -328,7 +332,7 @@ async def shipment_request(
     for k in ("carrier", "vehicle_no", "note"):
         if getattr(body, k):
             payload[k] = getattr(body, k)
-    check = await check_shipment(session, tenant, cfg, payload)
+    check = await check_shipment(session, tenant, cfg, payload, data_mode=order.data_mode)
     req = AppendRequest(
         type=SHIP_EVENT,
         object_id=sid,
@@ -343,7 +347,7 @@ class ReceiptIn(BaseModel):
     status: Literal["delivered", "refused"]
     receiver: str | None = Field(default=None, max_length=64)
     received_at: datetime | None = None
-    received_qty: float | None = Field(default=None, ge=0)
+    received_qty: FiniteFloat | None = Field(default=None, ge=0)
     note: str | None = None
     evidence: list[Evidence] = Field(min_length=1)  # 签收单照片
 

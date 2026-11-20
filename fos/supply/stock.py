@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -77,22 +78,32 @@ async def lot_balances(
     for mv in await _scan(session, tenant, "stock_move"):
         b = out.get(mv.state.get("lot"))
         kind = mv.state.get("kind")
-        if b is not None and kind in SIGN:
+        if b is not None and kind in SIGN and mv.data_mode == b.lot.data_mode:
             b.moved[kind] += num(mv.state.get("qty"))
     return out
 
 
 async def lot_balance(session: AsyncSession, tenant: str, lot_id: str) -> LotBalance | None:
-    lot = await session.get(ObjectState, (tenant, "material_lot", lot_id))
+    lot = await session.get(ObjectState, (tenant, "material_lot", lot_id), populate_existing=True)
     if lot is None:
         return None
-    bals = await lot_balances(session, tenant, material_ids={lot.state.get("material")})
+    bals = await lot_balances(session, tenant, material_ids={lot.state.get("material")}, mode=lot.data_mode)
     return bals.get(lot_id)
 
 
+def _utc_key(raw: Any) -> float:
+    if not raw:
+        return 0.0
+    try:
+        dt = datetime.fromisoformat(str(raw))
+        return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).astimezone(UTC).timestamp()
+    except ValueError:
+        return 0.0
+
+
 def fifo(bals: list[LotBalance]) -> list[LotBalance]:
-    """先进先出：按到货时间、再按入账顺序。"""
-    return sorted(bals, key=lambda b: (str(b.lot.state.get("received_at") or ""), b.lot.created_seq))
+    """先进先出：按到货时间（统一 UTC）、再按入账顺序。"""
+    return sorted(bals, key=lambda b: (_utc_key(b.lot.state.get("received_at")), b.lot.created_seq))
 
 
 def lot_row(b: LotBalance) -> dict[str, Any]:
@@ -144,6 +155,10 @@ async def material_stock(
                     f"批次 {b.lot.object_id} 单位 {b.lot.state.get('unit')} 和物料 {m.state.get('name')} "
                     f"的单位 {unit} 不同，没有计入库存"
                 )
+                continue
+            if b.on_hand < -EPS:
+                warnings.append(f"批次 {b.lot.object_id} 出现负库存（{b.on_hand:g} {unit}），请核查账面")
+                lots.append(lot_row(b))
                 continue
             if b.on_hand <= EPS:
                 continue

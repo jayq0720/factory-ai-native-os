@@ -25,6 +25,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     event,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -58,13 +59,18 @@ class User(Base):
 
 class ApiKey(Base):
     __tablename__ = "api_keys"
-    __table_args__ = (Index("ix_api_keys_tenant", "tenant_id"),)
+    __table_args__ = (
+        Index("ix_api_keys_tenant", "tenant_id"),
+        Index("ix_api_keys_user", "user_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True)  # 明文 key 里的 key id 部分
     tenant_id: Mapped[str] = mapped_column(String(32))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     secret_sha256: Mapped[str] = mapped_column(String(64))
     label: Mapped[str] = mapped_column(String(64), default="")
+    # 厂端网关绑定（非空时只允许为对应 edge_id 上报 /v1/edge/uplink，禁止伪造其他网关或人工抄表）
+    edge_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -89,6 +95,7 @@ class Event(Base):
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_events_tenant_idem"),
         Index("ix_events_object", "tenant_id", "object_type", "object_id", "seq"),
         Index("ix_events_type", "tenant_id", "type", "seq"),
+        Index("ix_events_occurred", "tenant_id", "occurred_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -309,6 +316,7 @@ class CardRecord(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "short_code", name="uq_cards_tenant_code"),
         Index("ix_cards_thread", "tenant_id", "thread_id"),
+        Index("ix_cards_open_exp", "tenant_id", "status", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -377,6 +385,7 @@ class Approval(Base):
     __table_args__ = (
         Index("ix_approvals_status", "tenant_id", "status", "created_at"),
         Index("ix_approvals_requester", "tenant_id", "requester_id", "created_at"),
+        Index("ix_approvals_open_exp", "tenant_id", "status", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -562,7 +571,17 @@ class KilnAlarm(Base):
     """
 
     __tablename__ = "kiln_alarms"
-    __table_args__ = (Index("ix_kiln_alarms_open", "tenant_id", "status", "key"),)
+    __table_args__ = (
+        Index("ix_kiln_alarms_open", "tenant_id", "status", "key"),
+        Index(
+            "uq_kiln_alarms_open",
+            "tenant_id",
+            "key",
+            unique=True,
+            sqlite_where=text("status = 'open'"),
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(String(32))

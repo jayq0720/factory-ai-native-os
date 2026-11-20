@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +15,18 @@ async def get(
 ) -> ObjectState | None:
     if not object_id:
         return None
-    return await session.get(ObjectState, (tenant, object_type, object_id))
+    return await session.get(ObjectState, (tenant, object_type, object_id), populate_existing=True)
 
 
 async def referrers(
-    session: AsyncSession, tenant: str, from_type: str, rel: str, to_type: str, to_ids: list[str]
+    session: AsyncSession,
+    tenant: str,
+    from_type: str,
+    rel: str,
+    to_type: str,
+    to_ids: list[str],
+    *,
+    data_mode: str | None = None,
 ) -> list[ObjectState]:
     """引用了 to_ids 中任一对象的 from_type 对象（去重，按创建顺序）。"""
     if not to_ids:
@@ -40,6 +49,8 @@ async def referrers(
             ObjectLink.to_id.in_(to_ids),
         )
     )
+    if data_mode is not None:
+        q = q.where(ObjectState.data_mode == data_mode)
     # 不用 SQL DISTINCT：PostgreSQL 的 json 列不能比较相等；一个对象引用多个 to_ids 时在这里去重
     seen: dict[str, ObjectState] = {}
     for o in (await session.scalars(q)).all():
@@ -61,4 +72,4 @@ async def find_by(
 
 
 def num(v) -> float:
-    return float(v) if isinstance(v, int | float) and not isinstance(v, bool) else 0.0
+    return float(v) if isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(v) else 0.0

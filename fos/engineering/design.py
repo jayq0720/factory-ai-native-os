@@ -44,8 +44,9 @@ class Conditions:
         normal, mx = state.get("normal_temp"), state.get("max_temp")
         if normal is None and mx is None:
             raise ValueError("工程项目缺少工作温度（正常工作温度或最高温度），请先补充工况")
-        if not state.get("area"):
-            raise ValueError("工程项目缺少衬里面积，无法计算用量，请先补充工况")
+        area = state.get("area")
+        if area is None or float(area) <= 0:
+            raise ValueError("工程项目缺少有效的衬里面积（必须大于 0），请先补充工况")
         if mx is None:
             mx = normal
             assumptions.append(
@@ -56,6 +57,8 @@ class Conditions:
             assumptions.append(
                 {"key": "normal_temp", "text": f"文件未给正常工作温度，按最高温度 {mx}℃ 计算外壁温度"}
             )
+        if float(mx) < float(normal):
+            raise ValueError("工程项目最高温度不能低于正常工作温度")
         shell = state.get("shell_temp")
         if shell is None:
             shell = cfg.default_shell_temp
@@ -64,18 +67,21 @@ class Conditions:
         if ambient is None:
             ambient = cfg.default_ambient
             assumptions.append({"key": "ambient_temp", "text": f"环境温度按 {ambient}℃ 计算"})
+        tax = state.get("tax_rate")
+        if tax is not None and not (0 <= float(tax) <= 30):
+            raise ValueError("工程项目税率超出合理范围（0–30%）")
         return cls(
             normal_temp=float(normal),
             max_temp=float(mx),
             shell_temp=float(shell),
             ambient=float(ambient),
-            area=float(state["area"]),
+            area=float(area),
             atmosphere=split_list(state.get("atmosphere")),
             furnace_type=state.get("furnace_type"),
             positions=split_list(state.get("positions")),
             thickness_limit=state.get("thickness_limit"),
             thickness_rule=state.get("thickness_rule"),
-            tax_rate=state.get("tax_rate"),
+            tax_rate=float(tax) if tax is not None else None,
             assumptions=assumptions,
         )
 
@@ -125,6 +131,23 @@ def _check(key: str, ok: bool, text: str, severity: str = "high") -> dict[str, A
     return {"key": key, "ok": ok, "text": text, "severity": severity}
 
 
+def _surface_conv(cond: Conditions, cfg: EngineeringConfig) -> float:
+    """按炉体部位取对流系数（多个部位取偏保守的较小值，避免低估炉底外壁温度）。"""
+    conv = cfg.surface.convection
+    wall = conv.get("wall", 1.31)
+    if not cond.positions:
+        return wall
+    vals: list[float] = []
+    for pos in cond.positions:
+        if any(k in pos for k in ("底", "车")):
+            vals.append(conv.get("floor", 0.64))
+        elif any(k in pos for k in ("顶", "拱", "盖")):
+            vals.append(conv.get("roof", 1.52))
+        else:
+            vals.append(wall)
+    return min(vals) if vals else wall
+
+
 def thermal_checks(
     cond: Conditions, cfg: EngineeringConfig, chosen: list[tuple[str, Product, float]]
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
@@ -141,7 +164,7 @@ def thermal_checks(
         )
         return checks, None, None
     layers = [Layer(p.code, t, p.tc_a or 0.0, p.tc_b) for _, p, t in chosen]
-    kw = {"emissivity": cfg.surface.emissivity, "conv": cfg.surface.convection.get("wall", 1.31)}
+    kw = {"emissivity": cfg.surface.emissivity, "conv": _surface_conv(cond, cfg)}
     try:
         normal = solve(layers, cond.normal_temp, cond.ambient, **kw)
         peak = solve(layers, cond.max_temp, cond.ambient, **kw)
@@ -186,7 +209,7 @@ def thermal_checks(
             _check("thickness", ok, f"总厚度 {total:g} mm，文件要求{word} {cond.thickness_limit:g} mm")
         )
     for _role, p, _t in chosen:
-        bad = [a for a in cond.atmosphere if any(a == u or (u in a) for u in p.unsuitable)]
+        bad = [a for a in cond.atmosphere if any(a == u or u in a or a in u for u in p.unsuitable)]
         if bad:
             checks.append(_check(f"atmosphere_{p.id}", False, f"{p.code} 不适用于{'、'.join(bad)}气氛"))
     return checks, normal.as_dict(), peak.as_dict()
@@ -204,6 +227,17 @@ def _qty(p: Product, volume: float, unit: str) -> tuple[float | None, str]:
     if p.piece_volume:
         return float(math.ceil(volume / p.piece_volume)), unit
     return None, unit
+
+
+def _price_per_t(p: Product) -> float | None:
+    if not p.price:
+        return None
+    u = p.price.unit
+    if u in ("t", "吨"):
+        return p.price.price
+    if u in ("kg", "千克"):
+        return p.price.price * 1000
+    return None
 
 
 def evaluate(
@@ -264,7 +298,7 @@ def evaluate(
                 "qty": qty,
                 "unit": unit,
                 "formula": f"{cond.area:g} m² × {t:g} mm × (1 + {p.loss_rate:g}%)"
-                + (f" × {p.density:g} t/m³" if unit in ("t", "吨") else ""),
+                + (f" × {p.density:g} t/m³" if unit in ("t", "吨") and p.density is not None else ""),
             }
         )
         if qty is None:
@@ -274,14 +308,13 @@ def evaluate(
     for aux in cfg.auxiliaries:
         if aux.per != "brick_volume" or brick_volume <= 0:
             continue
-        cands = [p for p in kb.values() if p.category == aux.category and p.price]
+        cands = [p for p in kb.values() if p.category == aux.category and _price_per_t(p) is not None]
         amount_t = brick_volume * aux.rate
         if not cands:
-            checks.append(
-                _check(f"aux_{aux.category}", False, f"知识库没有带价格的{aux.name}，BOM 未计入", "medium")
-            )
+            msg = f"知识库没有按重量计价的{aux.name}，BOM 未计入"
+            checks.append(_check(f"aux_{aux.category}", False, msg, "medium"))
             continue
-        p = min(cands, key=lambda x: x.price.price if x.price else 0)
+        p = min(cands, key=lambda x: _price_per_t(x) or float("inf"))
         unit = p.price.unit if p.price else p.unit
         qty = round(amount_t, 3) if unit in ("t", "吨") else round(amount_t * 1000, 1)
         total_weight += amount_t

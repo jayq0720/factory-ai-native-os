@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fos.db.models import ApiKey, User, utcnow
 
 PREFIX = "fos"
+LAST_USED_TTL = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -36,11 +38,20 @@ def parse(plaintext: str) -> tuple[str, str] | None:
     return parts[1], parts[2]
 
 
-async def issue(session: AsyncSession, user: User, label: str = "") -> IssuedKey:
+async def issue(
+    session: AsyncSession, user: User, label: str = "", *, edge_id: str | None = None
+) -> IssuedKey:
     key_id = secrets.token_hex(8)
     secret = secrets.token_urlsafe(32).replace("_", "-")
     session.add(
-        ApiKey(id=key_id, tenant_id=user.tenant_id, user_id=user.id, secret_sha256=_hash(secret), label=label)
+        ApiKey(
+            id=key_id,
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            secret_sha256=_hash(secret),
+            label=label,
+            edge_id=(edge_id or "").strip() or None,
+        )
     )
     await session.flush()
     return IssuedKey(key_id=key_id, plaintext=f"{PREFIX}_{key_id}_{secret}")
@@ -63,5 +74,11 @@ async def verify(session: AsyncSession, plaintext: str) -> tuple[ApiKey, User] |
         return None
     if not hmac.compare_digest(key.secret_sha256, _hash(secret)):
         return None
-    key.last_used_at = utcnow()
+    now = utcnow()
+    last = key.last_used_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    # 节流更新 last_used_at，避免高频 GET 请求全部退化成写事务引发锁竞争
+    if last is None or (now - last) >= LAST_USED_TTL:
+        key.last_used_at = now
     return key, user

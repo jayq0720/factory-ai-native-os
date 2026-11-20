@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, FiniteFloat, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.ledger import AppendRequest, Evidence
@@ -25,7 +25,7 @@ from fos.supply.stock import EPS, fifo, lot_balance, lot_balances
 class IssueIn(BaseModel):
     material: str | None = Field(default=None, max_length=64)  # 只填物料：按先进先出分配批次
     lot: str | None = Field(default=None, max_length=64)  # 指定批次
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     batch: str | None = Field(default=None, max_length=64)  # 领给哪个生产批次（追溯用）
     moved_at: datetime | None = None
     note: str | None = Field(default=None, max_length=500)
@@ -97,7 +97,7 @@ async def issue_requests(
 
 class ReturnIn(BaseModel):
     lot: str = Field(min_length=1, max_length=64)
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     batch: str | None = Field(default=None, max_length=64)
     moved_at: datetime | None = None
     note: str | None = Field(default=None, max_length=500)
@@ -124,7 +124,7 @@ async def return_request(session: AsyncSession, tenant: str, body: ReturnIn, tz:
 
 class CountLine(BaseModel):
     lot: str = Field(min_length=1, max_length=64)
-    counted: float = Field(ge=0)
+    counted: FiniteFloat = Field(ge=0)
 
 
 class CountIn(BaseModel):
@@ -132,6 +132,15 @@ class CountIn(BaseModel):
     count_no: str | None = Field(default=None, max_length=64)
     note: str | None = Field(default=None, max_length=500)
     evidence: list[Evidence] = Field(default_factory=list)  # 确认时必填：盘点照片 / 盘点表
+
+    @model_validator(mode="after")
+    def _unique_lots(self):
+        seen: set[str] = set()
+        for ln in self.lines:
+            if ln.lot in seen:
+                raise ValueError(f"盘点明细包含重复批次：{ln.lot}")
+            seen.add(ln.lot)
+        return self
 
 
 async def count_preview(session: AsyncSession, tenant: str, body: CountIn) -> dict[str, Any]:

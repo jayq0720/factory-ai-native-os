@@ -63,7 +63,8 @@ class LLMClient:
             last = next((m.content for m in reversed(messages) if m.role == "user"), "")
             return ChatResult(model=model, content=f"[模拟回复] 收到：{last[:200]}", data_mode="mock")
 
-        assert self._http is not None
+        if self._http is None:
+            raise LLMError("LLM 客户端未初始化")
         payload = {
             "model": model,
             "messages": [m.model_dump() for m in messages],
@@ -76,13 +77,14 @@ class LLMClient:
         try:
             r = await self._http.post("/v1/chat/completions", json=payload)
             r.raise_for_status()
-        except httpx.HTTPError as e:
+            data = r.json()
+            content = data["choices"][0]["message"]["content"] or ""
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as e:
             raise LLMError(f"LLM 网关调用失败：{e}") from e
-        data = r.json()
         usage = data.get("usage") or {}
         return ChatResult(
             model=data.get("model", model),
-            content=data["choices"][0]["message"]["content"] or "",
+            content=content,
             data_mode="real",
             prompt_tokens=usage.get("prompt_tokens", 0),
             completion_tokens=usage.get("completion_tokens", 0),

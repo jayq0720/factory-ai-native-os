@@ -1,9 +1,10 @@
 # 工控机上用 systemd 常驻 fos-edge（无人值守、断电重启后自动拉起）。
 # 安装：
 #   sudo useradd --system --no-create-home fos-edge && sudo usermod -aG dialout fos-edge   # dialout：读串口
-#   sudo install -m 755 fos-edge /usr/local/bin/ && sudo mkdir -p /etc/fos-edge /var/lib/fos-edge
+#   sudo install -m 755 fos-edge /usr/local/bin/ && sudo mkdir -p /etc/fos-edge
 #   sudo cp edge.toml /etc/fos-edge/   # buffer_path 写成 /var/lib/fos-edge/buffer.db
-#   echo 'FOS_EDGE_API_KEY=fos_xxx' | sudo tee /etc/fos-edge/env && sudo chmod 600 /etc/fos-edge/env
+#   (umask 077 && echo 'FOS_EDGE_API_KEY=fos_xxx' | sudo tee /etc/fos-edge/env >/dev/null)
+#   sudo chown root:fos-edge /etc/fos-edge/env && sudo chmod 640 /etc/fos-edge/env
 #   sudo cp fos-edge.service /etc/systemd/system/ && sudo systemctl enable --now fos-edge
 #   journalctl -u fos-edge -f
 [Unit]
@@ -13,6 +14,10 @@ Wants=network-online.target
 
 [Service]
 User=fos-edge
+Group=fos-edge
+StateDirectory=fos-edge
+StateDirectoryMode=0700
+UMask=0077
 EnvironmentFile=/etc/fos-edge/env
 ExecStartPre=/usr/local/bin/fos-edge check /etc/fos-edge/edge.toml
 ExecStart=/usr/local/bin/fos-edge run /etc/fos-edge/edge.toml
@@ -22,6 +27,9 @@ RestartSec=5
 ProtectSystem=strict
 ReadWritePaths=/var/lib/fos-edge
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 NoNewPrivileges=true
 PrivateTmp=true
 

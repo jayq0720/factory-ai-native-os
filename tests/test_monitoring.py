@@ -272,7 +272,7 @@ def test_demo_data_is_mock(client, h):
         {**_r("demo1.top.temp", now, 1290.5), "mock": True},
         {**_r("demo1.kwh", now, 52100, "kWh", "direct"), "mock": True},
     ]
-    up = client.post("/v1/edge/uplink", json=_batch(7, sim, edge="edge-demo"), headers=h("edge")).json()
+    up = client.post("/v1/edge/uplink", json=_batch(7, sim, edge="edge-demo"), headers=h("edge_demo")).json()
     assert up["accepted"] == 2 and up["rejected"] == {}
     c = client.get("/v1/kiln/runs/KR-DEMO1/curve", headers=h("admin")).json()
     assert c["data_mode"] == "mock" and c["deviation"] and c["lines"][0]["spans"]

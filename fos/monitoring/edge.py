@@ -19,8 +19,8 @@ from typing import Annotated, Any, Literal
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from pydantic import BaseModel, Field, TypeAdapter
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.db.models import EdgeBatch, EdgeCommandRecord, utcnow
@@ -90,13 +90,15 @@ class CommandSigner:
     def sign(
         self, *, command_id: str, tenant_id: str, edge_id: str, expires_ms: int, command: dict[str, Any]
     ) -> dict[str, Any]:
+        # 无论 JSON 列读回来键顺序如何，签名与发送前都按 Rust 枚举字段顺序规范化
+        canon = wire(_COMMAND_ADAPTER.validate_python(command))
         unsigned = {
             "protocol": ms.PROTOCOL_VERSION,
             "command_id": command_id,
             "tenant_id": tenant_id,
             "edge_id": edge_id,
             "expires_ms": expires_ms,
-            "command": command,
+            "command": canon,
         }
         sig = self._key.sign(signing_bytes(unsigned))
         return {**unsigned, "signature": base64.b64encode(sig).decode()}
@@ -121,10 +123,11 @@ class ReportStatus(BaseModel):
 
 class Resend(BaseModel):
     type: Literal["resend"]
-    from_seq: int = Field(ge=0)
+    from_seq: int = Field(ge=0, le=ms.MAX_I64)
 
 
 Command = Annotated[ReadNow | ReportStatus | Resend, Field(discriminator="type")]
+_COMMAND_ADAPTER: TypeAdapter[ReadNow | ReportStatus | Resend] = TypeAdapter(Command)
 
 
 def wire(cmd: ReadNow | ReportStatus | Resend) -> dict[str, Any]:
@@ -199,15 +202,23 @@ async def issue(
 
 
 async def cancel(session: AsyncSession, tenant_id: str, command_id: str) -> EdgeCommandRecord:
-    rec = await session.get(EdgeCommandRecord, command_id)
+    now = utcnow()
+    res = await session.execute(
+        update(EdgeCommandRecord)
+        .where(
+            EdgeCommandRecord.id == command_id,
+            EdgeCommandRecord.tenant_id == tenant_id,
+            EdgeCommandRecord.status == "pending",
+        )
+        .values(status="cancelled", finished_at=now, result="下发前取消")
+    )
+    rec = await session.get(EdgeCommandRecord, command_id, populate_existing=True)
     if rec is None or rec.tenant_id != tenant_id:
         raise ms.MonitorError("命令不存在", 404)
-    if rec.status != "pending":
+    if res.rowcount != 1:
         raise ms.MonitorError(
             f"命令{STATUS_NAME.get(rec.status, rec.status)}，不能取消（只能取消待下发的）", 409
         )
-    rec.status, rec.finished_at, rec.result = "cancelled", utcnow(), "下发前取消"
-    await session.flush()
     return rec
 
 
@@ -310,19 +321,19 @@ async def after_uplink(
         return []
     await _auto_status(session, principal, edge, cfg, signer, now)
     ttl = timedelta(seconds=cfg.edge.command_ttl_s)
-    rows = (
-        await session.execute(
-            select(EdgeCommandRecord)
-            .where(
-                EdgeCommandRecord.tenant_id == tid,
-                EdgeCommandRecord.edge_id == edge,
-                EdgeCommandRecord.status.in_(OPEN),
-                or_(EdgeCommandRecord.sent_at.is_(None), EdgeCommandRecord.sent_at <= now - ttl),
-            )
-            .order_by(EdgeCommandRecord.created_at)
-            .limit(20)
+    stmt = (
+        select(EdgeCommandRecord)
+        .where(
+            EdgeCommandRecord.tenant_id == tid,
+            EdgeCommandRecord.edge_id == edge,
+            EdgeCommandRecord.status.in_(OPEN),
+            or_(EdgeCommandRecord.sent_at.is_(None), EdgeCommandRecord.sent_at <= now - ttl),
         )
-    ).scalars()
+        .order_by(EdgeCommandRecord.created_at)
+        .limit(20)
+        .with_for_update()
+    )
+    rows = (await session.execute(stmt)).scalars()
     out = []
     for rec in rows:
         # 上一次签名过期了还没结果 → 同一个 id 重签（厂端按 id 去重，只回报结果）
@@ -385,7 +396,10 @@ def health(status: dict[str, Any], at: datetime) -> Health:
     oldest = status.get("oldest_pending_ms")
     backlog = None
     if oldest is not None and status.get("pending_batches", 0) > 0:
-        backlog = max(0.0, (at - ms.from_ms(oldest)).total_seconds() / 60)
+        try:
+            backlog = max(0.0, (at - ms.from_ms(int(oldest))).total_seconds() / 60)
+        except (OverflowError, OSError, ValueError, TypeError):
+            backlog = None
     failing = [p["point"] for p in status.get("points", []) if p.get("consecutive_errors", 0) > 0]
     return Health(backlog, int(status.get("rejected_batches", 0)), failing)
 

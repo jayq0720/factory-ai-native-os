@@ -28,11 +28,14 @@ pub struct HttpUplink {
     api_key: String,
 }
 
+const MAX_RESP_BYTES: usize = 2 * 1024 * 1024;
+
 impl HttpUplink {
     pub fn new(url: &str, api_key: String) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("fos-edge/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| format!("初始化 HTTP 客户端失败：{e}"))?;
@@ -46,7 +49,7 @@ impl HttpUplink {
 
 impl Uplink for HttpUplink {
     async fn send(&self, batch: &UplinkBatch) -> Result<UplinkAck, SendError> {
-        let resp = self
+        let mut resp = self
             .client
             .post(&self.url)
             .bearer_auth(&self.api_key)
@@ -55,7 +58,18 @@ impl Uplink for HttpUplink {
             .await
             .map_err(|e| SendError::Retry(format!("网络：{e}")))?;
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
+        let mut buf = Vec::new();
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| SendError::Retry(format!("读取响应失败：{e}")))?
+        {
+            if buf.len().saturating_add(chunk.len()) > MAX_RESP_BYTES {
+                return Err(SendError::Retry("云端响应体超过上限".into()));
+            }
+            buf.extend_from_slice(&chunk);
+        }
+        let body = String::from_utf8_lossy(&buf);
         if status.is_success() {
             return serde_json::from_str(&body)
                 .map_err(|e| SendError::Retry(format!("回执无法解析：{e}")));

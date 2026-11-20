@@ -24,10 +24,37 @@ from fos.perception.types import DocFormat, PageResult, ParsedDocument
 
 TEXT_LAYER_MIN_CHARS = 30  # 少于这么多非空白字符就当扫描页处理
 MAX_XLSX_ROWS = 2000
+MAX_XLSX_COLS = 100
+MAX_ZIP_ENTRIES = 1000
+MAX_ZIP_UNCOMPRESSED = 100 * 1024 * 1024  # 100 MB
+MAX_ZIP_RATIO = 100
+MAX_RENDER_DIM = 4096
 
 
 class ParseError(ValueError):
     pass
+
+
+def check_zip_safety(data: bytes) -> set[str]:
+    """防 ZIP 炸弹：限制条目数、解压总大小与单条目压缩比，返回压缩包条目名集合。"""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as e:
+        raise ParseError("压缩包已损坏") from e
+    with zf:
+        infos = zf.infolist()
+        if len(infos) > MAX_ZIP_ENTRIES:
+            raise ParseError(f"压缩包内文件过多（超过 {MAX_ZIP_ENTRIES} 个）")
+        total = 0
+        for info in infos:
+            total += info.file_size
+            if total > MAX_ZIP_UNCOMPRESSED:
+                raise ParseError("压缩包解压后超过大小上限")
+            if info.file_size > 1024 * 1024:
+                comp = max(info.compress_size, 1)
+                if info.file_size / comp > MAX_ZIP_RATIO:
+                    raise ParseError("压缩包压缩比异常，已拒绝")
+        return {info.filename for info in infos}
 
 
 def sniff(data: bytes) -> DocFormat:
@@ -36,10 +63,7 @@ def sniff(data: bytes) -> DocFormat:
     if data.startswith((b"\x89PNG", b"\xff\xd8\xff", b"II*\x00", b"MM\x00*")):
         return "image"
     if data.startswith(b"PK\x03\x04"):
-        try:
-            names = set(zipfile.ZipFile(io.BytesIO(data)).namelist())
-        except zipfile.BadZipFile as e:
-            raise ParseError("压缩包已损坏") from e
+        names = check_zip_safety(data)
         if "word/document.xml" in names:
             return "docx"
         if "xl/workbook.xml" in names:
@@ -158,7 +182,7 @@ async def _parse_pdf(
                 nonlocal done
                 page = pdf[i]  # 渲染是同步调用，在事件循环里串行执行，pdfium 不会被并发访问
                 try:
-                    png = _png(page.render(scale=scale).to_pil())
+                    png = _png(page.render(scale=_safe_scale(page, scale)).to_pil())
                 finally:
                     page.close()
                 md = await ocr.recognize(png, page=i + 1)
@@ -175,6 +199,15 @@ async def _parse_pdf(
         return [p for p in out if p is not None]
     finally:
         pdf.close()
+
+
+def _safe_scale(page: pdfium.PdfPage, scale: float, max_dim: int = MAX_RENDER_DIM) -> float:
+    """按页面物理尺寸夹紧渲染倍率，防止超大矢量 PDF 渲染时内存溢出。"""
+    w, h = page.get_size()
+    longest = max(float(w), float(h), 1.0)
+    if longest * scale > max_dim:
+        return max(max_dim / longest, 0.1)
+    return scale
 
 
 async def _parse_image(
@@ -221,13 +254,16 @@ def render_page_png(data: bytes, page: int, *, scale: float = 1.5) -> bytes | No
                 return None
             p = pdf[page - 1]
             try:
-                return _png(p.render(scale=scale).to_pil())
+                return _png(p.render(scale=_safe_scale(p, scale)).to_pil())
             finally:
                 p.close()
         finally:
             pdf.close()
     if fmt == "image":
-        img = Image.open(io.BytesIO(data))
+        try:
+            img = Image.open(io.BytesIO(data))
+        except (UnidentifiedImageError, Image.DecompressionBombError) as e:
+            raise ParseError(f"图片无法读取：{e}") from e
         if not 1 <= page <= getattr(img, "n_frames", 1):
             return None
         img.seek(page - 1)
@@ -287,7 +323,7 @@ def _parse_xlsx(data: bytes, max_pages: int) -> list[PageResult]:
         for i, ws in enumerate(wb.worksheets):
             rows: list[list[str]] = []
             for row in ws.iter_rows(values_only=True):
-                cells = ["" if v is None else str(v) for v in row]
+                cells = ["" if v is None else str(v) for v in row[:MAX_XLSX_COLS]]
                 if any(cells):
                     rows.append(cells)
                 if len(rows) >= MAX_XLSX_ROWS:

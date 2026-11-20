@@ -182,6 +182,13 @@ def read_workbook(data: bytes) -> dict[str, list[tuple[int, list[Any]]]]:
     """工作表名 → [(行号, 单元格值)]，第一项是表头。"""
     from openpyxl import load_workbook
 
+    from fos.perception.parser import MAX_XLSX_COLS, ParseError, check_zip_safety
+
+    try:
+        check_zip_safety(data)
+    except ParseError as e:
+        msg = "不是有效的 Excel（.xlsx）文件" if "损坏" in str(e) else str(e)
+        raise ImportFileError(msg) from e
     try:
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as e:  # openpyxl 对非 xlsx 抛各种异常
@@ -193,7 +200,7 @@ def read_workbook(data: bytes) -> dict[str, list[tuple[int, list[Any]]]]:
             for i, row in enumerate(ws.iter_rows(values_only=True), 1):
                 if i > MAX_ROWS + 1:
                     raise ImportFileError(f"工作表“{ws.title}”超过 {MAX_ROWS} 行，请拆成几份导入")
-                rows.append((i, list(row)))
+                rows.append((i, list(row[:MAX_XLSX_COLS])))
             out[ws.title.strip()] = rows
     finally:
         wb.close()

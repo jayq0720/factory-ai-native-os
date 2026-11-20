@@ -126,8 +126,9 @@ async function confirmPlan() {
   const r = await api("/v1/planning/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) return toast(await detail(r), 8000);
   const out = await r.json();
-  toast(`已确认 ${out.plan_no}：承诺交期 ${out.promised.length} 个订单` + (out.shortages.length ? `，缺料 ${out.shortages.length} 种已通知采购` : ""), 6000);
-  for (const w of out.warnings) toast(w, 6000);
+  const msg = `已确认 ${out.plan_no}：承诺交期 ${out.promised.length} 个订单` + (out.shortages.length ? `，缺料 ${out.shortages.length} 种已通知采购` : "");
+  const warns = (out.warnings || []).length ? `；提醒：${out.warnings.join("；")}` : "";
+  toast(msg + warns, 8000);
   await loadCurrent();
 }
 

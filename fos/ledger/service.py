@@ -102,8 +102,9 @@ class AppendResult(BaseModel):
     duplicate: bool = False
 
 
-# 守卫：(会话, 主体, 本体, 规范化后的 payload, 对象当前状态) → 阻断原因列表（空 = 通过）
-Guard = Callable[[AsyncSession, Principal, Ontology, dict[str, Any], dict | None], Awaitable[list[str]]]
+# 守卫：(会话, 主体, 本体, 规范化 payload, 对象当前状态, *, object_id, data_mode)
+# 返回阻断原因列表（空 = 通过）
+Guard = Callable[..., Awaitable[list[str]]]
 
 
 class Ledger:
@@ -143,6 +144,20 @@ class Ledger:
         if evdef.evidence == "required" and not req.evidence:
             raise Invalid(f"“{evdef.name}”必须附证据（照片、文件或审批记录）")
 
+        creating = evdef.op == "create"
+        try:
+            payload = onto.check_payload(req.type, req.payload, creating=creating)
+        except OntologyError as e:
+            raise Invalid(str(e)) from e
+
+        object_id = req.object_id or (str(uuid.uuid4()) if creating else None)
+        if object_id is None:
+            raise Invalid("更新类事件必须给出 object_id")
+
+        # 先行锁租户计数器，再读幂等键、对象状态、跑守卫与评估 Policy，避免并发 TOCTOU 与投影丢更新；
+        # 校验或 Policy 未通过时事务回滚，last_seq 尚未递增，不产生序号空洞。
+        await _lock_tenant(session, tenant)
+
         if req.idempotency_key:
             prev = (
                 await session.execute(
@@ -154,7 +169,9 @@ class Ledger:
             if prev is not None:
                 if prev.type != req.type:
                     raise Conflict("幂等键已被另一类事件使用")
-                obj = await session.get(ObjectState, (tenant, prev.object_type, prev.object_id))
+                obj = await session.get(
+                    ObjectState, (tenant, prev.object_type, prev.object_id), populate_existing=True
+                )
                 return AppendResult(
                     event_id=prev.id,
                     seq=prev.seq,
@@ -164,16 +181,7 @@ class Ledger:
                     duplicate=True,
                 )
 
-        creating = evdef.op == "create"
-        try:
-            payload = onto.check_payload(req.type, req.payload, creating=creating)
-        except OntologyError as e:
-            raise Invalid(str(e)) from e
-
-        object_id = req.object_id or (str(uuid.uuid4()) if creating else None)
-        if object_id is None:
-            raise Invalid("更新类事件必须给出 object_id")
-        current = await session.get(ObjectState, (tenant, evdef.object, object_id))
+        current = await session.get(ObjectState, (tenant, evdef.object, object_id), populate_existing=True)
         if creating and current is not None:
             raise Conflict(f"{onto.objects[evdef.object].name} {object_id} 已存在")
         if not creating:
@@ -188,7 +196,15 @@ class Ledger:
 
         await self._check_refs(session, onto, tenant, evdef.object, payload, req.data_mode)
         for guard in self._guards.get(req.type, []):
-            problems = await guard(session, principal, onto, payload, current.state if current else None)
+            problems = await guard(
+                session,
+                principal,
+                onto,
+                payload,
+                current.state if current else None,
+                object_id=object_id,
+                data_mode=req.data_mode,
+            )
             if problems:
                 raise Invalid(f"不能记录“{evdef.name}”：" + "；".join(problems))
 
@@ -247,11 +263,26 @@ class Ledger:
             if val is None:
                 continue
             for to_id in val if prop.many else [val]:
-                target = await session.get(ObjectState, (tenant, prop.target, to_id))
+                target = await session.get(ObjectState, (tenant, prop.target, to_id), populate_existing=True)
                 if target is None:
                     raise Invalid(f"{prop.name}引用的{onto.objects[prop.target].name} {to_id} 不存在")
                 if data_mode == "real" and target.data_mode == "mock":
                     raise Invalid(f"真实数据不能引用模拟对象 {prop.target}/{to_id}")
+
+
+async def _lock_tenant(session: AsyncSession, tenant: str) -> None:
+    """在 PostgreSQL 上用 FOR UPDATE 锁住本租户计数器，使读投影/守卫/Policy 与写事件串行。"""
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    stmt = select(TenantCounter.last_seq).where(TenantCounter.tenant_id == tenant).with_for_update()
+    if (await session.execute(stmt)).scalar_one_or_none() is not None:
+        return
+    try:
+        async with session.begin_nested():
+            session.add(TenantCounter(tenant_id=tenant, last_seq=0))
+    except IntegrityError:
+        pass  # 并发下另一事务刚建好
+    await session.execute(stmt)
 
 
 async def _next_seq(session: AsyncSession, tenant: str) -> int:

@@ -37,7 +37,12 @@ class ShipCheck:
 
 
 async def check_shipment(
-    session: AsyncSession, tenant: str, cfg: OrdersConfig, payload: dict[str, Any]
+    session: AsyncSession,
+    tenant: str,
+    cfg: OrdersConfig,
+    payload: dict[str, Any],
+    *,
+    data_mode: str | None = None,
 ) -> ShipCheck:
     rules = cfg.shipping
     c = ShipCheck()
@@ -45,18 +50,23 @@ async def check_shipment(
     if order is None:
         c.problems.append(f"订单 {payload.get('order')} 不存在")
         return c
+    mode = data_mode or order.data_mode
     os_ = order.state
     unit = payload.get("unit") or os_.get("unit")
     qty = num(payload.get("qty"))
     if os_.get("status") in CLOSED:
         c.problems.append(f"订单已{'取消' if os_.get('status') == 'cancelled' else '关闭'}，不能发货")
+    if payload.get("status") not in (None, "in_transit"):
+        c.problems.append("发货初始状态必须是在途（in_transit），客户签收请走签收回执")
     if not cfg.same_unit(unit, os_.get("unit")):
         c.problems.append(f"发货单位 {unit} 和订单单位 {os_.get('unit')} 不同")
     if qty <= 0:
         c.problems.append("发货数量必须大于 0")
 
     # ---- 累计发货不超过订单数量（含容差） ----
-    shipments = await referrers(session, tenant, "shipment", "order", "sales_order", [order.object_id])
+    shipments = await referrers(
+        session, tenant, "shipment", "order", "sales_order", [order.object_id], data_mode=mode
+    )
     shipped = sum(
         num(s.state.get("qty"))
         for s in shipments
@@ -72,7 +82,7 @@ async def check_shipment(
     c.info["shipped_before"] = round(shipped, 3)
 
     # ---- 批次 ----
-    batch_ids: list[str] = list(payload.get("batches") or [])
+    batch_ids: list[str] = list(dict.fromkeys(payload.get("batches") or []))
     if not batch_ids:
         c.warnings.append("没有填发货批次：以后客户异议时追溯不到批次")
     good_total = 0.0
@@ -95,7 +105,7 @@ async def check_shipment(
             c.problems.append(f"批次 {bid} 已报废")
         elif rules.require_in_stock and st not in ("in_stock", "shipped"):
             c.problems.append(f"批次 {bid} 还没有入库")
-        insp = await final_inspection(session, tenant, bid)
+        insp = await final_inspection(session, tenant, bid, data_mode=mode)
         result = insp.state.get("result") if insp else None
         if result is None:
             msg = f"批次 {bid} 没有出厂检验记录"
@@ -125,8 +135,14 @@ async def check_shipment(
 
     # ---- 批次可发数量 = 合格数量 − 引用这些批次的未拒收发货（多批次合发时整单计入，偏保守） ----
     if batch_ids and units_ok:
-        used = await referrers(session, tenant, "shipment", "batches", "production_batch", batch_ids)
-        used_qty = sum(num(s.state.get("qty")) for s in used if s.state.get("status") != "refused")
+        used = await referrers(
+            session, tenant, "shipment", "batches", "production_batch", batch_ids, data_mode=mode
+        )
+        used_qty = sum(
+            num(s.state.get("qty"))
+            for s in used
+            if s.state.get("status") != "refused" and cfg.same_unit(s.state.get("unit"), unit)
+        )
         avail = good_total - used_qty
         c.info["batch_available"] = round(avail, 3)
         if qty > avail + 1e-9:
@@ -147,9 +163,12 @@ class ShipmentGuard:
         onto: Ontology,
         payload: dict[str, Any],
         state: dict[str, Any] | None,
+        *,
+        object_id: str = "",
+        data_mode: str = "real",
     ) -> list[str]:
         cfg = self.configs.get(principal.tenant_id)
         if cfg is None:
             return []
-        c = await check_shipment(session, principal.tenant_id, cfg, payload)
+        c = await check_shipment(session, principal.tenant_id, cfg, payload, data_mode=data_mode)
         return c.problems

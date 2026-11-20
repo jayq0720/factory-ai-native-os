@@ -67,6 +67,8 @@ async function login(key) {
 }
 
 function logout() {
+  clearTimeout(state.timer); state.timer = null;
+  if (state.imgUrl) { URL.revokeObjectURL(state.imgUrl); state.imgUrl = null; }
   store("del"); state.key = ""; state.cur = null;
   $("#app").hidden = true; $("#login").hidden = false; $("#logout").hidden = true; $("#b-trace").hidden = true; $("#who").textContent = "";
   $("#modes").replaceChildren(); $("#mock-banner").hidden = true;
@@ -126,16 +128,17 @@ async function uploadFiles(files) {
 // ---------------- 文档详情 ----------------
 
 async function openDoc(id) {
-  const d = await getJSON(`/v1/documents/${id}`);
+  const eid = encodeURIComponent(id);
+  const d = await getJSON(`/v1/documents/${eid}`);
   const same = state.cur && state.cur.id === id;
   state.cur = d;
   if (!same) { state.page = 1; state.hl = []; state.filter = "all"; setTabs(".filters", "all", "filter"); }
-  if (location.hash.slice(1) !== id) history.replaceState(null, "", "#" + id);
+  if (location.hash.slice(1) !== id) history.replaceState(null, "", "#" + eid);
   $("#empty").hidden = true; $("#doc").hidden = false;
   renderDocHead();
   renderDocs();
   if (d.status === "parsed") {
-    state.fields = await getJSON(`/v1/documents/${id}/fields`);
+    state.fields = await getJSON(`/v1/documents/${eid}/fields`);
     renderFields();
     loadEntry();
     if (!same) { state.tab = d.format === "pdf" || d.format === "image" ? "image" : "text"; setTabs(".tabs", state.tab, "tab"); }

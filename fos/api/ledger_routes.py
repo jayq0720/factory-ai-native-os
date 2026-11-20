@@ -90,6 +90,8 @@ async def append_event(
     from fos.api.inbox_routes import approval_out
     from fos.policy.approvals import send_notices
 
+    if body.data_mode == "mock" and request.app.state.settings.env == "prod":
+        raise HTTPException(403, detail="生产环境不允许写入模拟事件")
     ledger: Ledger = request.app.state.ledger
     try:
         res = await ledger.append(session, principal, body)

@@ -15,7 +15,7 @@ from fos.ontology import Ontology
 
 async def apply_event(session: AsyncSession, onto: Ontology, ev: Event, op: str) -> ObjectState:
     key = (ev.tenant_id, ev.object_type, ev.object_id)
-    obj = await session.get(ObjectState, key)
+    obj = await session.get(ObjectState, key, populate_existing=True)
     if op == "create":
         if obj is not None:
             raise RuntimeError(f"投影冲突：{key} 已存在")
@@ -61,7 +61,8 @@ async def _sync_links(session: AsyncSession, onto: Ontology, obj: ObjectState) -
         val = obj.state.get(rel)
         if val is None:
             continue
-        for to_id in val if prop.many else [val]:
+        targets = list(dict.fromkeys(val)) if prop.many else [val]
+        for to_id in targets:
             session.add(
                 ObjectLink(
                     tenant_id=obj.tenant_id,
@@ -76,6 +77,9 @@ async def _sync_links(session: AsyncSession, onto: Ontology, obj: ObjectState) -
 
 async def rebuild(session: AsyncSession, onto: Ontology, tenant_id: str) -> int:
     """清空该租户的投影并按 seq 重放全部事件。返回重放的事件数。"""
+    from fos.ledger.service import _lock_tenant
+
+    await _lock_tenant(session, tenant_id)
     await session.execute(delete(ObjectLink).where(ObjectLink.tenant_id == tenant_id))
     await session.execute(delete(ObjectState).where(ObjectState.tenant_id == tenant_id))
     await session.flush()

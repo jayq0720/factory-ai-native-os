@@ -178,6 +178,9 @@ impl ModbusPoint {
                         return Err("Modbus RTU 缺少 params.port（串口，例如 /dev/ttyUSB0）".into())
                     }
                 };
+                if raw.baud == 0 {
+                    return Err("baud 必须大于 0".into());
+                }
                 if !(5..=8).contains(&raw.data_bits) || !(1..=2).contains(&raw.stop_bits) {
                     return Err("data_bits 应为 5–8，stop_bits 应为 1 或 2".into());
                 }
@@ -191,8 +194,17 @@ impl ModbusPoint {
             }
             other => return Err(format!("{other:?} 不是 Modbus 驱动")),
         };
+        if raw.address == 0 || raw.address > 247 {
+            return Err("address 应在 1–247 之间".into());
+        }
         if raw.scale == 0.0 || !raw.scale.is_finite() {
-            return Err("scale 不能为 0".into());
+            return Err("scale 不能为 0 且必须是有限数字".into());
+        }
+        if !raw.offset.is_finite() {
+            return Err("offset 必须是有限数字".into());
+        }
+        if raw.bad_values.iter().any(|v| !v.is_finite()) {
+            return Err("bad_values 必须是有限数字".into());
         }
         Ok(ModbusPoint {
             link,
@@ -229,9 +241,16 @@ impl ModbusPoint {
         if !raw.is_finite() {
             return Ok((0.0, true));
         }
-        let bad = self.bad_values.iter().any(|b| (b - raw).abs() < 1e-9);
+        let tol = match self.data_type {
+            DataType::F32 => 1e-4_f64.max(raw.abs() * 1e-5),
+            _ => 1e-9,
+        };
+        let bad = self.bad_values.iter().any(|b| (b - raw).abs() <= tol);
         // 去掉 0.1 之类倍率带来的浮点尾数
         let v = ((raw * self.scale + self.offset) * 1e6).round() / 1e6;
+        if !v.is_finite() {
+            return Ok((0.0, true));
+        }
         Ok((v, bad))
     }
 }
@@ -323,10 +342,8 @@ impl Bus {
             }
             Ok(Ok(Ok(words))) => return p.decode(&words),
         };
-        // 超时或通讯错误：丢掉连接，下次重连（RS485 上一个仪表坏了不影响其他地址）
-        if matches!(self.link, Link::Tcp { .. }) {
-            self.ctx = None;
-        }
+        // 超时或通讯错误：无论 TCP 还是 RTU 均重开连接，避免串口热拔插失效或迟到残帧错位串值
+        self.ctx = None;
         res
     }
 }

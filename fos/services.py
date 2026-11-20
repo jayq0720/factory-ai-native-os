@@ -11,6 +11,7 @@ from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
 from fos.db.session import make_engine, make_sessionmaker
 from fos.engineering.config import EngineeringConfig, check_engineering, load_engineering
+from fos.engineering.service import QUOTE_EVENT, EngQuoteGuard
 from fos.entry.spec import check_entry
 from fos.extraction.schema import ExtractionSchema, load_schemas
 from fos.extraction.service import Extractor
@@ -38,9 +39,10 @@ from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
 from fos.supply import tools as supply_tools  # noqa: F401  注册采购仓储工具
 from fos.supply.config import SupplyConfig, load_supply_config
-from fos.supply.guards import COUNT_EVENT, ISSUE_EVENT, RECEIVE_EVENT, RETURN_EVENT, SupplyGuard
+from fos.supply.guards import COUNT_EVENT, ISSUE_EVENT, PO_EVENT, RECEIVE_EVENT, RETURN_EVENT, SupplyGuard
 from fos.tenancy import TenantRegistry
 from fos.tender.config import TenderConfig, load_tender_config
+from fos.tender.service import SUBMIT_EVENT, TenderSubmitGuard
 from fos.tools import builtin  # noqa: F401  注册内置工具
 from fos.tools.registry import REGISTRY
 from fos.triggers.intake import TriggerIntake
@@ -110,14 +112,17 @@ class Services:
             if (t := registry.get(tid)) is not None and "kiln_plan" in ontologies[tid].objects
         }
         ledger.add_guard(RUN_EVENT, PlannedRunGuard(orders))
-        # 采购与仓储（W17）：领料 / 退料 / 盘点、按采购单到货的跨对象校验注册为账本守卫
+        # 采购与仓储（W17）：领料 / 退料 / 盘点、按采购单到货及采购下单的跨对象校验注册为账本守卫
         supply = {
             tid: load_supply_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
             for tid in registry.ids()
             if (t := registry.get(tid)) is not None and "stock_move" in ontologies[tid].objects
         }
-        for ev in (ISSUE_EVENT, RETURN_EVENT, COUNT_EVENT, RECEIVE_EVENT):
+        for ev in (ISSUE_EVENT, RETURN_EVENT, COUNT_EVENT, RECEIVE_EVENT, PO_EVENT):
             ledger.add_guard(ev, SupplyGuard(ev, supply, orders))
+        # 工程报价发布与招标提交守卫：防止绕过业务接口直接 POST /v1/events 伪造毛利率或红线字段
+        ledger.add_guard(QUOTE_EVENT, EngQuoteGuard())
+        ledger.add_guard(SUBMIT_EVENT, TenderSubmitGuard())
         approvals = ApprovalService(registry=registry, ontologies=ontologies, ledger=ledger)
         skills = {
             tid: load_skills(t, packs_dir=settings.packs_dir, ontology=ontologies[tid], tools=set(REGISTRY))
