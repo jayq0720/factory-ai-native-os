@@ -1,0 +1,28 @@
+# 耐火材料行业财务集成与成本核算配置（W23）。
+# 科目编码、税率、能源单价与分摊费率均可由租户在 tenants/<id>/finance.yaml 覆盖。
+
+vat_rate: 0.13
+
+accounts:
+  bank: {code: "1002", name: "银行存款"}
+  ar: {code: "1122", name: "应收账款"}
+  ap: {code: "2202", name: "应付账款"}
+  revenue: {code: "6001", name: "主营业务收入"}
+  tax_out: {code: "2221.01.05", name: "应交税费-应交增值税(销项税额)"}
+  tax_in: {code: "2221.01.01", name: "应交税费-应交增值税(进项税额)"}
+  raw_material: {code: "1403", name: "原材料"}
+  wip: {code: "5001", name: "生产成本"}
+  finished_goods: {code: "1405", name: "库存商品"}
+  mfg_overhead: {code: "5101", name: "制造费用"}
+
+costing:
+  electricity_yuan_per_kwh: 0.78
+  gas_yuan_per_m3: 3.6
+  labor_yuan_per_unit: 1.2
+  overhead_yuan_per_unit: 1.5
+
+aging_buckets_days: [30, 60, 90]
+
+reminders:
+  remind_before_days: 7
+  notify_roles: [finance, sales]

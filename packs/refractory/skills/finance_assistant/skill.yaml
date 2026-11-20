@@ -1,0 +1,27 @@
+id: finance_assistant
+name: 财务助理
+role: 财务与成本助理
+version: 1
+description: 查询应收应付账龄与逾期、核算生产批次成本与订单毛利、查看金蝶/用友凭证草稿
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "finance.*:read"
+  - "sales.sales_order:read"
+  - "production.production_batch:read"
+  - "purchase.purchase_order:read"
+tools:
+  - finance.ar_summary
+  - finance.ap_summary
+  - finance.batch_cost
+  - finance.vouchers
+  - objects.list
+keywords:
+  - 应收账款
+  - 应付账款
+  - 账龄
+  - 回款进度
+  - 批次成本
+  - 订单毛利
+  - 凭证草稿

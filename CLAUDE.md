@@ -40,6 +40,7 @@
 - `fos/monitoring/edge.py`：云端给 fos-edge 的签名只读命令（W21）。排队（`edge_commands` 表，迁移 0011）→ 随上行回执签名下发（私钥 `FOS_EDGE_COMMAND_KEY`，`fos edge-keygen` 生成）→ 收结果；厂端状态存 `edge_batches.status`，Watchdog 定时要状态、积压 / 被拒批次告警；API `/v1/edge/gateways`、`/v1/edge/commands`（权限 `production.edge:*`）
 - `fos/quality/`：质量体系（W22）。`judge.py` 理化指标确定性判定、`guards.py` NCR/8D 与计量校准账本守卫、`service.py` 待检任务队列 / 自动开 NCR / 8D 追溯草稿 / 处置与让步审批 / 质保书 / 计量器具校准提醒 / ISO 9001 审核证据包、`export.py` 质保书 Word/Excel 与 ISO 证据包 Excel、`cards.py` IM「待检」「不合格」「校准」「质保书 <批号>」、`tools.py` 质检员只读工具；本体 `packs/<pack>/ontology/quality.yaml`，配置 `packs/<pack>/quality.yaml`，Skill `packs/<pack>/skills/quality_inspector/`；API `/v1/quality/*`，网页 `/app/quality.html`；说明见 `docs/quality.md`
 - `fos/channels/{feishu,wecom}.py`：飞书与企业微信 IM 适配器（W22b）。飞书支持 SHA-256 验签、AES-256-CBC 解密、原生 JSON 互动卡片与附件下载；企业微信支持 WXBizMsgCrypt（SHA-1 + AES-256-CBC）、安全 XML 解析（防 XXE）、模板卡片回调与 Markdown 降级；回调入口 `POST /v1/channels/feishu/{tenant}/webhook`、`GET/POST /v1/channels/wecom/{tenant}/webhook`；同租户支持多 IM 并行（按 `(tenant_id, channel)` 隔离缓存）；说明见 `docs/channels.md`
+- `fos/finance/`：财务集成与成本核算（W23）。`costing.py` 确定性批次成本（领料净耗 + 窑次能耗分摊 + 人工与制造费用）、订单毛利与价税分离，`guards.py` 防超收/超付与复式借贷平衡账本守卫，`service.py` 应收/应付账龄、大额付款审批、凭证草稿生成与过账、正式往来对账单与逾期去重提醒，`export.py` 金蝶/用友/通用凭证与对账单 Excel 导出（禁模拟数据），`cards.py` IM「应收」「应付」「成本 <批号>」「凭证」，`tools.py` 财务只读工具；本体 `packs/<pack>/ontology/finance.yaml`，配置 `packs/<pack>/finance.yaml`，Skill `packs/<pack>/skills/finance_assistant/`；API `/v1/finance/*`，网页 `/app/finance.html`；说明见 `docs/finance.md`
 
 ## 规则（不要破坏）
 

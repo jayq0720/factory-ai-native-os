@@ -64,7 +64,8 @@ roles:
     permissions: ["production.edge_uplink:write"]
   finance:
     name: 财务
-    permissions: ["finance.*:read", "finance.*:write", "doc.document:read", "doc.document:write"]
+    permissions: ["finance.*:read", "finance.*:write", "sales.*:read", "purchase.*:read",
+                  "warehouse.*:read", "production.*:read", "doc.document:read", "doc.document:write"]
 
 # 每类动作 Agent 最多能做到的自治级别（方案 2.7）
 autonomy:

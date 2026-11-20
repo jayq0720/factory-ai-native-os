@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>财务与成本核算 · Factory AI Native OS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <strong>Factory AI Native OS</strong>
+      <a href="/app/">工作台</a>
+      <a href="/app/orders.html">订单</a>
+      <a href="/app/supply.html">采购仓储</a>
+      <a href="/app/quality.html">质量体系</a>
+      <a href="/app/finance.html"><strong>财务成本</strong></a>
+      <span id="who" class="muted" style="margin-left:auto"></span>
+    </div>
+  </header>
+
+  <main style="max-width:1180px;margin:1rem auto;padding:0 1rem">
+    <section class="card">
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <label>API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
+        <button id="btnLoad">刷新看板</button>
+        <button id="btnExportKingdee">导出金蝶凭证 (.xlsx)</button>
+        <button id="btnExportYonyou">导出用友凭证 (.xlsx)</button>
+        <button id="btnRemind">生成逾期提醒</button>
+        <span id="msg" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>应收账款（AR）与账龄</h2>
+      <div id="arSummary" class="muted">加载中...</div>
+      <table id="arTable" style="width:100%;margin-top:.5rem">
+        <thead>
+          <tr><th>单号</th><th>客户</th><th>订单</th><th>含税金额</th><th>已收</th><th>未收余额</th><th>到期日</th><th>逾期</th><th>发票号</th><th>状态</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>应付账款（AP）</h2>
+      <div id="apSummary" class="muted">加载中...</div>
+      <table id="apTable" style="width:100%;margin-top:.5rem">
+        <thead>
+          <tr><th>单号</th><th>供应商</th><th>采购单</th><th>含税金额</th><th>已付</th><th>未付余额</th><th>到期日</th><th>逾期</th><th>状态</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>批次成本 / 订单毛利核算（确定性计算）</h2>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+        <input id="costBatchId" placeholder="输入生产批号，如 B-001" />
+        <button id="btnBatchCost">核算批次成本</button>
+        <input id="costOrderId" placeholder="输入销售订单号，如 SO-001" />
+        <button id="btnOrderMargin">核算订单毛利</button>
+      </div>
+      <pre id="costOut" style="white-space:pre-wrap;background:#f8f9fa;padding:.75rem;border-radius:6px"></pre>
+    </section>
+
+    <section class="card">
+      <h2>凭证草稿台账</h2>
+      <table id="voucherTable" style="width:100%">
+        <thead>
+          <tr><th>凭证草稿号</th><th>日期</th><th>来源</th><th>摘要</th><th>借方合计</th><th>贷方合计</th><th>目标软件</th><th>状态</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="finance.js"></script>
+</body>
+</html>
