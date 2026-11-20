@@ -246,8 +246,7 @@ def build_template_card(card: Card, *, card_id: str, short_code: str) -> dict[st
         desc = f"【模拟数据】{desc}"[:200]
     h_list = [{"keyname": f.label[:5], "value": f.value[:30]} for f in card.fields[:6]]
     buttons = [
-        {"text": b.label[:10], "style": style_map.get(b.style, 2), "key": b.id[:32]}
-        for b in card.buttons[:6]
+        {"text": b.label[:10], "style": style_map.get(b.style, 2), "key": b.id[:32]} for b in card.buttons[:6]
     ]
     sub_text = card.footer or (f"备用文字指令：确认 {short_code}" if short_code else "")
     out: dict[str, Any] = {
