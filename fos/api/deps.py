@@ -43,11 +43,11 @@ async def get_principal(request: Request, session: SessionDep, registry: Registr
     found = await apikeys.verify(session, token.strip())
     if not found:
         raise _UNAUTH
-    _, user = found
+    key, user = found
     tenant = registry.get(user.tenant_id)
     if tenant is None:  # 租户配置被移除：一律拒绝
         raise _UNAUTH
-    return principal_for_user(user, tenant)
+    return principal_for_user(user, tenant, edge_id=key.edge_id)
 
 
 PrincipalDep = Annotated[Principal, Depends(get_principal)]

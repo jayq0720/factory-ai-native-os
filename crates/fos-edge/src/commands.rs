@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
-use ed25519_dalek::{Signature, Verifier as _, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 use fos_protocol::{CommandResult, EdgeCommand, SignedCommand, PROTOCOL_VERSION};
 
 /// 命令最长有效期。云端签发时应远小于它（例如 5 分钟）。
@@ -23,8 +23,12 @@ pub fn parse_public_key(b64: &str) -> Result<VerifyingKey, String> {
     let arr: [u8; 32] = bytes
         .try_into()
         .map_err(|_| "command_public_key 应为 32 字节的 Ed25519 公钥".to_string())?;
-    VerifyingKey::from_bytes(&arr)
-        .map_err(|_| "command_public_key 不是有效的 Ed25519 公钥".to_string())
+    let vk = VerifyingKey::from_bytes(&arr)
+        .map_err(|_| "command_public_key 不是有效的 Ed25519 公钥".to_string())?;
+    if vk.is_weak() {
+        return Err("command_public_key 是弱公钥，已拒绝".to_string());
+    }
+    Ok(vk)
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -63,6 +67,13 @@ impl Verifier {
         }
     }
 
+    /// 启动时从 SQLite 缓存加载未过重放窗口的命令记录，防止重启后被重放。
+    pub fn load_seen(&mut self, rows: Vec<(String, i64, Option<CommandResult>)>) {
+        for (id, exp, res) in rows {
+            self.seen.insert(id, (exp, res));
+        }
+    }
+
     pub fn verify<'a>(
         &mut self,
         c: &'a SignedCommand,
@@ -78,7 +89,7 @@ impl Verifier {
         if c.expires_ms <= now_ms {
             return Err(Rejected::Expired);
         }
-        if c.expires_ms - now_ms > MAX_TTL_MS {
+        if c.expires_ms.saturating_sub(now_ms) > MAX_TTL_MS {
             return Err(Rejected::TtlTooLong);
         }
         let sig = B64
@@ -86,9 +97,10 @@ impl Verifier {
             .ok()
             .and_then(|b| Signature::from_slice(&b).ok())
             .ok_or(Rejected::BadSignature)?;
-        key.verify(&c.signing_bytes(), &sig)
+        key.verify_strict(&c.signing_bytes(), &sig)
             .map_err(|_| Rejected::BadSignature)?;
-        self.seen.retain(|_, (exp, _)| *exp + MAX_TTL_MS > now_ms);
+        self.seen
+            .retain(|_, (exp, _)| exp.saturating_add(MAX_TTL_MS) > now_ms);
         if self.seen.contains_key(&c.command_id) {
             return Err(Rejected::Replay);
         }

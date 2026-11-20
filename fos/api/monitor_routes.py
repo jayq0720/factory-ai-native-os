@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat
 from sqlalchemy import select
 
 from fos.api.deps import SessionDep, require
@@ -28,6 +28,7 @@ router = APIRouter(prefix="/v1")
 Reader = Annotated[Principal, Depends(require("production.kiln:read"))]
 Writer = Annotated[Principal, Depends(require("production.kiln:write"))]
 Recorder = Annotated[Principal, Depends(require("production.reading:write"))]
+EdgeUplink = Annotated[Principal, Depends(require("production.edge_uplink:write"))]
 Admin = Annotated[Principal, Depends(require("production.monitor_point:write"))]
 EdgeReader = Annotated[Principal, Depends(require("production.edge:read"))]
 EdgeOperator = Annotated[Principal, Depends(require("production.edge:write"))]
@@ -51,7 +52,7 @@ _ERRORS = (ms.MonitorError, Forbidden, NotFound, Conflict, Invalid, ApprovalRequ
 
 
 @router.post("/edge/uplink")
-async def uplink(batch: ms.UplinkIn, request: Request, session: SessionDep, p: Recorder) -> dict[str, Any]:
+async def uplink(batch: ms.UplinkIn, request: Request, session: SessionDep, p: EdgeUplink) -> dict[str, Any]:
     """fos-edge 上行一批读数（crates/fos-protocol 的 UplinkBatch）。重复的 (edge_id, seq) 返回 duplicate。
 
     回执（UplinkAck）里顺带下发排队中的签名只读命令；批次里的命令结果在这里收。
@@ -118,10 +119,10 @@ async def cancel_command(
 
 class ManualIn(BaseModel):
     point: str = Field(min_length=1, max_length=64)  # 测点编号 / 名称
-    value: float
+    value: FiniteFloat
     ts: datetime | None = None
     evidence: str | None = Field(default=None, max_length=512)  # 仪表照片的对象键
-    confidence: float | None = Field(default=None, ge=0, le=1)
+    confidence: FiniteFloat | None = Field(default=None, ge=0, le=1)
     quality: Literal["good", "estimated"] = "good"
 
 
@@ -130,6 +131,8 @@ async def manual_reading(
     body: ManualIn, request: Request, session: SessionDep, p: Recorder
 ) -> dict[str, Any]:
     """路径 C：人工抄表 / 照片读数（数值由抄表人确认后提交）。"""
+    if p.edge_id is not None:
+        raise HTTPException(403, detail="网关专用 API Key 不能用于人工抄表")
     _cfg(request, p)
     try:
         pt, row = await ms.record_manual(

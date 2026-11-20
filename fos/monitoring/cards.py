@@ -28,7 +28,7 @@ def _point_line(p: dict[str, Any]) -> str:
     if r is None:
         return f"{p['source_name']}，还没有读数"
     s = f"{_v(r['value'])}{p['unit']}"
-    if p["expected"] is not None:
+    if p["expected"] is not None and p["deviation"] is not None:
         s += f"（目标 {_v(p['expected'])}，偏差 {p['deviation']:+.0f}）"
     age = p["age_minutes"]
     s += f"，{_v(age)} 分钟前" if age and age >= 1 else "，刚刚"
@@ -41,7 +41,11 @@ def _point_line(p: dict[str, Any]) -> str:
 
 def _headline(k: dict[str, Any]) -> str:
     run = k["run"]
-    temps = [p for p in k["points"] if p["kind"] == "temperature" and p["latest"]]
+    temps = [
+        p
+        for p in k["points"]
+        if p["kind"] == "temperature" and p["latest"] and p["latest"].get("quality") != "bad"
+    ]
     top = max(temps, key=lambda p: p["latest"]["value"], default=None)
     s = f"在烧 {run['run_no']}，第 {_v(run['hours'])} 小时" if run else "未在烧"
     if run and run["curve"]:

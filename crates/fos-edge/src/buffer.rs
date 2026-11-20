@@ -7,11 +7,16 @@
 //! - 被云端判为格式错误的批次标 `rejected`，不阻塞后面的数据，也不删除，可用 `fos-edge resend` 重新排队。
 
 use std::path::Path;
+use std::time::Duration;
 
-use fos_protocol::Reading;
+use fos_protocol::{CommandResult, Reading};
 use rusqlite::{params, Connection, OptionalExtension};
 
 const DAY_MS: i64 = 86_400_000;
+
+fn to_i64(v: u64) -> Result<i64, BufferError> {
+    i64::try_from(v).map_err(|_| BufferError::Mismatch(format!("序号超出范围：{v}")))
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum BufferError {
@@ -67,6 +72,7 @@ impl Buffer {
         edge_id: &str,
         now_ms: i64,
     ) -> Result<Self, BufferError> {
+        conn.busy_timeout(Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         // 断电时最多丢最后一个事务，不会损坏文件
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -81,7 +87,12 @@ impl Buffer {
                  done_ms INTEGER,
                  note TEXT
              );
-             CREATE INDEX IF NOT EXISTS batches_state ON batches (state, seq);",
+             CREATE INDEX IF NOT EXISTS batches_state ON batches (state, seq);
+             CREATE TABLE IF NOT EXISTS seen_commands (
+                 command_id TEXT PRIMARY KEY,
+                 expires_ms INTEGER NOT NULL,
+                 result_json TEXT
+             );",
         )?;
         let b = Buffer { conn };
         for (k, v) in [("tenant_id", tenant_id), ("edge_id", edge_id)] {
@@ -126,10 +137,14 @@ impl Buffer {
             })?
             .parse()
             .map_err(|_| BufferError::Mismatch("next_seq 损坏".into()))?;
+        let seq_i64 = to_i64(seq)?;
+        let next_seq = seq
+            .checked_add(1)
+            .ok_or_else(|| BufferError::Mismatch("next_seq 溢出".into()))?;
         tx.execute(
             "INSERT INTO batches (seq, created_ms, n, readings) VALUES (?1, ?2, ?3, ?4)",
             params![
-                seq as i64,
+                seq_i64,
                 now_ms,
                 readings.len() as i64,
                 serde_json::to_string(readings)?
@@ -137,36 +152,50 @@ impl Buffer {
         )?;
         tx.execute(
             "UPDATE meta SET value = ?1 WHERE key = 'next_seq'",
-            [(seq + 1).to_string()],
+            [next_seq.to_string()],
         )?;
         tx.commit()?;
         Ok(seq)
     }
 
-    /// 最早的待上行批次。
+    /// 最早的待上行批次。如果某条记录 JSON 损坏，自动隔离为 rejected 防止队头阻塞。
     pub fn next_pending(&self) -> Result<Option<Pending>, BufferError> {
-        let row = self
-            .conn
-            .query_row(
-                "SELECT seq, created_ms, readings FROM batches WHERE state = 'pending' ORDER BY seq LIMIT 1",
-                [],
-                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)),
-            )
-            .optional()?;
-        match row {
-            None => Ok(None),
-            Some((seq, created_ms, j)) => Ok(Some(Pending {
-                seq: seq as u64,
-                created_ms,
-                readings: serde_json::from_str(&j)?,
-            })),
+        loop {
+            let row = self
+                .conn
+                .query_row(
+                    "SELECT seq, created_ms, readings FROM batches WHERE state = 'pending' ORDER BY seq LIMIT 1",
+                    [],
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)),
+                )
+                .optional()?;
+            let Some((seq, created_ms, j)) = row else {
+                return Ok(None);
+            };
+            match serde_json::from_str::<Vec<Reading>>(&j) {
+                Ok(readings) => {
+                    return Ok(Some(Pending {
+                        seq: seq as u64,
+                        created_ms,
+                        readings,
+                    }));
+                }
+                Err(e) => {
+                    let note = format!("本地缓存 JSON 损坏，已隔离：{e}");
+                    tracing::error!(seq, "{note}");
+                    self.conn.execute(
+                        "UPDATE batches SET state = 'rejected', done_ms = ?2, note = ?3 WHERE seq = ?1",
+                        params![seq, created_ms, note],
+                    )?;
+                }
+            }
         }
     }
 
     pub fn mark_sent(&self, seq: u64, now_ms: i64) -> Result<(), BufferError> {
         self.conn.execute(
             "UPDATE batches SET state = 'sent', done_ms = ?2, note = NULL WHERE seq = ?1",
-            params![seq as i64, now_ms],
+            params![to_i64(seq)?, now_ms],
         )?;
         Ok(())
     }
@@ -174,7 +203,7 @@ impl Buffer {
     pub fn mark_rejected(&self, seq: u64, now_ms: i64, note: &str) -> Result<(), BufferError> {
         self.conn.execute(
             "UPDATE batches SET state = 'rejected', done_ms = ?2, note = ?3 WHERE seq = ?1",
-            params![seq as i64, now_ms, note],
+            params![to_i64(seq)?, now_ms, note],
         )?;
         Ok(())
     }
@@ -182,11 +211,62 @@ impl Buffer {
     /// 把 `from_seq` 及之后已发 / 被拒的批次重新排队（云端 Resend 命令或 `fos-edge resend`）。
     /// 已发的批次重发时云端按序号判重，不会重复入库。返回重新排队的批次数。
     pub fn requeue_from(&self, from_seq: u64) -> Result<u64, BufferError> {
+        let from_i64 = to_i64(from_seq)?;
         let n = self.conn.execute(
             "UPDATE batches SET state = 'pending', done_ms = NULL WHERE seq >= ?1 AND state != 'pending'",
-            [from_seq as i64],
+            [from_i64],
         )?;
         Ok(n as u64)
+    }
+
+    /// 持久化已执行的命令记录（重启后依然防重放、且能重报上次结果）。
+    pub fn save_seen_command(
+        &self,
+        command_id: &str,
+        expires_ms: i64,
+        result: Option<&CommandResult>,
+    ) -> Result<(), BufferError> {
+        let rj = result.map(serde_json::to_string).transpose()?;
+        self.conn.execute(
+            "INSERT INTO seen_commands (command_id, expires_ms, result_json) VALUES (?1, ?2, ?3)
+             ON CONFLICT (command_id) DO UPDATE SET
+                 expires_ms = excluded.expires_ms,
+                 result_json = COALESCE(excluded.result_json, seen_commands.result_json)",
+            params![command_id, expires_ms, rj],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_seen_commands(
+        &self,
+        now_ms: i64,
+        window_ms: i64,
+    ) -> Result<Vec<(String, i64, Option<CommandResult>)>, BufferError> {
+        let cutoff = now_ms.saturating_sub(window_ms);
+        let mut st = self.conn.prepare(
+            "SELECT command_id, expires_ms, result_json FROM seen_commands WHERE expires_ms > ?1",
+        )?;
+        let rows = st.query_map([cutoff], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, exp, rj) = row?;
+            let res = rj.and_then(|s| serde_json::from_str::<CommandResult>(&s).ok());
+            out.push((id, exp, res));
+        }
+        Ok(out)
+    }
+
+    pub fn prune_seen_commands(&self, now_ms: i64, window_ms: i64) -> Result<(), BufferError> {
+        let cutoff = now_ms.saturating_sub(window_ms);
+        self.conn
+            .execute("DELETE FROM seen_commands WHERE expires_ms <= ?1", [cutoff])?;
+        Ok(())
     }
 
     /// 清理：已发的留 1 天，被拒的和未发的留 `buffer_days` 天。返回因超期被丢弃的未发读数条数。

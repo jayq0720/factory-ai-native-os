@@ -92,6 +92,7 @@ async def conditions(
     kilns = {o.object_id: o for o in await ms.objects(session, tenant_id, "kiln")}
     runs = await ms.firing_runs(session, tenant_id)
     edges = await ms.edge_last_seen(session, tenant_id)
+    kiln_has_curve_role = {p.kiln for p in pts if p.kiln and p.kind == "temperature" and p.curve_role}
     out: list[Condition] = []
     reminders: list[Reminder] = []
     offline: dict[str, list[ms.Point]] = {}
@@ -110,7 +111,10 @@ async def conditions(
             if needs and due is not None and now >= due + timedelta(minutes=a.manual_grace_minutes):
                 reminders.append(Reminder(p, due, kname))
             elif needs and due is None and last_ts is None:
-                reminders.append(Reminder(p, now.replace(minute=0, second=0, microsecond=0), kname))
+                # 按采样周期分桶，避免 24 小时抄一次的总表每小时都重复提醒
+                step = max(p.interval_s, 60)
+                bucket_s = (int(now.timestamp()) // step) * step
+                reminders.append(Reminder(p, ms.from_ms(bucket_s * 1000), kname))
         else:
             seen = edges.get(p.edge_id) if p.edge_id else None
             if p.edge_id and (seen is None or now - seen > timedelta(minutes=a.edge_offline_minutes)):
@@ -142,9 +146,9 @@ async def conditions(
                 continue
         if last is None:
             continue
-        # —— 上下限 / 曲线：取最近一段读数，看“现在”是否处在一段持续超出里 ——
+        # —— 上下限 / 曲线：取最近一段读数（含 5 分钟网关时钟前偏余量），看“现在”是否处在一段持续超出里 ——
         window = timedelta(minutes=max(a.limit_minutes, a.deviation_minutes) + 1) + interval * a.stale_factor
-        rows = await ms.samples(session, tenant_id, p.code, now - window, now)
+        rows = await ms.samples(session, tenant_id, p.code, now - window, now + timedelta(minutes=5))
         ss = [s for s, _ in rows]
         mode = "mock" if p.data_mode == "mock" or any(m == "mock" for _, m in rows) else "real"
         gap = interval * a.stale_factor
@@ -173,6 +177,8 @@ async def conditions(
                 )
             )
         if run is None or p.kind != "temperature":
+            continue
+        if p.kiln in kiln_has_curve_role and not p.curve_role:
             continue
         code, curve, _ = await ms.curve_for_run(session, tenant_id, cfg, run)
         if curve is None:
@@ -287,14 +293,17 @@ async def evaluate(
     conds, reminders = await conditions(session, tenant_id, cfg, now, tz)
     current = {c.key: c for c in conds}
     res = Round(reminders=reminders)
-    opened = {a.key: a for a in await ms.open_alarms(session, tenant_id)}
-    for key, a in opened.items():
+    opened: dict[str, list[KilnAlarm]] = {}
+    for a in await ms.open_alarms(session, tenant_id):
+        opened.setdefault(a.key, []).append(a)
+    for key, alist in opened.items():
         if key not in current:
-            a.status, a.closed_at = "closed", now
-            res.closed.append(a)
+            for a in alist:
+                a.status, a.closed_at = "closed", now
+                res.closed.append(a)
     for key, c in current.items():
-        a = opened.get(key)
-        if a is None:
+        alist = opened.get(key)
+        if not alist:
             a = KilnAlarm(
                 tenant_id=tenant_id,
                 key=key,
@@ -310,10 +319,16 @@ async def evaluate(
                 started_at=now,
                 last_seen_at=now,
             )
-            session.add(a)
+            try:
+                async with session.begin_nested():
+                    session.add(a)
+            except IntegrityError:
+                # 并发 Watchdog 实例已打开同一告警
+                continue
             res.opened.append(a)
             res.push.append(a)
             continue
+        a = alist[0]
         a.message, a.detail, a.last_seen_at = c.message[:500], c.detail, now
         repeat = timedelta(minutes=cfg.notify.repeat_minutes)
         if a.acked_at is None and (a.notified_at is None or now - ms.aware(a.notified_at) >= repeat):
@@ -357,9 +372,10 @@ async def watch_once(
         thread_id = await _thread(session, tenant_id)
         if res.push:
             roles = await role_identities(session, tenant_id, cfg.notify.alarm_roles, adapter.name)
-            for a in res.push:
-                a.notified_at = now
-                outbox += [(dm(i), alarm_text(a)) for _, i in roles]
+            if roles:
+                for a in res.push:
+                    a.notified_at = now
+                    outbox += [(dm(i), alarm_text(a)) for _, i in roles]
         due = []
         for r in res.reminders:
             trig = Trigger(

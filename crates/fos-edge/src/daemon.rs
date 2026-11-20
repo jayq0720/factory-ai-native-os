@@ -174,6 +174,11 @@ impl Shared {
         }
     }
 
+    fn has_forced(&self, ids: &[&str]) -> bool {
+        let f = self.forced.lock().unwrap_or_else(|e| e.into_inner());
+        ids.iter().any(|i| f.contains(*i))
+    }
+
     fn take_forced(&self, ids: &[&str]) -> HashSet<String> {
         let mut f = self.forced.lock().unwrap_or_else(|e| e.into_inner());
         let hit: HashSet<String> = ids
@@ -307,6 +312,10 @@ async fn bus_task(
                 return;
             }
         }
+        // 在注册 notified 之前先检查是否有刚到达的 ReadNow，避免 notify_waiters 唤醒丢失
+        if shared.has_forced(&ids) {
+            continue;
+        }
         let next = due
             .iter()
             .min()
@@ -326,32 +335,45 @@ async fn batch_task(
     shared: Arc<Shared>,
     timing: Timing,
     max_batch: usize,
-    mut stop: watch::Receiver<bool>,
 ) {
     let mut pending: Vec<Reading> = Vec::new();
     let mut last = Instant::now();
     let mut tick = tokio::time::interval(timing.flush);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let flush = |pending: &mut Vec<Reading>, last: &mut Instant| {
-        let r = shared.buffer().enqueue(pending, now_ms());
-        match r {
-            Ok(_) => {
-                pending.clear();
-                *last = Instant::now();
-                shared.uplink_wake.notify_one();
+        if pending.is_empty() {
+            match shared.buffer().enqueue(&[], now_ms()) {
+                Ok(_) => {
+                    *last = Instant::now();
+                    shared.uplink_wake.notify_one();
+                }
+                Err(e) => tracing::error!("写心跳缓存失败：{e}"),
             }
-            Err(e) => {
-                tracing::error!("写缓存失败（磁盘满？）：{e}；读数先留在内存");
-                // 内存里最多留 10 批，再多就丢最早的，保住进程
-                let cap = max_batch * 10;
-                if pending.len() > cap {
-                    let drop = pending.len() - cap;
-                    tracing::error!("内存积压超限，丢弃最早的 {drop} 条读数");
-                    pending.drain(..drop);
+            return;
+        }
+        while !pending.is_empty() {
+            let n = pending.len().min(max_batch);
+            match shared.buffer().enqueue(&pending[..n], now_ms()) {
+                Ok(_) => {
+                    pending.drain(..n);
+                    *last = Instant::now();
+                    shared.uplink_wake.notify_one();
+                }
+                Err(e) => {
+                    tracing::error!("写缓存失败（磁盘满？）：{e}；读数先留在内存");
+                    // 内存里最多留 10 批，再多就丢最早的，保住进程
+                    let cap = max_batch * 10;
+                    if pending.len() > cap {
+                        let drop = pending.len() - cap;
+                        tracing::error!("内存积压超限，丢弃最早的 {drop} 条读数");
+                        pending.drain(..drop);
+                    }
+                    break;
                 }
             }
         }
     };
+    // 所有 bus_task 退出并 drop(tx) 后 rx.recv() 返回 None，确保在途读数全部落盘
     loop {
         tokio::select! {
             r = rx.recv() => match r {
@@ -369,12 +391,7 @@ async fn batch_task(
                 }
             }
             _ = shared.flush_now.notified() => flush(&mut pending, &mut last),
-            _ = stop.changed() => break,
         }
-    }
-    // 退出前把收到的读数都落盘
-    while let Ok(r) = rx.try_recv() {
-        pending.push(r);
     }
     if !pending.is_empty() {
         flush(&mut pending, &mut last);
@@ -391,19 +408,31 @@ async fn uplink_task<U: Uplink>(
     mut stop: watch::Receiver<bool>,
 ) {
     let mut backoff = timing.retry_min;
-    let mut last_prune = Instant::now() - timing.prune_every;
+    // 用 Option<Instant> 避免工控机刚开机（uptime < prune_every）时 Instant 减法下溢 panic
+    let mut last_prune: Option<Instant> = None;
     let mut failing_since: Option<i64> = None;
     let mut logged_rejects: HashMap<String, String> = HashMap::new();
     loop {
         if *stop.borrow() {
             return;
         }
-        if last_prune.elapsed() >= timing.prune_every {
-            last_prune = Instant::now();
-            match shared.buffer().prune(now_ms(), buffer_days) {
+        let due_prune = match last_prune {
+            None => true,
+            Some(t) => t.elapsed() >= timing.prune_every,
+        };
+        if due_prune {
+            last_prune = Some(Instant::now());
+            let now = now_ms();
+            match shared.buffer().prune(now, buffer_days) {
                 Ok(0) => {}
                 Ok(n) => tracing::error!("断网超过 {buffer_days} 天，丢弃最早的 {n} 条未上行读数"),
                 Err(e) => tracing::error!("清理缓存失败：{e}"),
+            }
+            if let Err(e) = shared
+                .buffer()
+                .prune_seen_commands(now, crate::commands::MAX_TTL_MS)
+            {
+                tracing::error!("清理命令去重记录失败：{e}");
             }
         }
         let next = shared.buffer().next_pending();
@@ -448,8 +477,10 @@ async fn uplink_task<U: Uplink>(
         };
         match res {
             Ok(ack) => {
+                let mut db_err = false;
                 if let Err(e) = shared.buffer().mark_sent(p.seq, now_ms()) {
                     tracing::error!("标记已发失败：{e}");
+                    db_err = true;
                 }
                 if let Some(since) = failing_since.take() {
                     tracing::info!("上行恢复（中断约 {} 秒）", (now_ms() - since) / 1000);
@@ -462,10 +493,11 @@ async fn uplink_task<U: Uplink>(
                     }
                 }
                 for c in &ack.commands {
-                    let (ok, detail) = match verifier.verify(c, now_ms()) {
+                    let verified = verifier.verify(c, now_ms());
+                    let (ok, detail, accepted) = match verified {
                         Ok(cmd) => match shared.execute(cmd) {
-                            Ok(d) => (true, d),
-                            Err(d) => (false, d),
+                            Ok(d) => (true, d, true),
+                            Err(d) => (false, d, true),
                         },
                         Err(Rejected::Replay) => {
                             // 云端没收到上次的结果才会重发：再报一次，不再执行
@@ -476,7 +508,7 @@ async fn uplink_task<U: Uplink>(
                         }
                         Err(e) => {
                             tracing::warn!(command_id = %c.command_id, "拒绝命令：{e}");
-                            (false, format!("厂端拒绝：{e}"))
+                            (false, format!("厂端拒绝：{e}"), false)
                         }
                     };
                     let r = CommandResult {
@@ -484,7 +516,16 @@ async fn uplink_task<U: Uplink>(
                         ok,
                         detail,
                     };
-                    verifier.remember(&r);
+                    if accepted {
+                        verifier.remember(&r);
+                        if let Err(e) =
+                            shared
+                                .buffer()
+                                .save_seen_command(&c.command_id, c.expires_ms, Some(&r))
+                        {
+                            tracing::error!("持久化命令执行记录失败：{e}");
+                        }
+                    }
                     shared.push_result(r);
                 }
                 if !shared
@@ -495,18 +536,34 @@ async fn uplink_task<U: Uplink>(
                 {
                     shared.flush_now.notify_one(); // 结果尽快报回去
                 }
+                if db_err {
+                    tokio::select! {
+                        _ = sleep(backoff) => {}
+                        _ = stop.changed() => return,
+                    }
+                }
             }
             Err(SendError::Reject(msg)) => {
                 tracing::error!(
                     seq = p.seq,
                     "云端拒收整批，暂存待查（fos-edge resend 可重排）：{msg}"
                 );
-                if let Err(e) = shared.buffer().mark_rejected(p.seq, now_ms(), &msg) {
+                let db_err = if let Err(e) = shared.buffer().mark_rejected(p.seq, now_ms(), &msg) {
                     tracing::error!("标记被拒失败：{e}");
-                }
+                    true
+                } else {
+                    false
+                };
                 shared.restore_results(batch.command_results);
                 if status {
                     *shared.want_status.lock().unwrap_or_else(|e| e.into_inner()) = true;
+                }
+                if db_err {
+                    tokio::select! {
+                        _ = sleep(backoff) => {}
+                        _ = stop.changed() => return,
+                    }
+                    backoff = (backoff * 2).min(timing.retry_max);
                 }
             }
             Err(SendError::Retry(msg)) => {
@@ -535,11 +592,17 @@ pub async fn run<U: Uplink + 'static>(
     cfg: &EdgeConfig,
     shared: Arc<Shared>,
     uplink: U,
-    verifier: Verifier,
+    mut verifier: Verifier,
     timing: Timing,
     shutdown: impl Future<Output = ()>,
 ) -> Result<(), String> {
     let targets = Target::from_config(cfg)?;
+    if let Ok(rows) = shared
+        .buffer()
+        .load_seen_commands(now_ms(), crate::commands::MAX_TTL_MS)
+    {
+        verifier.load_seen(rows);
+    }
     let (stop_tx, stop_rx) = watch::channel(false);
     let (tx, rx) = mpsc::channel::<Reading>(10_000);
 
@@ -561,15 +624,14 @@ pub async fn run<U: Uplink + 'static>(
             stop_rx.clone(),
         )));
     }
-    drop(tx);
-    let batcher = tokio::spawn(batch_task(
+    let keep_tx = tasks.is_empty().then_some(tx);
+    let mut batcher = tokio::spawn(batch_task(
         rx,
         shared.clone(),
         timing.clone(),
         cfg.max_batch,
-        stop_rx.clone(),
     ));
-    let up = tokio::spawn(uplink_task(
+    let mut up = tokio::spawn(uplink_task(
         uplink,
         shared.clone(),
         verifier,
@@ -578,13 +640,41 @@ pub async fn run<U: Uplink + 'static>(
         stop_rx,
     ));
 
-    shutdown.await;
-    tracing::info!("收到退出信号，把内存里的读数落盘后退出");
+    let mut fatal: Option<String> = None;
+    let mut batcher_done = false;
+    let mut up_done = false;
+    tokio::select! {
+        _ = shutdown => {
+            tracing::info!("收到退出信号，把内存里的读数落盘后退出");
+        }
+        r = &mut batcher => {
+            batcher_done = true;
+            fatal = Some(match r {
+                Err(e) => format!("封批任务异常退出：{e}"),
+                Ok(()) => "封批任务意外提前退出".into(),
+            });
+        }
+        r = &mut up => {
+            up_done = true;
+            fatal = Some(match r {
+                Err(e) => format!("上行任务异常退出：{e}"),
+                Ok(()) => "上行任务意外提前退出".into(),
+            });
+        }
+    }
     let _ = stop_tx.send(true);
+    drop(keep_tx);
     for t in tasks {
         let _ = t.await;
     }
-    let _ = batcher.await;
-    let _ = up.await;
-    Ok(())
+    if !batcher_done {
+        let _ = batcher.await;
+    }
+    if !up_done {
+        let _ = up.await;
+    }
+    match fatal {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
 }

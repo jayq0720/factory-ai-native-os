@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, FiniteFloat, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,8 @@ from fos.monitoring import curve as cv
 from fos.monitoring.config import Curve, MonitorConfig
 
 PROTOCOL_VERSION = 1  # 与 crates/fos-protocol 的 PROTOCOL_VERSION 一致
+MAX_TS_MS = 4_102_444_800_000  # 2100-01-01 UTC（防止时间戳溢出崩溃或越界 BigInteger）
+MAX_I64 = (1 << 63) - 1
 FINISH_EVENT = "production.kiln_run_finished"
 SUMMARY_EVENT = "production.kiln_run_summarized"
 KIND_NAME = {
@@ -57,31 +59,31 @@ def from_ms(ms: int) -> datetime:
 
 class ReadingIn(BaseModel):
     point: str = Field(min_length=1, max_length=64)
-    ts_ms: int
-    value: float
+    ts_ms: int = Field(ge=0, le=MAX_TS_MS)
+    value: FiniteFloat
     unit: str = Field(max_length=16)
     source: Literal["direct", "retrofit", "manual"]
     quality: Literal["good", "estimated", "bad"]
-    confidence: float | None = Field(default=None, ge=0, le=1)
+    confidence: FiniteFloat | None = Field(default=None, ge=0, le=1)
     evidence: str | None = Field(default=None, max_length=512)
     mock: bool = False  # 仪表模拟器 / 演示读数（fos-edge mode = "mock"）
 
 
 class PointHealthIn(BaseModel):
     point: str = Field(max_length=64)
-    last_ok_ms: int | None = None
+    last_ok_ms: int | None = Field(default=None, ge=0, le=MAX_TS_MS)
     last_error: str | None = Field(default=None, max_length=500)
-    consecutive_errors: int = Field(default=0, ge=0)
+    consecutive_errors: int = Field(default=0, ge=0, le=MAX_I64)
 
 
 class EdgeStatusIn(BaseModel):
     """厂端状态（EdgeStatus）：云端要了才附带。"""
 
     version: str = Field(max_length=32)
-    pending_batches: int = Field(ge=0)
-    pending_readings: int = Field(ge=0)
-    oldest_pending_ms: int | None = None
-    rejected_batches: int = Field(ge=0)
+    pending_batches: int = Field(ge=0, le=MAX_I64)
+    pending_readings: int = Field(ge=0, le=MAX_I64)
+    oldest_pending_ms: int | None = Field(default=None, ge=0, le=MAX_TS_MS)
+    rejected_batches: int = Field(ge=0, le=MAX_I64)
     points: list[PointHealthIn] = Field(default_factory=list, max_length=5000)
 
 
@@ -95,7 +97,7 @@ class UplinkIn(BaseModel):
     protocol: int
     tenant_id: str
     edge_id: str = Field(min_length=1, max_length=64)
-    seq: int = Field(ge=0)
+    seq: int = Field(ge=0, le=MAX_I64)
     backfill: bool = False
     readings: list[ReadingIn] = Field(max_length=5000)
     status: EdgeStatusIn | None = None
@@ -178,6 +180,13 @@ async def ingest(session: AsyncSession, principal: Principal, batch: UplinkIn) -
     tid = principal.tenant_id
     if batch.tenant_id != tid:
         raise MonitorError("批次的租户与 API Key 不一致", 403)
+    if principal.edge_id is not None:
+        if principal.edge_id != batch.edge_id:
+            raise MonitorError(
+                f"API Key 绑定的采集网关是 {principal.edge_id}，不能以 {batch.edge_id} 身份上行", 403
+            )
+    elif not principal.can("*"):
+        raise MonitorError("采集网关上行必须使用绑定了 edge_id 的专用 API Key", 403)
     pts = {p.code: p for p in await active_points(session, tid)}
     rejected: dict[str, str] = {}
     rows: list[PointReading] = []
@@ -274,7 +283,12 @@ async def record_manual(
 
 
 async def samples(
-    session: AsyncSession, tenant_id: str, code: str, start: datetime, end: datetime, limit: int = 20000
+    session: AsyncSession,
+    tenant_id: str,
+    code: str,
+    start: datetime,
+    end: datetime,
+    limit: int | None = None,
 ) -> list[tuple[cv.Sample, str]]:
     q = (
         select(PointReading.ts, PointReading.value, PointReading.quality, PointReading.data_mode)
@@ -284,9 +298,10 @@ async def samples(
             PointReading.ts >= start,
             PointReading.ts <= end,
         )
-        .order_by(PointReading.ts)
-        .limit(limit)
+        .order_by(PointReading.ts, PointReading.id)
     )
+    if limit is not None:
+        q = q.limit(limit)
     return [(cv.Sample(aware(ts), v, qual), mode) for ts, v, qual, mode in await session.execute(q)]
 
 
@@ -478,8 +493,8 @@ async def finish_run(
     if end > utcnow() + timedelta(minutes=5):
         raise MonitorError("结束时间不能在未来")
     c = await run_curve(session, principal.tenant_id, cfg, run_id, until=end)
-    if not c["samples"]:
-        raise MonitorError("这个窑次没有温度读数，不能自动汇总；请先补抄表，或在账本里手工记录窑次结束")
+    if not c["samples"] or c["max_temp"] is None:
+        raise MonitorError("这个窑次没有有效温度读数，不能自动汇总；请先补抄表，或在账本里手工记录窑次结束")
     rng = f"{c['started_at']}/{end.isoformat()}"
     ev = [
         Evidence(kind="sensor", ref=f"{ln['point']}@{rng}"[:512], note=f"{len(ln['readings'])} 个读数")
@@ -505,7 +520,7 @@ async def finish_run(
             object_id=run_id,
             payload={
                 "ended_at": end.isoformat(),
-                "max_temp": round(c["max_temp"], 1) if c["max_temp"] is not None else None,
+                "max_temp": round(c["max_temp"], 1),
                 "deviation": c["deviation"],
                 "status": status,
             },
@@ -604,7 +619,11 @@ async def board(
                     "latest": reading_out(r) if r else None,
                     "age_minutes": round((now - aware(r.ts)).total_seconds() / 60, 1) if r else None,
                     "expected": round(exp, 1) if exp is not None else None,
-                    "deviation": round(r.value - exp, 1) if r is not None and exp is not None else None,
+                    "deviation": (
+                        round(r.value - exp, 1)
+                        if r is not None and r.quality != "bad" and exp is not None
+                        else None
+                    ),
                 }
             )
         out.append(

@@ -53,6 +53,7 @@ async def _run_channels(tenant_ids: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     svc = Services.build(get_settings())
     runs = []
+    adapters: list[DingTalkAdapter] = []
     for tid in tenant_ids or svc.registry.ids():
         tenant = svc.registry.get(tid)
         if tenant is None or "dingtalk" not in tenant.im:
@@ -65,6 +66,7 @@ async def _run_channels(tenant_ids: list[str]) -> int:
             )
             continue
         adapter = DingTalkAdapter(app)
+        adapters.append(adapter)
 
         async def handle(msg: InboundMessage, adapter: DingTalkAdapter = adapter) -> None:
             async with svc.sessionmaker() as session, session.begin():
@@ -100,6 +102,8 @@ async def _run_channels(tenant_ids: list[str]) -> int:
     try:
         await asyncio.gather(*runs)
     finally:
+        for ad in adapters:
+            await ad.aclose()
         await svc.aclose()
     return 0
 
@@ -214,7 +218,7 @@ async def _run(args: argparse.Namespace) -> int:
                 if not u:
                     print("用户不存在", file=sys.stderr)
                     return 1
-                k = await apikeys.issue(session, u, label=args.label)
+                k = await apikeys.issue(session, u, label=args.label, edge_id=args.edge_id or None)
                 print(k.plaintext)
                 print("（只显示这一次，请妥善保存）", file=sys.stderr)
             elif args.cmd == "rebuild":
@@ -270,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     ik.add_argument("tenant")
     ik.add_argument("login")
     ik.add_argument("--label", default="")
+    ik.add_argument("--edge-id", dest="edge_id", default="", help="绑定厂端网关 edge_id（仅限该网关上行）")
     rk = sub.add_parser("revoke-key")
     rk.add_argument("key_id")
     bi = sub.add_parser("bind-im")
