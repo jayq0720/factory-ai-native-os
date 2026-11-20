@@ -146,9 +146,7 @@ async def create_ncr(
 
 
 @router.get("/ncrs/{ncr_id}/8d-draft")
-async def get_8d_draft(
-    ncr_id: str, request: Request, session: SessionDep, p: NcrRead
-) -> dict[str, Any]:
+async def get_8d_draft(ncr_id: str, request: Request, session: SessionDep, p: NcrRead) -> dict[str, Any]:
     _cfg(request, p.tenant_id)
     st = request.app.state
     try:
@@ -211,9 +209,7 @@ async def close_ncr_ep(
 
 
 @router.get("/batches/{batch_id}/certificate")
-async def get_certificate(
-    batch_id: str, request: Request, session: SessionDep, p: InsRead
-) -> dict[str, Any]:
+async def get_certificate(batch_id: str, request: Request, session: SessionDep, p: InsRead) -> dict[str, Any]:
     cfg = _cfg(request, p.tenant_id)
     try:
         return await qs.certificate_data(session, p.tenant_id, cfg, batch_id)
@@ -304,9 +300,7 @@ async def trigger_calibration_remind(
     mode: Literal["real", "mock"] = "real",
 ) -> dict[str, Any]:
     cfg = _cfg(request, p.tenant_id)
-    return await qs.remind_calibration_due(
-        session, p.tenant_id, cfg, _today(request, p.tenant_id), mode=mode
-    )
+    return await qs.remind_calibration_due(session, p.tenant_id, cfg, _today(request, p.tenant_id), mode=mode)
 
 
 # ---------------- ISO 9001 审核证据包 ----------------

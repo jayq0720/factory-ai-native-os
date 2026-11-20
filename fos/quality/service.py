@@ -773,9 +773,7 @@ async def record_calibration(
         payload["agency"] = body.agency
     if body.note:
         payload["note"] = body.note
-    ev = body.evidence or [
-        Evidence(kind="document", ref=f"cal:{body.certificate_no}", note="校准证书登记")
-    ]
+    ev = body.evidence or [Evidence(kind="document", ref=f"cal:{body.certificate_no}", note="校准证书登记")]
     return await ledger.append(
         session,
         principal,
