@@ -380,9 +380,12 @@ def test_feishu_and_wecom_webhooks_end_to_end(client, keys):
                 "buttons": [{"id": "confirm", "label": "确认入账", "style": "primary"}],
             },
             "action": {
-                "type": "warehouse.material_defined",
-                "object_id": "M-WC-1",
-                "payload": {"name": "高铝矾土", "category": "raw", "unit": "吨"},
+                "kind": "ledger.append",
+                "request": {
+                    "type": "warehouse.material_defined",
+                    "object_id": "M-WC-1",
+                    "payload": {"name": "高铝矾土", "category": "raw", "unit": "吨"},
+                },
             },
         },
         headers=_h(keys, "admin"),

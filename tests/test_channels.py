@@ -421,4 +421,6 @@ def test_card_api_validation_and_permissions(client, h):
     ding = _card_body(to={**GROUP, "channel": "dingtalk"})
     assert client.post("/v1/cards", json=ding, headers=h("admin")).status_code == 503  # 凭据未配置
     feishu = _card_body(to={**GROUP, "channel": "feishu"})
-    assert client.post("/v1/cards", json=feishu, headers=h("admin")).status_code == 501
+    assert client.post("/v1/cards", json=feishu, headers=h("admin")).status_code == 503  # 凭据未配置
+    wecom = _card_body(to={**GROUP, "channel": "wecom"})
+    assert client.post("/v1/cards", json=wecom, headers=h("admin")).status_code == 503  # 凭据未配置
