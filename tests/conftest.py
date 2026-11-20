@@ -33,8 +33,11 @@ USERS = [
     ("kb_admin", "luneng", ["kb_admin"]),
     ("planner", "luneng", ["planner"]),
     ("edge", "luneng", ["edge"]),
+    ("edge2", "luneng", ["edge"]),
+    ("edge_demo", "luneng", ["edge"]),
     ("other_admin", "other", ["admin"]),
 ]
+EDGE_BINDINGS = {"edge": "edge-1", "edge2": "edge-2", "edge_demo": "edge-demo"}
 
 
 @pytest.fixture
@@ -76,7 +79,7 @@ def settings(tmp_path: Path, tenants_dir: Path) -> Settings:
 
 @pytest.fixture
 def keys(settings: Settings) -> dict[str, str]:
-    """建表并发三把 key：luneng 管理员、luneng 工人、other 管理员。"""
+    """建表并签发测试角色对应的 API Key。"""
 
     async def setup() -> dict[str, str]:
         engine = make_engine(settings.database_url)
@@ -90,7 +93,7 @@ def keys(settings: Settings) -> dict[str, str]:
                 u = User(tenant_id=tenant, login=name, display_name=name, roles=roles, im_ids={})
                 s.add(u)
                 await s.flush()
-                out[name] = (await apikeys.issue(s, u)).plaintext
+                out[name] = (await apikeys.issue(s, u, edge_id=EDGE_BINDINGS.get(name))).plaintext
         await engine.dispose()
         return out
 

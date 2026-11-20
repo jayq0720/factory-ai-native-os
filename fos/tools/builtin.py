@@ -184,6 +184,11 @@ async def propose(ctx: ToolContext, a: ProposeArgs) -> dict[str, Any]:
     if a.type not in ctx.skill.proposes:
         raise ToolError(f"当前 Skill 不能提议 {a.type}，只能提议：{ctx.skill.proposes}")
     ev = ctx.ontology.events[a.type]
+    autonomy = ctx.extras.get("autonomy") or {}
+    perm_key = ev.permission.split(":", 1)[0]
+    cap = autonomy.get(a.type) or autonomy.get(perm_key) or autonomy.get(ev.object)
+    if cap in ("L0", "L1"):
+        raise ToolError(f"租户配置将 {perm_key} 的自治上限设为 {cap}，Agent 不能发起确认卡片")
     try:
         payload = ctx.ontology.check_payload(a.type, a.payload, creating=ev.op == "create")
     except OntologyError as e:

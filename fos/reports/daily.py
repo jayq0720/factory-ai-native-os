@@ -115,7 +115,10 @@ def parse_day(word: str | None, arg: str, today: date) -> date | None:
     except ValueError:
         return None
     if not m[1] and d > today:  # 「日报 12-31」在 1 月初说的是去年
-        d = d.replace(year=d.year - 1)
+        try:
+            d = d.replace(year=d.year - 1)
+        except ValueError:
+            return None
     return d
 
 
@@ -291,7 +294,12 @@ async def _pending(session: AsyncSession, tenant: str, mode: str) -> dict[str, i
         "approvals": await n(
             select(func.count())
             .select_from(Approval)
-            .where(Approval.tenant_id == tenant, Approval.status == "pending", Approval.data_mode == mode)
+            .where(
+                Approval.tenant_id == tenant,
+                Approval.status == "pending",
+                Approval.data_mode == mode,
+                Approval.expires_at > now,
+            )
         ),
         "cards": await n(
             select(func.count())
@@ -304,7 +312,9 @@ async def _pending(session: AsyncSession, tenant: str, mode: str) -> dict[str, i
             )
         ),
         "todos": await n(
-            select(func.count()).select_from(Todo).where(Todo.tenant_id == tenant, Todo.status == "open")
+            select(func.count())
+            .select_from(Todo)
+            .where(Todo.tenant_id == tenant, Todo.status == "open", Todo.data_mode == mode)
         ),
     }
 

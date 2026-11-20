@@ -268,7 +268,12 @@ class ApprovalService:
         ap.decided_at = ap.updated_at = now
         tenant = self.registry.get(ap.tenant_id)
         requester = await session.get(User, ap.requester_id)
-        if tenant is None or requester is None or requester.tenant_id != ap.tenant_id or not requester.is_active:
+        if (
+            tenant is None
+            or requester is None
+            or requester.tenant_id != ap.tenant_id
+            or not requester.is_active
+        ):
             ap.status, ap.result = "failed", {"error": "申请人账号已停用，没有记账"}
             return DecideResult("failed", "审批已通过，但申请人账号已停用，没有记账")
         rp = principal_for_user(requester, tenant)

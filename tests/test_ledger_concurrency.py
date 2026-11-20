@@ -56,3 +56,85 @@ def test_concurrent_appends_get_gapless_seq(settings, keys, tenants_dir):
             await engine.dispose()
 
     assert asyncio.run(run()) == list(range(1, 31))
+
+
+def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenants_dir):
+    """两条并发领料（各 8 吨，批次共 10 吨）在 PostgreSQL 下必须串行校验，只允许成功一条。"""
+    from pathlib import Path
+
+    from fos.ledger import Conflict, ValidationError
+    from fos.orders.config import load_orders_config
+    from fos.supply.config import load_supply_config
+    from fos.supply.guards import StockMoveGuard
+    from fos.supply.stock import lot_balance
+
+    repo = Path(__file__).resolve().parents[1]
+    tenant = TenantRegistry.load(tenants_dir).get("luneng")
+    assert tenant
+    onto = load_ontology(tenant, packs_dir=repo / "packs", tenants_dir=tenants_dir)
+    scfg = load_supply_config(tenant, packs_dir=repo / "packs", tenants_dir=tenants_dir)
+    ocfg = load_orders_config(tenant, packs_dir=repo / "packs", tenants_dir=tenants_dir)
+    ledger = Ledger(lambda _: onto, guards=[StockMoveGuard({"luneng": scfg}, {"luneng": ocfg})])
+    who = Principal("luneng", "u1", "user", "仓管", ("admin",), frozenset({"*.*:*"}))
+
+    async def run() -> tuple[int, int, float]:
+        engine = make_engine(settings.database_url)
+        sm = make_sessionmaker(engine)
+        try:
+            async with sm() as s, s.begin():
+                await ledger.append(
+                    s,
+                    who,
+                    AppendRequest(
+                        type="warehouse.material_defined",
+                        object_id="M-CONC",
+                        payload={"name": "莫来石", "category": "raw", "unit": "吨"},
+                    ),
+                )
+                await ledger.append(
+                    s,
+                    who,
+                    AppendRequest(
+                        type="warehouse.material_received",
+                        object_id="LOT-CONC",
+                        payload={
+                            "material": "M-CONC",
+                            "qty": 10,
+                            "unit": "吨",
+                            "status": "accepted",
+                        },
+                    ),
+                )
+
+            async def issue_one(i: int) -> bool:
+                try:
+                    async with sm() as s, s.begin():
+                        await ledger.append(
+                            s,
+                            who,
+                            AppendRequest(
+                                type="warehouse.stock_issued",
+                                object_id=f"MV-CONC-{i}",
+                                payload={
+                                    "lot": "LOT-CONC",
+                                    "material": "M-CONC",
+                                    "kind": "issue",
+                                    "qty": 8,
+                                    "unit": "吨",
+                                },
+                            ),
+                        )
+                    return True
+                except (Conflict, ValidationError):
+                    return False
+
+            results = await asyncio.gather(*(issue_one(i) for i in range(4)))
+            async with sm() as s:
+                bal = await lot_balance(s, "luneng", "LOT-CONC")
+                assert bal is not None
+                return results.count(True), results.count(False), bal.on_hand
+        finally:
+            await engine.dispose()
+
+    ok_cnt, fail_cnt, on_hand = asyncio.run(run())
+    assert ok_cnt == 1 and fail_cnt == 3 and on_hand == pytest.approx(2.0)

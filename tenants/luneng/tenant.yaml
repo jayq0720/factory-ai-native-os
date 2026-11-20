@@ -15,7 +15,8 @@ roles:
     permissions: ["*.*:read", "*.*:approve", "platform.todo:write"]
   sales:
     name: 销售
-    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.quote:read", "doc.document:read", "doc.document:write", "doc.field:write",
+    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.eng_project:read", "eng.quote:read",
+                  "doc.document:read", "doc.document:write", "doc.field:write",
                   "production.production_batch:read", "quality.inspection:read", "warehouse.shipment:read",
                   "pmc.kiln_plan:read"]
   sales_lead:
@@ -37,29 +38,32 @@ roles:
                   "purchase.purchase_requisition:read"]
   purchaser:
     name: 采购
-    permissions: ["purchase.*:read", "purchase.*:write", "warehouse.*:read", "doc.document:read", "doc.document:write",
-                  "pmc.kiln_plan:read"]
+    permissions: ["purchase.*:read", "purchase.*:write", "warehouse.*:read", "doc.document:read",
+                  "doc.document:write", "doc.field:write", "pmc.kiln_plan:read"]
   warehouse:
     name: 仓管
     permissions: ["warehouse.*:read", "warehouse.*:write", "doc.document:read", "doc.document:write",
-                  "sales.sales_order:read", "sales.customer:read", "sales.product:read", "sales.contract:read",
-                  "production.production_batch:read", "quality.inspection:read",
+                  "doc.field:write", "sales.sales_order:read", "sales.customer:read", "sales.product:read",
+                  "sales.contract:read", "production.production_batch:read", "quality.inspection:read",
                   "purchase.purchase_order:read", "purchase.supplier:read"]
   shift_lead:
     name: 班组长
-    permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read", "doc.document:write", "platform.todo:write"]
+    permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read",
+                  "doc.document:write", "doc.field:write", "platform.todo:write"]
   worker:
     name: 工人
-    permissions: ["production.record:write", "production.reading:write", "production.*:read", "doc.document:write"]
+    permissions: ["production.record:write", "production.reading:write", "production.*:read",
+                  "doc.document:read", "doc.document:write", "doc.field:write"]
   qc:
     name: 质检
-    permissions: ["quality.*:read", "quality.*:write", "production.*:read", "doc.document:read", "doc.document:write"]
+    permissions: ["quality.*:read", "quality.*:write", "production.*:read", "doc.document:read",
+                  "doc.document:write", "doc.field:write"]
   rnd:
     name: 研发
     permissions: ["rnd.*:*", "production.*:read", "quality.*:read", "sales.product:read", "doc.document:read", "doc.document:write"]
   edge:
-    name: 采集网关          # fos-edge 上行读数用的 API Key（一台网关一个用户），只能写读数
-    permissions: ["production.reading:write"]
+    name: 采集网关          # fos-edge 上行读数用的 API Key（一台网关一个用户），仅限网关上行接口
+    permissions: ["production.edge_uplink:write"]
   finance:
     name: 财务
     permissions: ["finance.*:read", "finance.*:write", "doc.document:read", "doc.document:write"]

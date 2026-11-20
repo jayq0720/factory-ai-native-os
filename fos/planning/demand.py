@@ -142,17 +142,30 @@ async def order_demand(
         promised_date=_d(s.get("promised_date")),
         data_mode=order.data_mode,
     )
-    for b in await referrers(session, tenant, "production_batch", "order", "sales_order", [order.object_id]):
+    for b in await referrers(
+        session,
+        tenant,
+        "production_batch",
+        "order",
+        "sales_order",
+        [order.object_id],
+        data_mode=order.data_mode,
+    ):
         bs = b.state
         st = bs.get("status")
         if st == "scrapped" or not ocfg.same_unit(bs.get("unit"), unit):
             continue
-        q = num(bs.get("planned_qty")) or (num(bs.get("good_qty")) if st in PRODUCED else 0)
+        if st in PRODUCED and bs.get("good_qty") is not None:
+            q = num(bs.get("good_qty"))
+        else:
+            q = num(bs.get("planned_qty")) or (num(bs.get("good_qty")) if st in PRODUCED else 0)
         if bs.get("kiln_run") or st in PRODUCED:
             d.fired += q
         elif st == "in_progress":
             d.started += q
-    for sh in await referrers(session, tenant, "shipment", "order", "sales_order", [order.object_id]):
+    for sh in await referrers(
+        session, tenant, "shipment", "order", "sales_order", [order.object_id], data_mode=order.data_mode
+    ):
         if sh.state.get("status") != "refused" and ocfg.same_unit(sh.state.get("unit"), unit):
             d.shipped += num(sh.state.get("qty"))
     return d
@@ -224,14 +237,16 @@ def pieces(ctx: Context) -> list[PieceIn]:
     out = []
     for d in ctx.demands.values():
         due = ctx.due_hour(d.due_date) if d.due_date else None
-        fh = round(num(d.product.state.get("firing_hours"))) or None
+        raw_fh = num(d.product.state.get("firing_hours"))
+        fh = max(1, round(raw_fh)) if raw_fh > 0 else None
         common = {"order": d.id, "group": d.group, "kilns": tuple(d.kilns), "due": due, "firing_hours": fh}
-        if d.ready_part > 1e-9:
-            out.append(PieceIn(key=f"{d.id}#ready", qty=to_int(d.ready_part), release=0, **common))
-        if d.new_part > 1e-9:
-            out.append(
-                PieceIn(key=f"{d.id}#new", qty=to_int(d.new_part), release=ctx.cfg.pre_firing_hours, **common)
-            )
+        total_int = to_int(d.to_fire)
+        ready_int = min(to_int(d.ready_part), total_int) if d.ready_part > 1e-9 else 0
+        new_int = total_int - ready_int
+        if ready_int > 0:
+            out.append(PieceIn(key=f"{d.id}#ready", qty=ready_int, release=0, **common))
+        if new_int > 0:
+            out.append(PieceIn(key=f"{d.id}#new", qty=new_int, release=ctx.cfg.pre_firing_hours, **common))
     return out
 
 

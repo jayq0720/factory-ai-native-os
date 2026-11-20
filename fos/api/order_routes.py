@@ -260,7 +260,8 @@ async def export_shipment(
         raise HTTPException(409, detail="模拟数据不能导出正式发货单")
     s = sh.state
     order = await get(session, tenant, "sales_order", s["order"])
-    assert order is not None
+    if order is None:
+        raise HTTPException(404, detail="关联订单不存在")
     customer = await get(session, tenant, "customer", order.state.get("customer"))
     product = await get(session, tenant, "product", order.state.get("product"))
     contract = await get(session, tenant, "contract", order.state.get("contract"))

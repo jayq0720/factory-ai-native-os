@@ -65,7 +65,7 @@ async function loadList() {
     const sm = (t.analysis || {}).summary || {};
     const tr = el("tr", { class: "pick" },
       el("td", {}, t.id), el("td", {}, t.name, t.data_mode === "mock" ? el("span", { class: "warn small" }, "（模拟）") : null),
-      el("td", {}, fmt(t.bid_deadline)), el("td", { class: t.hours_left < 72 ? "bad" : "" }, t.status === "open" ? left(t.hours_left) : ""),
+      el("td", {}, fmt(t.bid_deadline)), el("td", { class: t.hours_left != null && t.hours_left < 72 ? "bad" : "" }, t.status === "open" ? left(t.hours_left) : ""),
       el("td", {}, t.status_name),
       el("td", { class: sm.star_open ? "bad" : "" }, sm.star === undefined ? "" : `${sm.star_open}/${sm.star}`),
       el("td", { class: sm.docs_missing ? "bad" : "" }, sm.docs_missing ?? ""));
@@ -85,7 +85,7 @@ async function create() {
 
 // ---------------- 详情 ----------------
 async function open(id) {
-  const d = await getJ(`/v1/tenders/${id}`);
+  const d = await getJ(`/v1/tenders/${encodeURIComponent(id)}`);
   state.tender = d.tender; state.analysis = d.analysis;
   const t = d.tender, a = d.analysis;
   $("#detail").hidden = false;
@@ -96,12 +96,16 @@ async function open(id) {
     ["最高限价", t.budget ? `${(t.budget / 10000).toLocaleString()} 万元` : ""], ["投标保证金", t.bid_bond ? `${t.bid_bond} 元` : ""],
     ["澄清截止", fmt(t.clarification_deadline)], ["投标截止", `${fmt(t.bid_deadline)} ${t.status === "open" ? left(t.hours_left) : ""}`],
     ["开标", fmt(t.opening_time)], ["评标办法", t.evaluation_method], ["交货期", t.delivery_period], ["质保期", t.warranty],
-    ["负责人", t.owner], ["工程项目", t.eng_project ? el("a", { href: "eng.html" }, t.eng_project) : "未转"],
+    ["负责人", t.owner], ["工程项目", t.eng_project ? el("a", { href: `eng.html#${encodeURIComponent(t.eng_project)}` }, t.eng_project) : "未转"],
     ["提醒", d.reminders.filter((x) => x.status === "open").map((x) => `${x.title.split("：")[0]} ${fmt(x.due_at)}`).join("；") || "—"],
   ];
   fill($("#d-info"), kv.filter(([, v]) => v).map(([k, v]) => el("div", {}, el("span", { class: "muted" }, k + "："), v)));
   $("#b-export").href = "#";
-  if (!a) { fill($("#items")); return; }
+  if (!a) {
+    $("#summary").textContent = "";
+    fill($("#d-risks")); fill($("#items")); fill($("#devs")); fill($("#docs")); fill($("#score")); fill($("#sections"));
+    return;
+  }
   fill($("#d-risks"), a.risks.length
     ? el("ul", { class: "lines" }, a.risks.map((r) => el("li", { class: r.level === "block" ? "bad" : "warn" }, `【${r.type}】`, r.page ? `第 ${r.page} 页 ` : "", r.text)))
     : el("p", { class: "ok" }, "没有发现风险。"));

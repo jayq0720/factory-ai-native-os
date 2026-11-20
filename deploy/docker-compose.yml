@@ -74,7 +74,7 @@ services:
     # 跑通后把 latest 换成当时验证过的具体版本号（需要支持 Qwen3_5ForConditionalGeneration）
     image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     restart: unless-stopped
-    ipc: host
+    shm_size: "4g"
     command:
       - --model=/models/Xiaomi-OCR-0
       - --served-model-name=xiaomi-ocr-0

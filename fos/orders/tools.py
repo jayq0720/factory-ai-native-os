@@ -39,7 +39,7 @@ async def progress(ctx: ToolContext, a: ProgressArgs) -> dict[str, Any]:
     if len(hits) > 1:
         raise ToolError(f"订单号 {a.order} 对应多个订单：{[h.object_id for h in hits[:5]]}")
     cfg, today = _env(ctx)
-    return await order_progress(ctx.session, ctx.ontology, cfg, ctx.user, hits[0], today)
+    return await order_progress(ctx.session, ctx.ontology, cfg, ctx.user, hits[0], today, allowed=ctx.allowed)
 
 
 class BoardArgs(BaseModel):
@@ -53,7 +53,14 @@ async def board(ctx: ToolContext, a: BoardArgs) -> dict[str, Any]:
     ctx.require(PERM)
     cfg, today = _env(ctx)
     rows = await order_board(
-        ctx.session, ctx.ontology, cfg, ctx.user, today, only_risky=a.risky_only, customer=a.customer
+        ctx.session,
+        ctx.ontology,
+        cfg,
+        ctx.user,
+        today,
+        only_risky=a.risky_only,
+        customer=a.customer,
+        allowed=ctx.allowed,
     )
     slim = [
         {

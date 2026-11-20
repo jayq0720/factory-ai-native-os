@@ -270,7 +270,8 @@ async def cancel_requisition(
     if r["stage"] != "open":
         raise HTTPException(409, detail=f"请购单{r['stage_text']}，不能取消")
     obj = await get(session, principal.tenant_id, "purchase_requisition", req_id)
-    assert obj is not None
+    if obj is None:
+        raise HTTPException(404, detail="请购单不存在")
     req = AppendRequest(
         type="purchase.requisition_cancelled",
         object_id=req_id,
@@ -381,7 +382,8 @@ async def receive(
         session, request.app.state.ledger, principal, ocfg, po_id, AppendResult(**ev), today
     )
     po = await get(session, principal.tenant_id, "purchase_order", po_id)
-    assert po is not None
+    if po is None:
+        raise HTTPException(404, detail="采购单不存在")
     return {**ev, "notes": notes, "order": await po_row(session, principal.tenant_id, ocfg, po, today)}
 
 

@@ -63,6 +63,14 @@ def chunks(texts: dict[int, str], max_chars: int) -> list[list[int]]:
     return out
 
 
+def _split_long(text: str, max_chars: int) -> list[str]:
+    if len(text) <= max_chars:
+        return [text]
+    overlap = min(200, max_chars // 10)
+    step = max(1, max_chars - overlap)
+    return [text[i : i + max_chars] for i in range(0, len(text), step)]
+
+
 def validate(f: FieldDef, item: dict, texts: dict[int, str], pages: list[int]) -> tuple | None:
     try:
         page = int(item.get("page"))
@@ -70,23 +78,29 @@ def validate(f: FieldDef, item: dict, texts: dict[int, str], pages: list[int]) -
         return None
     value = str(item.get("value") or "").strip()
     quote = str(item.get("quote") or "").strip()
-    if page not in pages or not value or not quote:
+    if page not in pages or not value or not quote or len(quote) > 200:
         return None
     nq = _norm(quote)
     if not nq or nq not in _norm(texts[page]):
         return None  # 原文里找不到这段话：丢弃
     if f.type in ("number", "temperature", "money"):
         num = re.search(r"-?\d+(?:\.\d+)?", value)
-        if not num or num.group(0) not in quote:
+        if not num:
             return None
-        value = num.group(0)
+        token = num.group(0)
+        if not re.search(rf"(?<![\d.]){re.escape(token)}(?![\d.])", quote.replace(",", "")):
+            return None
+        value = token
     elif f.type == "enum":
         if value not in f.enum or value not in quote:
             return None
     elif _norm(value) not in nq:
         return None
-    unit = item.get("unit") or f.unit
-    unit = str(unit)[:16] if unit else None
+    raw_unit = item.get("unit")
+    if raw_unit and str(raw_unit).strip() and _norm(str(raw_unit)) in nq:
+        unit = str(raw_unit).strip()[:16]
+    else:
+        unit = f.unit
     highlight = [p.strip() for p in quote.split("|") if p.strip()]
     return value, unit, Source(page, quote, highlight), 0.8
 
@@ -103,8 +117,15 @@ async def extract_llm(
     spec = "\n".join(_field_line(f) for f in schema.fields)
     raw: dict[str, list[tuple]] = {f.key: [] for f in schema.fields}
     fields = {f.key: f for f in schema.fields}
+    batches: list[tuple[list[int], str]] = []
     for chunk in chunks(texts, max_chars):
-        body = "\n\n".join(f"=== 第 {p} 页 ===\n{texts[p][:max_chars]}" for p in chunk)
+        if len(chunk) == 1 and len(texts[chunk[0]]) > max_chars:
+            p = chunk[0]
+            for part in _split_long(texts[p], max_chars):
+                batches.append(([p], f"=== 第 {p} 页 ===\n{part}"))
+        else:
+            batches.append((chunk, "\n\n".join(f"=== 第 {p} 页 ===\n{texts[p]}" for p in chunk)))
+    for chunk, body in batches:
         msgs = [
             ChatMessage(role="system", content=SYSTEM),
             ChatMessage(role="user", content=f"字段清单：\n{spec}\n\n原文：\n{body}"),

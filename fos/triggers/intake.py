@@ -159,7 +159,11 @@ class TriggerIntake:
             if card is None or card.channel != msg.channel:
                 card, command = None, None  # 不是指令，当普通文字处理
 
-        if msg.conversation_type == "group" and not msg.mentioned and card is None:
+        same_conv_card = card is not None and (
+            msg.kind == "card_action"
+            or (card.conversation or {}).get("conversation_id") == msg.conversation_id
+        )
+        if msg.conversation_type == "group" and not msg.mentioned and not same_conv_card:
             return Outcome(None)
 
         thread_id = card.thread_id if card else await thread_for(session, msg.tenant_id, msg.reply_to())
@@ -258,6 +262,12 @@ class TriggerIntake:
         trig = out.trigger
         assert trig is not None
         trig.route = "card_action"
+        card_conv = (card.conversation or {}).get("conversation_id")
+        if msg.kind == "text" and card.allowed_user_id is None and card_conv != msg.conversation_id:
+            trig.status = "rejected"
+            trig.result = {"card_id": card.id, "outcome": "rejected"}
+            await self._reply(adapter, msg, out, "这张卡片属于其他会话，请在原会话里确认。")
+            return
         res = await act_on_card(
             session,
             self.ledger,
@@ -352,6 +362,8 @@ class TriggerIntake:
         if schema is None or schema.entry is None:
             return False
         if d.schema_id != schema.id:
+            if r.duplicate and d.kind not in ("other", "receipt"):
+                return False
             d.kind, d.schema_id = "receipt", schema.id
             await self.extractor.run(session, d, r.pages)
         elif not r.duplicate:

@@ -52,7 +52,11 @@ const mode = () => $("#mode").value;
 const q = (p) => p + (p.includes("?") ? "&" : "?") + "mode=" + mode();
 const n = (x) => (x === null || x === undefined ? "" : String(+(+x).toFixed(3)));
 const MANUAL = (note) => [{ kind: "manual", ref: "web:supply", note }];
-async function getJ(path) { const r = await api(q(path)); if (!r.ok) throw new Error(await detail(r)); return r.json(); }
+async function getJ(path) {
+  const r = await api(q(path));
+  if (!r.ok) { const e = new Error(await detail(r)); e.status = r.status; throw e; }
+  return r.json();
+}
 async function post(path, body) {
   const r = await api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await detail(r));
@@ -60,9 +64,20 @@ async function post(path, body) {
 }
 const table = (heads, rows) => el("table", {}, el("tr", {}, heads.map((x) => el("th", {}, x))), rows);
 const wrap = (fn) => () => fn().catch((e) => toast(e.message, 8000));
+function guardPanel(fn, boxSel) {
+  return fn().catch((e) => {
+    if (e.status === 403) fill($(boxSel), el("p", { class: "muted small" }, "当前账号无此模块查看权限。"));
+    else toast(e.message);
+  });
+}
 function refresh() {
   $("#mock-banner").hidden = mode() !== "mock";
-  return Promise.all([loadStock(), loadReqs(), loadPOs(), loadSup()]).catch((e) => toast(e.message));
+  return Promise.all([
+    guardPanel(loadStock, "#stock"),
+    guardPanel(loadReqs, "#reqs"),
+    guardPanel(loadPOs, "#pos"),
+    guardPanel(loadSup, "#sup"),
+  ]);
 }
 
 // ---------------- 库存、领料 ----------------
@@ -135,8 +150,9 @@ async function compare(req) {
     if (rec && rec.supplier === body.supplier) body.quote = rec.quote;
     if (due.value) body.due_date = due.value;
     const [st, out] = await post("/v1/purchase/orders", body);
-    toast(st === 202 ? `${out.formula}，${out.message}` : `已下单 ${out.object_id}：${out.formula}`, 8000);
-    for (const w of out.warnings || []) toast(w, 6000);
+    const msg = st === 202 ? `${out.formula}，${out.message}` : `已下单 ${out.object_id}：${out.formula}`;
+    const warns = (out.warnings || []).length ? `；提醒：${out.warnings.join("；")}` : "";
+    toast(msg + warns, 8000);
     fill($("#compare")); loadReqs(); loadPOs();
   }));
   fill($("#compare"), el("h3", {}, `比价：${c.name} ${n(req.qty)} ${c.unit}`),

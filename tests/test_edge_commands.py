@@ -155,10 +155,11 @@ def test_edge_command_flow(client, h):
     assert got["read_now"]["command_id"] == r1["id"]
     # 签名还没过期：下一批不重复带
     assert client.post("/v1/edge/uplink", json=_batch(3), headers=h("edge")).json()["commands"] == []
-    # edge-2 的回执里没有 edge-1 的命令
+    # edge-1 的 key 不能冒充 edge-2；edge-2 的回执里没有 edge-1 的命令
     other = {**_batch(1), "edge_id": "edge-2"}
+    assert client.post("/v1/edge/uplink", json=other, headers=h("edge")).status_code == 403
     assert all(c["edge_id"] == "edge-2" for c in client.post("/v1/edge/uplink", json=other,
-               headers=h("edge")).json()["commands"])  # fmt: skip
+               headers=h("edge2")).json()["commands"])  # fmt: skip
 
     # —— 厂端回报结果 + 状态 ——
     oldest = int((datetime.now(UTC) - timedelta(minutes=45)).timestamp() * 1000)

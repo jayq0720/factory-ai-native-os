@@ -54,7 +54,13 @@ def shipment_xlsx(factory: str, info: dict[str, Any]) -> bytes:
     for b in info["batches"]:
         ws.append(
             excel_row(
-                [b["id"], b.get("good_qty"), b.get("unit"), b.get("final_inspection"), b.get("report_no") or ""]
+                [
+                    b["id"],
+                    b.get("good_qty"),
+                    b.get("unit"),
+                    b.get("final_inspection"),
+                    b.get("report_no") or "",
+                ]
             )
         )
     ws.append([])

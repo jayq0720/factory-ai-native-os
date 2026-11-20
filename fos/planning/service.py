@@ -10,11 +10,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, FiniteFloat, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.governance.principal import Principal
@@ -40,6 +41,7 @@ from fos.planning.materials import material_plan
 from fos.planning.solver import Problem, Solution, solve, to_qty
 
 EPS = 1e-6
+_SOLVER_SEM = asyncio.Semaphore(2)
 
 
 class PlanningError(Exception):
@@ -69,6 +71,11 @@ def _solve(ctx: Context) -> Solution:
             solver=cfg.solver,
         )
     )
+
+
+async def _solve_async(ctx: Context) -> Solution:
+    async with _SOLVER_SEM:
+        return await asyncio.to_thread(_solve, ctx)
 
 
 def runs_from_solution(ctx: Context, sol: Solution) -> list[dict[str, Any]]:
@@ -211,12 +218,16 @@ async def summarize(session: AsyncSession, ctx: Context, runs: list[dict[str, An
 
 
 async def draft_plan(session: AsyncSession, ctx: Context) -> dict[str, Any]:
-    sol = _solve(ctx)
+    sol = await _solve_async(ctx)
     out = await summarize(session, ctx, runs_from_solution(ctx, sol))
     out["solver"] = {"status": sol.status, "seconds": sol.seconds}
     if sol.status == "feasible":
         out["warnings"].insert(
             0, f"求解到时限（{ctx.cfg.solver.time_limit_s:g} 秒）还不是最优，可以再算一次或人工调整"
+        )
+    elif sol.status not in ("optimal", "empty"):
+        out["warnings"].insert(
+            0, f"求解未找到可行方案（状态：{sol.status}），请延长计划期或放宽约束后重试"
         )
     return out
 
@@ -280,7 +291,7 @@ def _aware(v: datetime) -> datetime:
 
 class LoadIn(BaseModel):
     order: str = Field(min_length=1, max_length=64)
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
 
 
 class RunIn(BaseModel):
@@ -393,6 +404,7 @@ async def confirm_plan(
                 type="pmc.kiln_plan_superseded",
                 object_id=prev.object_id,
                 payload={"status": "superseded"},
+                expected_version=prev.version,
                 data_mode=body.data_mode,
             )
         )
@@ -438,7 +450,7 @@ class CandidateIn(BaseModel):
     """假设的新订单（还没下单，问“能不能接”）。"""
 
     product: str = Field(min_length=1, max_length=64)
-    qty: float = Field(gt=0)
+    qty: FiniteFloat = Field(gt=0)
     unit: str | None = Field(default=None, max_length=16)
     due_date: date | None = None
 
@@ -520,6 +532,7 @@ async def evaluate(
                     "ready_after": r["ready_date"],
                     "late_days_before": b["late_days"],
                     "late_days_after": r["late_days"],
+                    "short_before": b["short"],
                     "short_after": r["short"],
                 }
             )
@@ -540,7 +553,11 @@ async def evaluate(
         ok = True
     if impacts:
         verdict += f"会让 {len(impacts)} 个在手订单往后推。"
-        ok = False if any(i["late_days_after"] > i["late_days_before"] for i in impacts) else ok
+        if any(
+            i["late_days_after"] > i["late_days_before"] or i["short_after"] > i["short_before"] + EPS
+            for i in impacts
+        ):
+            ok = False
     if shortages:
         verdict += f"缺 {len(shortages)} 种原料。"
     return {

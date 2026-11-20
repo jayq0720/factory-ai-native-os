@@ -16,9 +16,12 @@ DC=(docker compose -f deploy/docker-compose.yml --env-file "$ENV")
 
 # --- 生成 / 更新 deploy/.env：首次生成随机密码，之后只改 OCR 模式，不覆盖已填的值 ---
 if [ ! -f "$ENV" ]; then
-  cp deploy/.env.example "$ENV"
-  sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" "$ENV"
-  sed -i "s/^LITELLM_MASTER_KEY=.*/LITELLM_MASTER_KEY=sk-$(openssl rand -hex 16)/" "$ENV"
+  (
+    umask 077
+    cp deploy/.env.example "$ENV"
+    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" "$ENV"
+    sed -i "s/^LITELLM_MASTER_KEY=.*/LITELLM_MASTER_KEY=sk-$(openssl rand -hex 16)/" "$ENV"
+  )
   chmod 600 "$ENV"
   echo "已生成 $ENV（随机数据库密码），请妥善保管，不要提交到仓库"
 fi
