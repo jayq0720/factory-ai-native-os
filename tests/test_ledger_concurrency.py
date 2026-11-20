@@ -62,10 +62,10 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
     """两条并发领料（各 8 吨，批次共 10 吨）在 PostgreSQL 下必须串行校验，只允许成功一条。"""
     from pathlib import Path
 
-    from fos.ledger import Conflict, Invalid
+    from fos.ledger import Conflict, Evidence, Invalid
     from fos.orders.config import load_orders_config
     from fos.supply.config import load_supply_config
-    from fos.supply.guards import ISSUE_EVENT, SupplyGuard
+    from fos.supply.guards import ISSUE_EVENT, RECEIVE_EVENT, SupplyGuard
     from fos.supply.stock import lot_balance
 
     repo = Path(__file__).resolve().parents[1]
@@ -96,14 +96,16 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
                     s,
                     who,
                     AppendRequest(
-                        type="warehouse.material_received",
+                        type=RECEIVE_EVENT,
                         object_id="LOT-CONC",
                         payload={
                             "material": "M-CONC",
                             "qty": 10,
                             "unit": "吨",
+                            "received_at": "2026-11-20T08:00:00+08:00",
                             "status": "accepted",
                         },
+                        evidence=[Evidence(kind="manual", ref="test:conc")],
                     ),
                 )
 
@@ -114,7 +116,7 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
                             s,
                             who,
                             AppendRequest(
-                                type="warehouse.stock_issued",
+                                type=ISSUE_EVENT,
                                 object_id=f"MV-CONC-{i}",
                                 payload={
                                     "lot": "LOT-CONC",
@@ -122,6 +124,7 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
                                     "kind": "issue",
                                     "qty": 8,
                                     "unit": "吨",
+                                    "moved_at": "2026-11-20T09:00:00+08:00",
                                 },
                             ),
                         )
