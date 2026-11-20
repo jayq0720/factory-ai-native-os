@@ -226,9 +226,7 @@ async def draft_plan(session: AsyncSession, ctx: Context) -> dict[str, Any]:
             0, f"求解到时限（{ctx.cfg.solver.time_limit_s:g} 秒）还不是最优，可以再算一次或人工调整"
         )
     elif sol.status not in ("optimal", "empty"):
-        out["warnings"].insert(
-            0, f"求解未找到可行方案（状态：{sol.status}），请延长计划期或放宽约束后重试"
-        )
+        out["warnings"].insert(0, f"求解未找到可行方案（状态：{sol.status}），请延长计划期或放宽约束后重试")
     return out
 
 

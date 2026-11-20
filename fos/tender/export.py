@@ -19,11 +19,8 @@ def to_xlsx(tender: dict[str, Any], analysis: dict[str, Any]) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "需求矩阵"
-    ws.append(
-        excel_row(
-            [f"{tender.get('name', '')}  招标编号 {tender.get('tender_no') or '-'}  拆解 v{analysis['version']}"]
-        )
-    )
+    title = f"{tender.get('name', '')}  招标编号 {tender.get('tender_no') or '-'}  拆解 v{analysis['version']}"
+    ws.append(excel_row([title]))
     ws.append(
         [
             "条款号",

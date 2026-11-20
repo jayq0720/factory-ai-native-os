@@ -155,10 +155,11 @@ async def order_demand(
         st = bs.get("status")
         if st == "scrapped" or not ocfg.same_unit(bs.get("unit"), unit):
             continue
-        if st in PRODUCED and bs.get("good_qty") is not None:
-            q = num(bs.get("good_qty"))
-        else:
-            q = num(bs.get("planned_qty")) or (num(bs.get("good_qty")) if st in PRODUCED else 0)
+        q = (
+            num(bs.get("good_qty"))
+            if st in PRODUCED and bs.get("good_qty") is not None
+            else num(bs.get("planned_qty"))
+        )
         if bs.get("kiln_run") or st in PRODUCED:
             d.fired += q
         elif st == "in_progress":

@@ -96,11 +96,8 @@ def validate(f: FieldDef, item: dict, texts: dict[int, str], pages: list[int]) -
             return None
     elif _norm(value) not in nq:
         return None
-    raw_unit = item.get("unit")
-    if raw_unit and str(raw_unit).strip() and _norm(str(raw_unit)) in nq:
-        unit = str(raw_unit).strip()[:16]
-    else:
-        unit = f.unit
+    raw_unit = str(item.get("unit") or "").strip()
+    unit = raw_unit[:16] if raw_unit and _norm(raw_unit) in nq else f.unit
     highlight = [p.strip() for p in quote.split("|") if p.strip()]
     return value, unit, Source(page, quote, highlight), 0.8
 

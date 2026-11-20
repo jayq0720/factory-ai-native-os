@@ -80,10 +80,10 @@ async def run_worker(
     skill = ctx.skill
     out = WorkerResult(status="failed", reply="", messages=list(messages))
     for _ in range(skill.max_steps + 1):
-        if out.prompt_tokens + out.completion_tokens >= max_tokens and max_tokens >= 0:
-            if max_tokens == 0 or out.prompt_tokens + out.completion_tokens > max_tokens:
-                out.reply = "这个问题需要查的内容太多，我先停在这里。可以把范围说得更具体一些。"
-                return out
+        used_tokens = out.prompt_tokens + out.completion_tokens
+        if max_tokens == 0 or (max_tokens > 0 and used_tokens > max_tokens):
+            out.reply = "这个问题需要查的内容太多，我先停在这里。可以把范围说得更具体一些。"
+            return out
         try:
             res = await llm.chat(
                 [ChatMessage(**m) for m in out.messages],

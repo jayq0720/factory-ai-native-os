@@ -143,9 +143,8 @@ async def check_receipt(
         )
     if payload.get("material") != ps.get("material"):
         problems.append(f"到货物料和采购单 {label} 的物料不一致")
-    if ps.get("supplier") and payload.get("supplier") != ps.get("supplier"):
-        if payload.get("supplier"):
-            problems.append(f"到货供应商和采购单 {label} 的供应商不一致")
+    if ps.get("supplier") and payload.get("supplier") and payload.get("supplier") != ps.get("supplier"):
+        problems.append(f"到货供应商和采购单 {label} 的供应商不一致")
     if not ocfg.same_unit(payload.get("unit"), ps.get("unit")):
         problems.append(f"到货单位 {payload.get('unit')} 和采购单单位 {ps.get('unit')} 不同")
     before = sum(

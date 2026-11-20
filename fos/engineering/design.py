@@ -311,9 +311,8 @@ def evaluate(
         cands = [p for p in kb.values() if p.category == aux.category and _price_per_t(p) is not None]
         amount_t = brick_volume * aux.rate
         if not cands:
-            checks.append(
-                _check(f"aux_{aux.category}", False, f"知识库没有按重量计价的{aux.name}，BOM 未计入", "medium")
-            )
+            msg = f"知识库没有按重量计价的{aux.name}，BOM 未计入"
+            checks.append(_check(f"aux_{aux.category}", False, msg, "medium"))
             continue
         p = min(cands, key=lambda x: _price_per_t(x) or float("inf"))
         unit = p.price.unit if p.price else p.unit
