@@ -23,7 +23,8 @@ from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
 from fos.ledger.report import TraceConfig, report_lines, trace_report
 from fos.ontology import Ontology
-from fos.orders.data import get, new_id
+from fos.orders.data import get
+from fos.orders.service import new_id
 from fos.quality.config import QualityConfig
 from fos.quality.guards import (
     INST_CAL_EVENT,
