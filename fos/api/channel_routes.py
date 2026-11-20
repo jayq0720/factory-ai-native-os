@@ -1,18 +1,21 @@
-"""信道相关接口：IM 账号绑定、发卡片、查 Trigger，以及开发用的模拟信道。"""
+"""信道相关接口：IM 账号绑定、发卡片、查 Trigger、飞书/企业微信回调，以及开发用的模拟信道。"""
 
 from __future__ import annotations
 
 import base64
 import binascii
+import hmac
+import json
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from fos.api.deps import SessionDep, require
-from fos.channels.base import ChannelAdapter
+from fos.channels import feishu, wecom
+from fos.channels.base import ChannelAdapter, ChannelError
 from fos.channels.cards import Card
 from fos.channels.dingtalk import DingTalkAdapter, DingTalkApp
 from fos.channels.types import (
@@ -54,14 +57,28 @@ def adapter_for(request: Request, tenant_id: str, channel: str) -> ChannelAdapte
         raise HTTPException(422, detail=f"没有启用信道 {channel}")
     if channel == "mock":
         return _mock_for(request, tenant_id)
+    cache: dict[tuple[str, str], ChannelAdapter] = st.adapters
+    key = (tenant_id, channel)
+    if key in cache:
+        return cache[key]
     if channel == "dingtalk":
-        cache: dict[str, ChannelAdapter] = st.adapters
-        if tenant_id not in cache:
-            app = DingTalkApp.from_env(tenant_id)
-            if app is None:
-                raise HTTPException(503, detail="钉钉应用凭据没有配置")
-            cache[tenant_id] = DingTalkAdapter(app)
-        return cache[tenant_id]
+        app = DingTalkApp.from_env(tenant_id)
+        if app is None:
+            raise HTTPException(503, detail="钉钉应用凭据没有配置")
+        cache[key] = DingTalkAdapter(app)
+        return cache[key]
+    if channel == "feishu":
+        app = feishu.FeishuApp.from_env(tenant_id)
+        if app is None:
+            raise HTTPException(503, detail="飞书应用凭据没有配置")
+        cache[key] = feishu.FeishuAdapter(app)
+        return cache[key]
+    if channel == "wecom":
+        app = wecom.WeComApp.from_env(tenant_id)
+        if app is None:
+            raise HTTPException(503, detail="企业微信应用凭据没有配置")
+        cache[key] = wecom.WeComAdapter(app)
+        return cache[key]
     raise HTTPException(501, detail=f"{channel} 适配器还没有实现")
 
 
@@ -314,3 +331,132 @@ async def mock_outbox(request: Request, principal: ChannelTester) -> dict[str, A
     if request.app.state.settings.env == "prod":
         raise HTTPException(404)
     return {"items": _mock_for(request, principal.tenant_id).outbox[-100:]}
+
+
+# ---------------- 飞书 / 企业微信回调入口 ----------------
+
+
+async def _dispatch_inbound(
+    request: Request, session: SessionDep, adapter: ChannelAdapter, msg: InboundMessage
+) -> None:
+    st = request.app.state
+    out = await st.intake.handle(session, adapter, msg)
+    await session.commit()
+    await deliver(adapter, out)
+    t = out.trigger
+    if t is not None and not out.duplicate and t.route == "router" and t.status == "pending":
+        await st.services.runtime.process(st.sessionmaker, adapter, t.id)
+
+
+@router.post("/channels/feishu/{tenant_id}/webhook")
+async def feishu_webhook(tenant_id: str, request: Request, session: SessionDep) -> dict[str, Any]:
+    """飞书事件订阅与互动卡片回调入口（含 URL 校验、SHA-256 签名与 AES-256-CBC 解密）。"""
+    if not request.app.state.intake.channel_enabled(tenant_id, "feishu"):
+        raise HTTPException(404, detail="租户未启用飞书信道")
+    adapter = adapter_for(request, tenant_id, "feishu")
+    assert isinstance(adapter, feishu.FeishuAdapter)
+    app = adapter.app
+    if not (app.encrypt_key or app.verification_token):
+        raise HTTPException(503, detail="飞书回调校验密钥未配置")
+
+    raw_body = await request.body()
+    sig = request.headers.get("x-lark-signature", "")
+    ts = request.headers.get("x-lark-request-timestamp", "")
+    nonce = request.headers.get("x-lark-request-nonce", "")
+    if app.encrypt_key and sig and not feishu.verify_signature(app.encrypt_key, ts, nonce, raw_body, sig):
+        raise HTTPException(403, detail="飞书回调签名校验失败")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise HTTPException(400, detail="飞书回调不是合法 JSON") from e
+    if not isinstance(payload, dict):
+        raise HTTPException(400, detail="飞书回调负载必须为 JSON 对象")
+
+    if "encrypt" in payload:
+        if not app.encrypt_key:
+            raise HTTPException(503, detail="收到飞书加密事件，但未配置 ENCRYPT_KEY")
+        try:
+            data = feishu.decrypt_event(app.encrypt_key, str(payload["encrypt"]))
+        except ChannelError as e:
+            raise HTTPException(403, detail=str(e)) from e
+    else:
+        if app.encrypt_key and not sig:
+            raise HTTPException(403, detail="已配置 ENCRYPT_KEY，拒绝未签名明文回调")
+        data = payload
+
+    if app.verification_token:
+        got_token = str((data.get("header") or {}).get("token") or data.get("token") or "")
+        if not hmac.compare_digest(got_token, app.verification_token):
+            raise HTTPException(403, detail="飞书回调 verification_token 校验失败")
+
+    if data.get("type") == "url_verification":
+        return {"challenge": str(data.get("challenge") or "")}
+
+    msg = feishu.parse_event(tenant_id, data)
+    if msg is not None:
+        await _dispatch_inbound(request, session, adapter, msg)
+        if msg.kind == "card_action":
+            return {"toast": {"type": "info", "content": "已收到操作"}}
+    return {"ok": True}
+
+
+def _wecom_app_and_adapter(request: Request, tenant_id: str) -> tuple[wecom.WeComApp, wecom.WeComAdapter]:
+    if not request.app.state.intake.channel_enabled(tenant_id, "wecom"):
+        raise HTTPException(404, detail="租户未启用企业微信信道")
+    adapter = adapter_for(request, tenant_id, "wecom")
+    assert isinstance(adapter, wecom.WeComAdapter)
+    app = adapter.app
+    if not (app.token and app.encoding_aes_key):
+        raise HTTPException(503, detail="企业微信回调 TOKEN / ENCODING_AES_KEY 未配置")
+    return app, adapter
+
+
+@router.get("/channels/wecom/{tenant_id}/webhook")
+async def wecom_verify(
+    tenant_id: str,
+    request: Request,
+    msg_signature: str = "",
+    timestamp: str = "",
+    nonce: str = "",
+    echostr: str = "",
+) -> Response:
+    """企业微信回调 URL 校验（GET）：验签并解密 echostr 原样返回。"""
+    app, _ = _wecom_app_and_adapter(request, tenant_id)
+    assert app.token and app.encoding_aes_key
+    if not wecom.verify_signature(app.token, timestamp, nonce, echostr, msg_signature):
+        raise HTTPException(403, detail="企业微信回调签名校验失败")
+    try:
+        plain = wecom.decrypt_message(app.encoding_aes_key, app.corp_id, echostr)
+    except ChannelError as e:
+        raise HTTPException(403, detail=str(e)) from e
+    return Response(content=plain, media_type="text/plain")
+
+
+@router.post("/channels/wecom/{tenant_id}/webhook")
+async def wecom_webhook(
+    tenant_id: str,
+    request: Request,
+    session: SessionDep,
+    msg_signature: str = "",
+    timestamp: str = "",
+    nonce: str = "",
+) -> Response:
+    """企业微信回调消息与模板卡片事件入口（POST）：验签、解密 XML 并送入 Trigger 入口。"""
+    app, adapter = _wecom_app_and_adapter(request, tenant_id)
+    assert app.token and app.encoding_aes_key
+    xml_body = (await request.body()).decode("utf-8", errors="replace")
+    try:
+        enc = wecom.extract_encrypt_xml(xml_body)
+    except ChannelError as e:
+        raise HTTPException(400, detail=str(e)) from e
+    if not wecom.verify_signature(app.token, timestamp, nonce, enc, msg_signature):
+        raise HTTPException(403, detail="企业微信回调签名校验失败")
+    try:
+        inner_xml = wecom.decrypt_message(app.encoding_aes_key, app.corp_id, enc)
+        msg = wecom.parse_xml_message(tenant_id, inner_xml)
+    except ChannelError as e:
+        raise HTTPException(400, detail=str(e)) from e
+    if msg is not None:
+        await _dispatch_inbound(request, session, adapter, msg)
+    return Response(content="success", media_type="text/plain")
