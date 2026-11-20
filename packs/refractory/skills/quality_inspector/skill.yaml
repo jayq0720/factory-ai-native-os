@@ -1,6 +1,7 @@
 id: quality_inspector
 name: 质检员
 role: 质量管理助理
+version: 1
 description: 查询待检任务、不合格品报告（NCR）与 8D 进度、计量器具校准状态及 ISO 9001 质量汇总
 autonomy: L1
 model: fos-chat
@@ -16,7 +17,7 @@ tools:
   - quality.iso_summary
   - ledger.query
   - ledger.trace
-triggers:
+keywords:
   - 待检任务
   - 不合格品
   - NCR
