@@ -415,4 +415,4 @@ def test_feishu_and_wecom_webhooks_end_to_end(client, keys):
     obj = client.get("/v1/objects/material/M-WC-1", headers=_h(keys, "warehouse"))
     assert obj.status_code == 200 and obj.json()["state"]["name"] == "高铝矾土"
     c_after = client.get(f"/v1/cards/{card_id}", headers=_h(keys, "admin")).json()
-    assert c_after["status"] == "confirmed"
+    assert c_after["status"] == "done" and c_after["result"]["event_id"]
