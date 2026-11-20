@@ -21,8 +21,8 @@ from fos.perception.blobs import LocalBlobStore
 from fos.perception.parser import ParseError, check_zip_safety, sniff
 from fos.reports.daily import parse_day
 from fos.tender.service import parse_money
-from fos.tools.base import ToolContext
-from fos.tools.builtin import _ledger_propose
+from fos.tools.builtin import ProposeArgs, propose
+from fos.tools.registry import ToolContext, ToolError
 
 
 def _h(keys: dict[str, str], who: str) -> dict[str, str]:
@@ -382,6 +382,8 @@ def test_cross_conversation_group_card_confirmation_rejected(client, keys):
 
 def test_autonomy_l1_blocks_ledger_propose():
     principal = Principal("luneng", "u1", "user", "测试", ("admin",), frozenset({"*.*:*"}))
+    skill = MagicMock()
+    skill.proposes = ["warehouse.material_defined"]
     onto = MagicMock()
     ev_def = MagicMock()
     ev_def.object = "material"
@@ -391,21 +393,16 @@ def test_autonomy_l1_blocks_ledger_propose():
 
     ctx = ToolContext(
         session=MagicMock(),
-        principal=principal,
+        user=principal,
+        skill=skill,
         ontology=onto,
-        ledger=MagicMock(),
-        proposes=frozenset({"warehouse.material_defined"}),
         extras={"autonomy": {"warehouse.material": "L1"}},
     )
-    res = asyncio.run(
-        _ledger_propose(
-            ctx,
-            {
-                "event_type": "warehouse.material_defined",
-                "object_id": "M-1",
-                "payload": {"name": "x"},
-                "summary": "测试",
-            },
-        )
+    args = ProposeArgs(
+        type="warehouse.material_defined",
+        object_id="M-1",
+        payload={"name": "x"},
+        title="新增物料",
     )
-    assert "error" in res and "L1" in res["error"]
+    with pytest.raises(ToolError, match="L1"):
+        asyncio.run(propose(ctx, args))
