@@ -182,9 +182,7 @@ async def ingest(session: AsyncSession, principal: Principal, batch: UplinkIn) -
         raise MonitorError("批次的租户与 API Key 不一致", 403)
     if principal.edge_id is not None:
         if principal.edge_id != batch.edge_id:
-            raise MonitorError(
-                f"API Key 绑定的采集网关是 {principal.edge_id}，不能以 {batch.edge_id} 身份上行", 403
-            )
+            raise MonitorError(f"API Key 绑定的采集网关是 {principal.edge_id}，不能以 {batch.edge_id} 身份上行", 403)
     elif not principal.can("*"):
         raise MonitorError("采集网关上行必须使用绑定了 edge_id 的专用 API Key", 403)
     pts = {p.code: p for p in await active_points(session, tid)}

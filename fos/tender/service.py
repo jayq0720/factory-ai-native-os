@@ -29,6 +29,7 @@ from fos.db.models import (
 )
 from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
+from fos.ontology import Ontology
 from fos.policy.approvals import is_open
 from fos.tender import decompose as dc
 from fos.tender.config import Capability, TenderConfig
@@ -683,9 +684,7 @@ async def analyze(
             if o and o.get("by"):
                 it.update({k: o.get(k) for k in _KEEP})
                 if (o.get("deviation") or {}).get("manual"):
-                    base_dev = dict(
-                        it.get("deviation") or {"name": "人工判断", "required": "-", "basis": "人工判断"}
-                    )
+                    base_dev = dict(it.get("deviation") or {"name": "人工判断", "required": "-", "basis": "人工判断"})
                     base_dev.update({k: o["deviation"][k] for k in ("status", "manual", "manual_note")})
                     it["deviation"] = base_dev
                     data["deviations"] = _sync_deviation(data["deviations"], it, base_dev)
@@ -907,49 +906,51 @@ class TenderSubmitGuard:
     async def __call__(
         self,
         session: AsyncSession,
-        tenant_id: str,
+        principal: Principal,
+        onto: Ontology,
         payload: dict[str, Any],
         state: dict[str, Any] | None,
         *,
-        object_id: str | None = None,
+        object_id: str = "",
         data_mode: str = "real",
-    ) -> str | None:
+    ) -> list[str]:
+        tenant_id = principal.tenant_id
         if data_mode != "real":
-            return "模拟数据不能提交投标"
+            return ["模拟数据不能提交投标"]
         if state is None or state.get("status") != "open":
-            return "招标项目已提交或已结束"
+            return ["招标项目已提交或已结束"]
         analysis_id = payload.get("analysis")
         if not analysis_id or not isinstance(analysis_id, str):
-            return "提交投标必须关联拆解结果 analysis"
+            return ["提交投标必须关联拆解结果 analysis"]
         a = await session.get(TenderAnalysis, analysis_id)
         if a is None or a.tenant_id != tenant_id:
-            return f"招标拆解结果 {analysis_id} 不存在"
+            return [f"招标拆解结果 {analysis_id} 不存在"]
         if object_id and a.tender_id != object_id:
-            return f"拆解结果 {analysis_id} 不属于招标项目 {object_id}"
+            return [f"拆解结果 {analysis_id} 不属于招标项目 {object_id}"]
         if a.status not in ("draft", "submitted"):
-            return "只能在最新草稿或审批中的拆解结果上提交投标"
+            return ["只能在最新草稿或审批中的拆解结果上提交投标"]
         if a.data_mode != "real":
-            return "模拟数据拆解结果不能提交投标"
+            return ["模拟数据拆解结果不能提交投标"]
         tender = await session.get(ObjectState, (tenant_id, "tender", a.tender_id))
         if tender is not None and a.tender_version != tender.version:
-            return "招标项目在拆解之后改过，请先重新拆解"
+            return ["招标项目在拆解之后改过，请先重新拆解"]
         s = summary(a)
         if s["must_open"]:
-            return f"还有 {s['must_open']} 条★/▲/必须条款没有处理"
+            return [f"还有 {s['must_open']} 条★/▲/必须条款没有处理"]
         if s["docs_missing"]:
-            return f"资料清单还有 {s['docs_missing']} 项缺失或过期"
+            return [f"资料清单还有 {s['docs_missing']} 项缺失或过期"]
         if payload.get("star_negative") != s["star_negative"]:
-            return "★负偏离数量与拆解结果不一致"
+            return ["★负偏离数量与拆解结果不一致"]
         if payload.get("docs_missing") != s["docs_missing"]:
-            return "缺失资料数量与拆解结果不一致"
+            return ["缺失资料数量与拆解结果不一致"]
         if payload.get("bid_amount") is not None:
             try:
                 amt = float(payload["bid_amount"])
             except (TypeError, ValueError):
-                return "投标报价必须是有效数字"
+                return ["投标报价必须是有效数字"]
             if not math.isfinite(amt) or amt <= 0:
-                return "投标报价必须大于 0"
-        return None
+                return ["投标报价必须大于 0"]
+        return []
 
 
 def submit_request(

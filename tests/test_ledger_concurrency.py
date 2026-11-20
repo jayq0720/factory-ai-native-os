@@ -62,10 +62,10 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
     """两条并发领料（各 8 吨，批次共 10 吨）在 PostgreSQL 下必须串行校验，只允许成功一条。"""
     from pathlib import Path
 
-    from fos.ledger import Conflict, ValidationError
+    from fos.ledger import Conflict, Invalid
     from fos.orders.config import load_orders_config
     from fos.supply.config import load_supply_config
-    from fos.supply.guards import StockMoveGuard
+    from fos.supply.guards import ISSUE_EVENT, SupplyGuard
     from fos.supply.stock import lot_balance
 
     repo = Path(__file__).resolve().parents[1]
@@ -74,7 +74,8 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
     onto = load_ontology(tenant, packs_dir=repo / "packs", tenants_dir=tenants_dir)
     scfg = load_supply_config(tenant, packs_dir=repo / "packs", tenants_dir=tenants_dir)
     ocfg = load_orders_config(tenant, packs_dir=repo / "packs", tenants_dir=tenants_dir)
-    ledger = Ledger(lambda _: onto, guards=[StockMoveGuard({"luneng": scfg}, {"luneng": ocfg})])
+    ledger = Ledger(lambda _: onto)
+    ledger.add_guard(ISSUE_EVENT, SupplyGuard(ISSUE_EVENT, {"luneng": scfg}, {"luneng": ocfg}))
     who = Principal("luneng", "u1", "user", "仓管", ("admin",), frozenset({"*.*:*"}))
 
     async def run() -> tuple[int, int, float]:
@@ -125,7 +126,7 @@ def test_concurrent_stock_issue_prevents_negative_balance(settings, keys, tenant
                             ),
                         )
                     return True
-                except (Conflict, ValidationError):
+                except (Conflict, Invalid):
                     return False
 
             results = await asyncio.gather(*(issue_one(i) for i in range(4)))

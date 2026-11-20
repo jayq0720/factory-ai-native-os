@@ -23,6 +23,7 @@ from fos.engineering.kb import load_kb
 from fos.engineering.match import customer_spec, search
 from fos.governance.principal import Principal
 from fos.ledger import AppendRequest, AppendResult, Evidence, Ledger
+from fos.ontology import Ontology
 from fos.policy.approvals import is_open
 
 HUMAN = {"confirmed", "corrected"}
@@ -485,52 +486,54 @@ class EngQuoteGuard:
     async def __call__(
         self,
         session: AsyncSession,
-        tenant_id: str,
+        principal: Principal,
+        onto: Ontology,
         payload: dict[str, Any],
         state: dict[str, Any] | None,
         *,
-        object_id: str | None = None,
+        object_id: str = "",
         data_mode: str = "real",
-    ) -> str | None:
+    ) -> list[str]:
+        tenant_id = principal.tenant_id
         if data_mode != "real":
-            return "模拟数据不能发布报价"
+            return ["模拟数据不能发布报价"]
         if state is None or state.get("status") != "open":
-            return "工程项目已发布报价或关闭，不能重复发布"
+            return ["工程项目已发布报价或关闭，不能重复发布"]
         design_id = payload.get("quote_design")
         if not design_id or not isinstance(design_id, str):
-            return "发布报价必须关联已核算的工程方案 quote_design"
+            return ["发布报价必须关联已核算的工程方案 quote_design"]
         d = await session.get(EngDesign, design_id)
         if d is None or d.tenant_id != tenant_id:
-            return f"工程方案 {design_id} 不存在"
+            return [f"工程方案 {design_id} 不存在"]
         if object_id and d.project_id != object_id:
-            return f"方案 {design_id} 不属于工程项目 {object_id}"
+            return [f"方案 {design_id} 不属于工程项目 {object_id}"]
         if d.status not in ("draft", "submitted"):
-            return "只能发布最新草稿或审批中的工程方案"
+            return ["只能发布最新草稿或审批中的工程方案"]
         if d.data_mode != "real":
-            return "模拟数据方案不能发布报价"
+            return ["模拟数据方案不能发布报价"]
         proj = (
             await session.get(ObjectState, (tenant_id, "eng_project", d.project_id))
             if d.project_id
             else None
         )
         if proj is not None and d.project_version != proj.version:
-            return "工程项目工况在方案计算后已变更，请重新计算"
+            return ["工程项目工况在方案计算后已变更，请重新计算"]
         s = rv.summary(d.review)
         if s["blocking"] or s["open"]:
-            return "工程方案审核清单尚未全部处理完成"
+            return ["工程方案审核清单尚未全部处理完成"]
         q = d.data.get("quote") or {}
         if q.get("gross_margin_pct") is None or q.get("total") is None:
-            return "方案缺成本价或报价总额，不能发布"
+            return ["方案缺成本价或报价总额，不能发布"]
         try:
             gm = float(payload.get("gross_margin_pct"))
             amt = float(payload.get("quote_amount"))
         except (TypeError, ValueError):
-            return "报价金额与毛利率必须是有效数字"
+            return ["报价金额与毛利率必须是有效数字"]
         if not math.isclose(gm, float(q["gross_margin_pct"]), abs_tol=0.01):
-            return "毛利率与方案核算结果不一致"
+            return ["毛利率与方案核算结果不一致"]
         if not math.isclose(amt, float(q["total"]), abs_tol=0.01):
-            return "报价金额与方案核算结果不一致"
-        return None
+            return ["报价金额与方案核算结果不一致"]
+        return []
 
 
 def publish_request(design: EngDesign, project: ObjectState, quote_no: str | None) -> AppendRequest:

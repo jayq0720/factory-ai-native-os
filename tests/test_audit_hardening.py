@@ -39,7 +39,7 @@ def test_excel_safe_formula_and_xml_sanitization():
     assert excel_cell(" =1") == "' =1"
     assert excel_cell(42) == 42
     assert excel_cell(3.14) == 3.14
-    assert excel_cell(None) == ""
+    assert excel_cell(None) is None
     assert excel_row(["=1+1", "正常\x00文本", 10]) == ["'=1+1", "正常文本", 10]
 
 
