@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -49,6 +51,20 @@ class ChatIn(BaseModel):
     model: str = "fos-chat"
 
 
+def _json_safe(v: Any) -> Any:
+    if isinstance(v, float) and not math.isfinite(v):
+        return str(v)
+    if isinstance(v, dict):
+        return {k: _json_safe(val) for k, val in v.items()}
+    if isinstance(v, list | tuple):
+        return [_json_safe(x) for x in v]
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    if isinstance(v, BaseException):
+        return str(v)
+    return v
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -76,6 +92,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await svc.aclose()
 
     app = FastAPI(title="Factory AI Native OS", version=__version__, lifespan=lifespan)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"detail": _json_safe(exc.errors())}, status_code=422)
 
     @app.middleware("http")
     async def request_id(request: Request, call_next):

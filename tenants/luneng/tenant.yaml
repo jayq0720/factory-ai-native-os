@@ -52,12 +52,10 @@ roles:
                   "doc.document:write", "doc.field:write", "platform.todo:write"]
   worker:
     name: 工人
-    permissions: ["production.record:write", "production.reading:write", "production.*:read",
-                  "doc.document:read", "doc.document:write", "doc.field:write"]
+    permissions: ["production.record:write", "production.reading:write", "production.*:read", "doc.document:write"]
   qc:
     name: 质检
-    permissions: ["quality.*:read", "quality.*:write", "production.*:read", "doc.document:read",
-                  "doc.document:write", "doc.field:write"]
+    permissions: ["quality.*:read", "quality.*:write", "production.*:read", "doc.document:read", "doc.document:write"]
   rnd:
     name: 研发
     permissions: ["rnd.*:*", "production.*:read", "quality.*:read", "sales.product:read", "doc.document:read", "doc.document:write"]

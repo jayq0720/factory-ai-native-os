@@ -127,11 +127,10 @@ def test_edge_id_binding_and_permission_matrix(client, keys):
     batch_e1 = {"protocol": 1, "tenant_id": "luneng", "edge_id": "edge-1", "seq": 1, "readings": []}
     assert client.post("/v1/edge/uplink", json=batch_e1, headers=_h(keys, "worker")).status_code == 403
 
-    # sales 可读 eng_project；worker 可读 doc.document 并具 doc.field:write
+    # sales 可读 eng_project；warehouse 具 doc.field:write；worker 保持最小权限（不能浏览文档）
     assert client.get("/v1/objects/eng_project", headers=_h(keys, "sales")).status_code == 200
-    worker_me = client.get("/v1/me", headers=_h(keys, "worker")).json()
-    assert "doc.document:read" in worker_me["permissions"]
-    assert "doc.field:write" in worker_me["permissions"]
+    wh_me = client.get("/v1/me", headers=_h(keys, "warehouse")).json()
+    assert "doc.field:write" in wh_me["permissions"]
 
 
 def test_prod_mode_blocks_mock_and_debug_chat(tmp_path: Path, tenants_dir: Path, settings: Settings, keys):
@@ -270,9 +269,13 @@ def test_ledger_guards_block_forged_quote_tender_and_po(client, keys):
         client.post(
             "/v1/events",
             json={
-                "type": "sales.tender_created",
+                "type": "sales.tender_registered",
                 "object_id": "TD-G",
-                "payload": {"name": "守卫招标", "status": "open"},
+                "payload": {
+                    "name": "守卫招标",
+                    "bid_deadline": "2027-01-01T09:00:00+08:00",
+                    "status": "open",
+                },
                 **ev,
             },
             headers=h_admin,

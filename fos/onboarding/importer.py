@@ -187,7 +187,8 @@ def read_workbook(data: bytes) -> dict[str, list[tuple[int, list[Any]]]]:
     try:
         check_zip_safety(data)
     except ParseError as e:
-        raise ImportFileError(str(e)) from e
+        msg = "不是有效的 Excel（.xlsx）文件" if "损坏" in str(e) else str(e)
+        raise ImportFileError(msg) from e
     try:
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as e:  # openpyxl 对非 xlsx 抛各种异常

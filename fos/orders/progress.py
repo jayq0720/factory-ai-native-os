@@ -290,6 +290,7 @@ async def order_board(
     only_risky: bool = False,
     customer: str | None = None,
     contract: str | None = None,
+    allowed: Callable[[str], bool] | None = None,
 ) -> list[dict[str, Any]]:
     """订单看板：有风险的排前面，再按交期。默认不含已签收、已关闭、已取消的订单。"""
     rows = await session.scalars(
@@ -305,7 +306,7 @@ async def order_board(
             continue
         if not include_done and (o.state.get("status") in CLOSED):
             continue
-        p = await order_progress(session, onto, cfg, principal, o, today)
+        p = await order_progress(session, onto, cfg, principal, o, today, allowed=allowed)
         if not include_done and p["stage"] == "delivered":
             continue
         if only_risky and not any(r["level"] == "high" for r in p["risks"]):

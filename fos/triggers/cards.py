@@ -179,7 +179,7 @@ async def act_on_card(
     if rec.allowed_user_id and rec.allowed_user_id != principal.subject_id:
         return ActOutcome("rejected", "这张卡片需要指定的人确认")
     if rec.required_permission and not principal.can(rec.required_permission):
-        return ActOutcome("rejected", "你没有确认这张卡片的权限")
+        return ActOutcome("rejected", f"你没有确认这张卡片的权限（需要 {rec.required_permission}）")
 
     # 抢占：只有一个点击能把 open 改成 acting（PostgreSQL 下并发点击会在这里串行）
     claimed = await session.execute(
