@@ -36,6 +36,7 @@ from fos.channels.types import ConversationRef, InboundMessage
 from fos.config import Settings
 from fos.db.models import CardRecord, ChannelIdentity, Event, ObjectState, Thread, Trigger, User, utcnow
 from fos.eam.config import EamConfig
+from fos.ehs.config import EhsConfig
 from fos.entry.draft import build_draft, draft_card
 from fos.extraction.service import Extractor, load_fields
 from fos.finance.config import FinanceConfig
@@ -125,6 +126,7 @@ class TriggerIntake:
         quality: dict[str, QualityConfig] | None = None,
         finance: dict[str, FinanceConfig] | None = None,
         eam: dict[str, EamConfig] | None = None,
+        ehs: dict[str, EhsConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -144,6 +146,7 @@ class TriggerIntake:
         self.quality = quality or {}
         self.finance = finance or {}
         self.eam = eam or {}
+        self.ehs = ehs or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -265,6 +268,8 @@ class TriggerIntake:
                 await self._finance(session, msg, out, principal, *fm)
             elif msg.kind == "text" and msg.tenant_id in self.eam and (em := _eam_word(msg.text.strip())):
                 await self._eam(session, msg, out, principal, em)
+            elif msg.kind == "text" and msg.tenant_id in self.ehs and (hm := _ehs_word(msg.text.strip())):
+                await self._ehs(session, msg, out, principal, hm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -930,6 +935,40 @@ class TriggerIntake:
         trig.result = board["counts"]
         await self._reply(None, msg, out, ec.spare_parts_card(board))
 
+    async def _ehs(
+        self, session: AsyncSession, msg: InboundMessage, out: Outcome, principal: Principal, kind: str
+    ) -> None:
+        from fos.ehs import cards as hc
+        from fos.ehs import service as hs
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"ehs_{kind}", "done"
+        tid = msg.tenant_id
+        cfg = self.ehs[tid]
+        if kind == "hazards":
+            if not principal.can("ehs.hazard:read"):
+                await self._reply(None, msg, out, "你没有查看安全隐患的权限（ehs.hazard:read）。")
+                return
+            board = await hs.hazards_board(session, tid, cfg, self._today(msg))
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, hc.hazards_card(board))
+            return
+        if kind == "permits":
+            if not principal.can("ehs.permit:read"):
+                await self._reply(None, msg, out, "你没有查看特种作业票的权限（ehs.permit:read）。")
+                return
+            board = await hs.permits_board(session, tid)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, hc.permits_card(board))
+            return
+        if not principal.can("ehs.env:read"):
+            await self._reply(None, msg, out, "你没有查看环保监测的权限（ehs.env:read）。")
+            return
+        board = await hs.env_board(session, tid, cfg)
+        trig.result = board["counts"]
+        await self._reply(None, msg, out, hc.env_card(board))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -1032,6 +1071,18 @@ def _eam_word(text: str) -> str | None:
         return "work_orders"
     if SPARE_PARTS.match(text):
         return "spare_parts"
+    return None
+
+
+def _ehs_word(text: str) -> str | None:
+    from fos.ehs.cards import ENV, HAZARDS, PERMITS
+
+    if HAZARDS.match(text):
+        return "hazards"
+    if PERMITS.match(text):
+        return "permits"
+    if ENV.match(text):
+        return "env"
     return None
 
 

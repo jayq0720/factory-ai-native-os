@@ -1,0 +1,24 @@
+id: ehs_officer
+name: 安全环保助理
+role: EHS 安全环保助理
+version: 1
+description: 查询安全隐患整改闭环、特种作业票有效期、环保排放达标率与 EHS 合规汇总
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "ehs.*:read"
+tools:
+  - ehs.hazards
+  - ehs.permits
+  - ehs.env_summary
+  - ehs.summary
+  - objects.list
+keywords:
+  - 安全隐患
+  - 特种作业票
+  - 动火作业
+  - 受限空间
+  - 环保监测
+  - 粉尘排放
+  - 安全事故

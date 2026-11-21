@@ -19,6 +19,17 @@ from fos.eam.guards import (
     WO_START_EVENT,
     EamGuard,
 )
+from fos.ehs import tools as ehs_tools  # noqa: F401  注册 EHS 安全环保工具
+from fos.ehs.config import EhsConfig, load_ehs_config
+from fos.ehs.guards import (
+    ENV_RECORD_EVENT,
+    HAZARD_RECTIFY_EVENT,
+    HAZARD_VERIFY_EVENT,
+    INCIDENT_CLOSE_EVENT,
+    PERMIT_CLOSE_EVENT,
+    PERMIT_ISSUE_EVENT,
+    EhsGuard,
+)
 from fos.engineering.config import EngineeringConfig, check_engineering, load_engineering
 from fos.engineering.service import QUOTE_EVENT, EngQuoteGuard
 from fos.entry.spec import check_entry
@@ -109,6 +120,7 @@ class Services:
     quality: dict[str, QualityConfig]
     finance: dict[str, FinanceConfig]
     eam: dict[str, EamConfig]
+    ehs: dict[str, EhsConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -255,6 +267,24 @@ class Services:
         }
         for ev in (PM_DONE_EVENT, WO_START_EVENT, WO_DONE_EVENT, EQUIP_RETIRE_EVENT):
             ledger.add_guard(ev, EamGuard(ev))
+        # EHS 安全环保（W25）：只给本体里有安全隐患（safety_hazard）的租户开
+        ehs = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "safety_hazard" in ontologies[tid].objects
+            and (cfg := load_ehs_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir))
+            is not None
+        }
+        for ev in (
+            HAZARD_RECTIFY_EVENT,
+            HAZARD_VERIFY_EVENT,
+            PERMIT_ISSUE_EVENT,
+            PERMIT_CLOSE_EVENT,
+            INCIDENT_CLOSE_EVENT,
+            ENV_RECORD_EVENT,
+        ):
+            ledger.add_guard(ev, EhsGuard(ev, ehs))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -288,6 +318,7 @@ class Services:
                 quality=quality,
                 finance=finance,
                 eam=eam,
+                ehs=ehs,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -304,6 +335,7 @@ class Services:
                         "quality": quality.get(tid),
                         "finance": finance.get(tid),
                         "eam": eam.get(tid),
+                        "ehs": ehs.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -325,6 +357,7 @@ class Services:
             quality=quality,
             finance=finance,
             eam=eam,
+            ehs=ehs,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 
