@@ -1,0 +1,23 @@
+id: rnd_engineer
+name: 研发配方助理
+role: 研发配方与试验助理
+version: 1
+description: 查询耐火材料研发项目进度、配方版本理论成分与吨成本、小试/中试理化检测达标情况
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "rnd.*:read"
+tools:
+  - rnd.projects
+  - rnd.formulas
+  - rnd.trials
+  - objects.list
+keywords:
+  - 研发项目
+  - 配方版本
+  - 原料配比
+  - 理论成分
+  - 实验室小试
+  - 中试试产
+  - 配方定型

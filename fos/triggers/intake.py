@@ -58,6 +58,7 @@ from fos.planning.config import PlanningConfig
 from fos.quality.config import QualityConfig
 from fos.reports.daily import DAILY, DailyConfig, daily_report, parse_day
 from fos.reports.daily import report_card as daily_card
+from fos.rnd.config import RndConfig
 from fos.supply.cards import STOCK, SUGGEST, low_stock_card, material_card, suggestion_card
 from fos.supply.config import SupplyConfig
 from fos.tenancy import TenantRegistry
@@ -129,6 +130,7 @@ class TriggerIntake:
         eam: dict[str, EamConfig] | None = None,
         ehs: dict[str, EhsConfig] | None = None,
         hr: dict[str, HrConfig] | None = None,
+        rnd: dict[str, RndConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -150,6 +152,7 @@ class TriggerIntake:
         self.eam = eam or {}
         self.ehs = ehs or {}
         self.hr = hr or {}
+        self.rnd = rnd or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -275,6 +278,8 @@ class TriggerIntake:
                 await self._ehs(session, msg, out, principal, hm)
             elif msg.kind == "text" and msg.tenant_id in self.hr and (hrm := _hr_word(msg.text.strip())):
                 await self._hr(session, msg, out, principal, hrm)
+            elif msg.kind == "text" and msg.tenant_id in self.rnd and (rm := _rnd_word(msg.text.strip())):
+                await self._rnd(session, msg, out, principal, rm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -1010,6 +1015,39 @@ class TriggerIntake:
         trig.result = report["totals"]
         await self._reply(None, msg, out, hrc.payroll_card(report))
 
+    async def _rnd(
+        self, session: AsyncSession, msg: InboundMessage, out: Outcome, principal: Principal, kind: str
+    ) -> None:
+        from fos.rnd import cards as rc
+        from fos.rnd import service as rs
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"rnd_{kind}", "done"
+        tid = msg.tenant_id
+        if kind == "projects":
+            if not principal.can("rnd.project:read"):
+                await self._reply(None, msg, out, "你没有查看研发项目的权限（rnd.project:read）。")
+                return
+            board = await rs.projects_board(session, tid)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, rc.projects_card(board))
+            return
+        if kind == "formulas":
+            if not principal.can("rnd.formula:read"):
+                await self._reply(None, msg, out, "你没有查看配方版本的权限（rnd.formula:read）。")
+                return
+            board = await rs.formulas_board(session, tid)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, rc.formulas_card(board))
+            return
+        if not principal.can("rnd.trial:read"):
+            await self._reply(None, msg, out, "你没有查看研发试验的权限（rnd.trial:read）。")
+            return
+        board = await rs.trials_board(session, tid)
+        trig.result = board["counts"]
+        await self._reply(None, msg, out, rc.trials_card(board))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -1136,6 +1174,18 @@ def _hr_word(text: str) -> str | None:
         return "certs"
     if PAYROLL.match(text):
         return "payroll"
+    return None
+
+
+def _rnd_word(text: str) -> str | None:
+    from fos.rnd.cards import FORMULAS, PROJECTS, TRIALS
+
+    if PROJECTS.match(text):
+        return "projects"
+    if FORMULAS.match(text):
+        return "formulas"
+    if TRIALS.match(text):
+        return "trials"
     return None
 
 
