@@ -41,6 +41,7 @@ from fos.entry.draft import build_draft, draft_card
 from fos.extraction.service import Extractor, load_fields
 from fos.finance.config import FinanceConfig
 from fos.governance.principal import Principal, principal_for_user
+from fos.hr.config import HrConfig
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, find_root, report_card, trace_report
 from fos.monitoring.config import MonitorConfig
@@ -127,6 +128,7 @@ class TriggerIntake:
         finance: dict[str, FinanceConfig] | None = None,
         eam: dict[str, EamConfig] | None = None,
         ehs: dict[str, EhsConfig] | None = None,
+        hr: dict[str, HrConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -147,6 +149,7 @@ class TriggerIntake:
         self.finance = finance or {}
         self.eam = eam or {}
         self.ehs = ehs or {}
+        self.hr = hr or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -270,6 +273,8 @@ class TriggerIntake:
                 await self._eam(session, msg, out, principal, em)
             elif msg.kind == "text" and msg.tenant_id in self.ehs and (hm := _ehs_word(msg.text.strip())):
                 await self._ehs(session, msg, out, principal, hm)
+            elif msg.kind == "text" and msg.tenant_id in self.hr and (hrm := _hr_word(msg.text.strip())):
+                await self._hr(session, msg, out, principal, hrm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -969,6 +974,42 @@ class TriggerIntake:
         trig.result = board["counts"]
         await self._reply(None, msg, out, hc.env_card(board))
 
+    async def _hr(
+        self, session: AsyncSession, msg: InboundMessage, out: Outcome, principal: Principal, kind: str
+    ) -> None:
+        from fos.hr import cards as hrc
+        from fos.hr import service as hrs
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"hr_{kind}", "done"
+        tid = msg.tenant_id
+        cfg = self.hr[tid]
+        today = self._today(msg)
+        month = today.strftime("%Y-%m")
+        if kind == "roster":
+            if not principal.can("hr.roster:read"):
+                await self._reply(None, msg, out, "你没有查看排班考勤的权限（hr.roster:read）。")
+                return
+            board = await hrs.roster_board(session, tid, month=month)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, hrc.roster_card(board))
+            return
+        if kind == "certs":
+            if not principal.can("hr.cert:read"):
+                await self._reply(None, msg, out, "你没有查看特种资质的权限（hr.cert:read）。")
+                return
+            board = await hrs.certs_board(session, tid, cfg, today)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, hrc.certs_card(board))
+            return
+        if not principal.can("hr.roster:read"):
+            await self._reply(None, msg, out, "你没有查看计件薪酬的权限（hr.roster:read）。")
+            return
+        report = await hrs.payroll_report(session, tid, cfg, month)
+        trig.result = report["totals"]
+        await self._reply(None, msg, out, hrc.payroll_card(report))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -1083,6 +1124,18 @@ def _ehs_word(text: str) -> str | None:
         return "permits"
     if ENV.match(text):
         return "env"
+    return None
+
+
+def _hr_word(text: str) -> str | None:
+    from fos.hr.cards import CERTS, PAYROLL, ROSTER
+
+    if ROSTER.match(text):
+        return "roster"
+    if CERTS.match(text):
+        return "certs"
+    if PAYROLL.match(text):
+        return "payroll"
     return None
 
 

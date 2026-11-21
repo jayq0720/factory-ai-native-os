@@ -24,6 +24,7 @@ from fos.api.eam_routes import router as eam_router
 from fos.api.ehs_routes import router as ehs_router
 from fos.api.eng_routes import router as eng_router
 from fos.api.finance_routes import router as finance_router
+from fos.api.hr_routes import router as hr_router
 from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
 from fos.api.monitor_routes import router as monitor_router
@@ -183,6 +184,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(finance_router)
     app.include_router(eam_router)
     app.include_router(ehs_router)
+    app.include_router(hr_router)
     return app
 
 

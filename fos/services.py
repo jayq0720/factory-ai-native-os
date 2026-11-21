@@ -47,6 +47,16 @@ from fos.finance.guards import (
     FinanceGuard,
 )
 from fos.gateway.llm import LLMClient
+from fos.hr import tools as hr_tools  # noqa: F401  注册人力排班与薪酬工具
+from fos.hr.config import HrConfig, load_hr_config
+from fos.hr.guards import (
+    CERT_REC_EVENT,
+    CERT_RENEW_EVENT,
+    LEAVE_CANCEL_EVENT,
+    LEAVE_SUB_EVENT,
+    ROSTER_LOG_EVENT,
+    HrGuard,
+)
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, load_trace_config
 from fos.monitoring.config import MonitorConfig, load_monitor_config
@@ -121,6 +131,7 @@ class Services:
     finance: dict[str, FinanceConfig]
     eam: dict[str, EamConfig]
     ehs: dict[str, EhsConfig]
+    hr: dict[str, HrConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -285,6 +296,23 @@ class Services:
             ENV_RECORD_EVENT,
         ):
             ledger.add_guard(ev, EhsGuard(ev, ehs))
+        # 人力、排班、计件与特种资质（W26）：只给本体里有员工档案（employee）的租户开
+        hr = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "employee" in ontologies[tid].objects
+            and (cfg := load_hr_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir))
+            is not None
+        }
+        for ev in (
+            CERT_REC_EVENT,
+            CERT_RENEW_EVENT,
+            ROSTER_LOG_EVENT,
+            LEAVE_SUB_EVENT,
+            LEAVE_CANCEL_EVENT,
+        ):
+            ledger.add_guard(ev, HrGuard(ev, hr))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -319,6 +347,7 @@ class Services:
                 finance=finance,
                 eam=eam,
                 ehs=ehs,
+                hr=hr,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -336,6 +365,7 @@ class Services:
                         "finance": finance.get(tid),
                         "eam": eam.get(tid),
                         "ehs": ehs.get(tid),
+                        "hr": hr.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -358,6 +388,7 @@ class Services:
             finance=finance,
             eam=eam,
             ehs=ehs,
+            hr=hr,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 

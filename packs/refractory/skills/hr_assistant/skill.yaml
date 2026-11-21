@@ -1,0 +1,22 @@
+id: hr_assistant
+name: 人力排班与薪酬助手
+version: 1
+description: 查询员工花名册、特种作业证照到期预警、班次考勤与月度计件薪酬汇总
+autonomy: L1
+tools:
+  - hr.employees
+  - hr.certs
+  - hr.roster
+  - hr.payroll
+  - objects.list
+keywords:
+  - 员工
+  - 花名册
+  - 排班
+  - 考勤
+  - 资质
+  - 持证
+  - 计件
+  - 工资
+  - 薪酬
+  - 请假
