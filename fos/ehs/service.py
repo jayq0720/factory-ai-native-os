@@ -301,6 +301,7 @@ async def remind_overdue_hazards(
                 object_type="safety_hazard",
                 object_id=it["id"],
                 source="system:ehs",
+                created_by="system:ehs",
                 due_at=due_dt,
                 data_mode=mode,
             )
@@ -655,6 +656,7 @@ async def record_env_reading(
                 object_type="safety_hazard",
                 object_id=auto_hazard_id,
                 source="system:ehs",
+                created_by="system:ehs",
                 data_mode=body.data_mode,
             )
         )
