@@ -33,6 +33,9 @@ def test_me_resolves_tenant_and_permissions(client, keys):
     assert body["tenant_name"] == "六安绿能"
     assert body["permissions"] == [
         "doc.document:write",
+        "eam.*:read",
+        "eam.inspection:write",
+        "eam.work_order:write",
         "production.*:read",
         "production.reading:write",
         "production.record:write",

@@ -10,6 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
 from fos.db.session import make_engine, make_sessionmaker
+from fos.eam import tools as eam_tools  # noqa: F401  注册设备管理工具
+from fos.eam.config import EamConfig, load_eam_config
+from fos.eam.guards import (
+    EQUIP_RETIRE_EVENT,
+    PM_DONE_EVENT,
+    WO_DONE_EVENT,
+    WO_START_EVENT,
+    EamGuard,
+)
 from fos.engineering.config import EngineeringConfig, check_engineering, load_engineering
 from fos.engineering.service import QUOTE_EVENT, EngQuoteGuard
 from fos.entry.spec import check_entry
@@ -99,6 +108,7 @@ class Services:
     monitoring: dict[str, MonitorConfig]
     quality: dict[str, QualityConfig]
     finance: dict[str, FinanceConfig]
+    eam: dict[str, EamConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -234,6 +244,17 @@ class Services:
             VOUCHER_POST_EVENT,
         ):
             ledger.add_guard(ev, FinanceGuard(ev))
+        # 设备管理（W24）：只给本体里有保养计划（maintenance_plan）的租户开
+        eam = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "maintenance_plan" in ontologies[tid].objects
+            and (cfg := load_eam_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir))
+            is not None
+        }
+        for ev in (PM_DONE_EVENT, WO_START_EVENT, WO_DONE_EVENT, EQUIP_RETIRE_EVENT):
+            ledger.add_guard(ev, EamGuard(ev))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -266,6 +287,7 @@ class Services:
                 monitoring=monitoring,
                 quality=quality,
                 finance=finance,
+                eam=eam,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -281,6 +303,7 @@ class Services:
                         "supply": supply.get(tid),
                         "quality": quality.get(tid),
                         "finance": finance.get(tid),
+                        "eam": eam.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -301,6 +324,7 @@ class Services:
             monitoring=monitoring,
             quality=quality,
             finance=finance,
+            eam=eam,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 
