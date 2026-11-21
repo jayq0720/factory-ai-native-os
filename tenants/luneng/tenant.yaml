@@ -50,7 +50,7 @@ roles:
     name: 班组长
     permissions: ["production.*:read", "production.*:write", "production.kiln:approve", "doc.document:read",
                   "doc.document:write", "doc.field:write", "platform.todo:write", "eam.*:read", "eam.*:write",
-                  "ehs.*:read", "ehs.*:write", "warehouse.*:read"]
+                  "ehs.*:read", "ehs.*:write", "hr.*:read", "hr.*:write", "warehouse.*:read"]
   worker:
     name: 工人
     permissions: ["production.record:write", "production.reading:write", "production.*:read", "doc.document:write",
@@ -66,7 +66,7 @@ roles:
     permissions: ["production.edge_uplink:write"]
   finance:
     name: 财务
-    permissions: ["finance.*:read", "finance.*:write", "sales.*:read", "purchase.*:read",
+    permissions: ["finance.*:read", "finance.*:write", "hr.*:read", "hr.*:write", "sales.*:read", "purchase.*:read",
                   "warehouse.*:read", "production.*:read", "doc.document:read", "doc.document:write"]
 
 # 每类动作 Agent 最多能做到的自治级别（方案 2.7）

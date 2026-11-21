@@ -1,0 +1,9 @@
+# 耐火材料行业人力、排班、计件与特种资质配置（W26）。
+# 租户可在 tenants/<id>/hr.yaml 覆盖标准出勤天数、加班倍率与计件单价。
+
+cert_remind_days: 30
+standard_work_days: 22
+overtime_multiplier: 1.5
+default_piece_rate: 12.0
+max_shift_hours: 16.0
+notify_roles: [shift_lead, admin]

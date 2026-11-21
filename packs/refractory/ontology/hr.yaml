@@ -1,0 +1,123 @@
+# 耐火材料行业人力、排班、计件与特种资质本体扩展（W26）。
+# 花名册、特种作业证照、班次出勤/计件与请假单全部走事件账本，由 fos/hr/guards.py 校验不变量。
+
+objects:
+  employee:
+    name: 员工档案
+    domain: hr
+    description: 工厂员工花名册、班组归属与基础薪资配置
+    properties:
+      emp_no: {type: string, name: 工号, required: true}
+      name: {type: string, name: 姓名, required: true}
+      department: {type: string, name: 部门/车间, required: true}
+      position: {type: string, name: 岗位, required: true}
+      shift_group: {type: enum, name: 班组, values: [A, B, C, day], required: true}
+      base_salary: {type: number, name: 月基本工资}
+      hire_date: {type: date, name: 入职日期, required: true}
+      status: {type: enum, name: 在职状态, values: [active, on_leave, resigned], required: true}
+      phone: {type: string, name: 联系电话}
+      note: {type: text, name: 备注}
+
+  work_cert:
+    name: 特种作业资质
+    domain: hr
+    description: 焊工、电工、叉车、行车、司炉、安全员等持证与复审到期台账
+    properties:
+      cert_no: {type: string, name: 证书编号, required: true}
+      employee: {type: ref, target: employee, name: 持证人, required: true}
+      kind:
+        type: enum
+        name: 资质类型
+        values: [welder, electrician, forklift, crane, kiln_operator, safety_officer, other]
+        required: true
+      issued_date: {type: date, name: 发证日期, required: true}
+      expires_date: {type: date, name: 复审/到期日, required: true}
+      status: {type: enum, name: 状态, values: [valid, expired, revoked], required: true}
+      note: {type: text, name: 备注}
+
+  shift_roster:
+    name: 排班与计件考勤
+    domain: hr
+    description: 按日按班次记录员工出勤、工时、加班与计件产量
+    properties:
+      roster_no: {type: string, name: 排班单号, required: true}
+      work_date: {type: date, name: 考勤日期, required: true}
+      shift_name: {type: enum, name: 班次, values: [day, night, morning, afternoon], required: true}
+      employee: {type: ref, target: employee, name: 员工, required: true}
+      attendance: {type: enum, name: 出勤状态, values: [scheduled, present, late, absent, leave], required: true}
+      hours: {type: number, name: 出勤工时, required: true}
+      overtime_hours: {type: number, name: 加班工时}
+      piece_qty: {type: number, name: 计件产量}
+      piece_rate: {type: number, name: 计件单价}
+      note: {type: text, name: 备注}
+
+  leave_request:
+    name: 请假单
+    domain: hr
+    description: 年假、病假、事假、工伤假申请，3 天及以上需总经理审批
+    properties:
+      leave_no: {type: string, name: 请假单号, required: true}
+      employee: {type: ref, target: employee, name: 员工, required: true}
+      kind: {type: enum, name: 请假类型, values: [annual, sick, personal, injury], required: true}
+      start_date: {type: date, name: 开始日期, required: true}
+      end_date: {type: date, name: 结束日期, required: true}
+      days: {type: number, name: 请假天数, required: true}
+      reason: {type: text, name: 请假事由, required: true}
+      status: {type: enum, name: 状态, values: [approved, cancelled], required: true}
+
+events:
+  hr.employee_registered:
+    name: 员工入职建档
+    object: employee
+    op: create
+    permission: hr.employee:write
+    evidence: required
+    fields: [emp_no, name, department, position, shift_group, base_salary, hire_date, status, phone, note]
+
+  hr.employee_updated:
+    name: 更新员工档案
+    object: employee
+    op: update
+    permission: hr.employee:write
+    evidence: required
+    fields: [department, position, shift_group, base_salary, status, phone, note]
+
+  hr.cert_recorded:
+    name: 登记特种作业资质
+    object: work_cert
+    op: create
+    permission: hr.cert:write
+    evidence: required
+    fields: [cert_no, employee, kind, issued_date, expires_date, status, note]
+
+  hr.cert_renewed:
+    name: 特种作业资质复审换证
+    object: work_cert
+    op: update
+    permission: hr.cert:write
+    evidence: required
+    fields: [expires_date, status, note]
+
+  hr.roster_logged:
+    name: 登记排班与计件考勤
+    object: shift_roster
+    op: create
+    permission: hr.roster:write
+    evidence: required
+    fields: [roster_no, work_date, shift_name, employee, attendance, hours, overtime_hours, piece_qty, piece_rate, note]
+
+  hr.leave_submitted:
+    name: 提交请假单
+    object: leave_request
+    op: create
+    permission: hr.leave:write
+    evidence: required
+    fields: [leave_no, employee, kind, start_date, end_date, days, reason, status]
+
+  hr.leave_cancelled:
+    name: 撤销请假单
+    object: leave_request
+    op: update
+    permission: hr.leave:write
+    evidence: required
+    fields: [status]
