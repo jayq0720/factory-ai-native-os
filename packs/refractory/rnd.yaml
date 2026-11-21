@@ -1,0 +1,8 @@
+# 耐火材料行业研发配方与试产配置（W27）。
+# 租户可在 tenants/<id>/rnd.yaml 覆盖配比容差、烧成温度范围与放行前最少合格试验次数。
+
+pct_tolerance: 0.5
+min_firing_temp_c: 100.0
+max_firing_temp_c: 1900.0
+min_passed_trials_for_release: 1
+notify_roles: [rnd, engineer]

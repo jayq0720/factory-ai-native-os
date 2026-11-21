@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>研发配方与试产 · Factory AI Native OS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <strong>Factory AI Native OS</strong>
+      <a href="/app/">工作台</a>
+      <a href="/app/quality.html">质量体系</a>
+      <a href="/app/finance.html">财务成本</a>
+      <a href="/app/eam.html">设备管理</a>
+      <a href="/app/ehs.html">安全环保</a>
+      <a href="/app/hr.html">人力薪酬</a>
+      <a href="/app/rnd.html"><strong>研发配方</strong></a>
+      <span id="who" class="muted" style="margin-left:auto"></span>
+    </div>
+  </header>
+
+  <main style="max-width:1180px;margin:1rem auto;padding:0 1rem">
+    <section class="card">
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <label>API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
+        <button id="btnLoad">刷新看板</button>
+        <button id="btnExport">导出研发配方报表 (.xlsx)</button>
+        <span id="msg" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>研发项目台账</h2>
+      <div id="projSummary" class="muted">加载中...</div>
+      <table id="projTable" style="width:100%;margin-top:.5rem">
+        <thead>
+          <tr><th>项目号</th><th>名称</th><th>目标产品</th><th>Al2O3≥</th><th>体密≥</th><th>耐压≥</th><th>负责人</th><th>结题日</th><th>状态</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>配方版本与理论成本（定型量产需合格试验 + 总经理审批）</h2>
+      <table id="frmTable" style="width:100%">
+        <thead>
+          <tr><th>配方号</th><th>所属项目</th><th>版本号</th><th>总配比%</th><th>理论Al2O3%</th><th>吨成本(元)</th><th>烧成(℃)</th><th>状态</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>实验室与中试检测记录</h2>
+      <table id="trlTable" style="width:100%">
+        <thead>
+          <tr><th>试验单号</th><th>配方版本</th><th>阶段</th><th>日期</th><th>Al2O3%</th><th>体密</th><th>耐压MPa</th><th>判定</th><th>结论</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="rnd.js"></script>
+</body>
+</html>

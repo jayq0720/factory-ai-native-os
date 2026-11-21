@@ -86,6 +86,14 @@ from fos.quality.guards import (
     NcrGuard,
 )
 from fos.reports.daily import DailyConfig, load_daily_config
+from fos.rnd import tools as rnd_tools  # noqa: F401  注册研发配方工具
+from fos.rnd.config import RndConfig, load_rnd_config
+from fos.rnd.guards import (
+    FORMULA_CREATE_EVENT,
+    FORMULA_REJECT_EVENT,
+    FORMULA_RELEASE_EVENT,
+    RndGuard,
+)
 from fos.skills.loader import load_skills
 from fos.skills.schema import SkillDef
 from fos.supply import tools as supply_tools  # noqa: F401  注册采购仓储工具
@@ -132,6 +140,7 @@ class Services:
     eam: dict[str, EamConfig]
     ehs: dict[str, EhsConfig]
     hr: dict[str, HrConfig]
+    rnd: dict[str, RndConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -313,6 +322,17 @@ class Services:
             LEAVE_CANCEL_EVENT,
         ):
             ledger.add_guard(ev, HrGuard(ev, hr))
+        # 研发配方与试验（W27）：只给本体里有研发项目（rnd_project）的租户开
+        rnd = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "rnd_project" in ontologies[tid].objects
+            and (cfg := load_rnd_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir))
+            is not None
+        }
+        for ev in (FORMULA_CREATE_EVENT, FORMULA_RELEASE_EVENT, FORMULA_REJECT_EVENT):
+            ledger.add_guard(ev, RndGuard(ev, rnd))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -348,6 +368,7 @@ class Services:
                 eam=eam,
                 ehs=ehs,
                 hr=hr,
+                rnd=rnd,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -366,6 +387,7 @@ class Services:
                         "eam": eam.get(tid),
                         "ehs": ehs.get(tid),
                         "hr": hr.get(tid),
+                        "rnd": rnd.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -389,6 +411,7 @@ class Services:
             eam=eam,
             ehs=ehs,
             hr=hr,
+            rnd=rnd,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 
