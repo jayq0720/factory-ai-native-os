@@ -1,0 +1,103 @@
+# 耐火材料行业研发配方试验与新产品试产本体扩展（W27）。
+# 研发立项、配方版本与实验室/中试试验记录全部走事件账本，由 fos/rnd/guards.py 校验配比与放行门禁。
+
+objects:
+  rnd_project:
+    name: 研发项目
+    domain: rnd
+    description: 耐火材料新产品开发、降本配方优化与性能指标目标台账
+    properties:
+      project_no: {type: string, name: 项目编号, required: true}
+      name: {type: string, name: 项目名称, required: true}
+      target_product: {type: string, name: 目标牌号/产品, required: true}
+      target_al2o3_min: {type: number, name: 目标 Al2O3 下限(%)}
+      target_bd_min: {type: number, name: 目标体积密度下限(g/cm³)}
+      target_ccs_min: {type: number, name: 目标耐压强度下限(MPa)}
+      owner_name: {type: string, name: 研发负责人, required: true}
+      due_date: {type: date, name: 目标结题日, required: true}
+      status: {type: enum, name: 状态, values: [active, trial, released, archived], required: true}
+      note: {type: text, name: 备注}
+
+  formula_version:
+    name: 配方版本
+    domain: rnd
+    description: 耐火材料原料配比、理论成分、估算吨成本与烧成温度版本记录
+    properties:
+      formula_no: {type: string, name: 配方编号, required: true}
+      project: {type: ref, target: rnd_project, name: 所属项目, required: true}
+      version_code: {type: string, name: 版本号, required: true}
+      ingredients_json: {type: text, name: 配比明细(JSON), required: true}
+      total_pct: {type: number, name: 配比总和(%), required: true}
+      calc_al2o3_pct: {type: number, name: 理论 Al2O3(%)}
+      est_cost_per_ton: {type: number, name: 估算吨原料成本(元)}
+      firing_temp_c: {type: number, name: 烧成温度(℃), required: true}
+      status: {type: enum, name: 状态, values: [draft, testing, approved, rejected], required: true}
+      note: {type: text, name: 说明}
+
+  lab_trial:
+    name: 试验检测记录
+    domain: rnd
+    description: 实验室小试、中试与窑炉试烧理化性能实测与确定性达标判定
+    properties:
+      trial_no: {type: string, name: 试验单号, required: true}
+      formula: {type: ref, target: formula_version, name: 对应配方, required: true}
+      stage: {type: enum, name: 试验阶段, values: [lab, pilot, kiln_trial], required: true}
+      trial_date: {type: date, name: 试验日期, required: true}
+      al2o3_pct: {type: number, name: 实测 Al2O3(%)}
+      bulk_density: {type: number, name: 实测体积密度(g/cm³)}
+      ccs_mpa: {type: number, name: 实测常温耐压(MPa)}
+      thermal_shock_cycles: {type: integer, name: 抗热震次数}
+      passed: {type: bool, name: 是否达标, required: true}
+      conclusion: {type: text, name: 试验结论, required: true}
+
+events:
+  rnd.project_created:
+    name: 研发项目立项
+    object: rnd_project
+    op: create
+    permission: rnd.project:write
+    evidence: required
+    fields:
+      [project_no, name, target_product, target_al2o3_min, target_bd_min, target_ccs_min, owner_name, due_date, status, note]
+
+  rnd.project_updated:
+    name: 更新研发项目
+    object: rnd_project
+    op: update
+    permission: rnd.project:write
+    evidence: required
+    fields: [target_al2o3_min, target_bd_min, target_ccs_min, due_date, status, note]
+
+  rnd.formula_created:
+    name: 登记配方版本
+    object: formula_version
+    op: create
+    permission: rnd.formula:write
+    evidence: required
+    fields:
+      [formula_no, project, version_code, ingredients_json, total_pct, calc_al2o3_pct, est_cost_per_ton, firing_temp_c, status, note]
+
+  rnd.formula_released:
+    name: 配方定型放行量产
+    object: formula_version
+    op: update
+    permission: rnd.formula:write
+    evidence: required
+    fields: [status, note]
+
+  rnd.formula_rejected:
+    name: 配方作废驳回
+    object: formula_version
+    op: update
+    permission: rnd.formula:write
+    evidence: required
+    fields: [status, note]
+
+  rnd.trial_logged:
+    name: 登记研发试验记录
+    object: lab_trial
+    op: create
+    permission: rnd.trial:write
+    evidence: required
+    fields:
+      [trial_no, formula, stage, trial_date, al2o3_pct, bulk_density, ccs_mpa, thermal_shock_cycles, passed, conclusion]

@@ -33,6 +33,7 @@ from fos.api.pilot_routes import router as pilot_router
 from fos.api.planning_routes import router as planning_router
 from fos.api.production_routes import router as production_router
 from fos.api.quality_routes import router as quality_router
+from fos.api.rnd_routes import router as rnd_router
 from fos.api.supply_routes import router as supply_router
 from fos.api.tender_routes import router as tender_router
 from fos.channels.mock import MockChannel
@@ -185,6 +186,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(eam_router)
     app.include_router(ehs_router)
     app.include_router(hr_router)
+    app.include_router(rnd_router)
     return app
 
 
