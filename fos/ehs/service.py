@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -124,12 +125,10 @@ def _hazard_out(o: ObjectState, today: date, remind_days: int) -> dict[str, Any]
     overdue = False
     due_soon = False
     if st != "verified" and due_str:
-        try:
+        with suppress(ValueError):
             d = date.fromisoformat(str(due_str))
             overdue = d < today
             due_soon = today <= d <= today + timedelta(days=remind_days)
-        except ValueError:
-            pass
     return {
         "id": o.object_id,
         "hazard_no": s.get("hazard_no") or o.object_id,

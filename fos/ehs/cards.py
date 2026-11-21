@@ -24,10 +24,7 @@ def hazards_card(board: dict[str, Any]) -> Card:
     ]
     return Card(
         title="安全隐患排查台账",
-        text=(
-            f"截至 {board['date']}：共 {c['total']} 项，待整改 {c['open']} / "
-            f"整改中 {c['rectifying']} / 超期 {c['overdue']}（重大未闭环 {c['major_open']}）。"
-        ),
+        text=f"截至 {board['date']}：共 {c['total']} 项，待改 {c['open']} / 整改 {c['rectifying']} / 超期 {c['overdue']}。",
         fields=fields,
         data_mode=board["data_mode"],
         footer="详见控制台 /app/ehs.html",
@@ -45,10 +42,7 @@ def permits_card(board: dict[str, Any]) -> Card:
     ]
     return Card(
         title="特种作业票看板",
-        text=(
-            f"共 {c['total']} 张作业票，其中作业中 {c['active']} 张，"
-            f"高风险（动火/受限空间）{c['high_risk']} 张。"
-        ),
+        text=f"共 {c['total']} 张作业票：作业中 {c['active']} 张，高风险 {c['high_risk']} 张。",
         fields=fields,
         data_mode=board["data_mode"],
         footer="详见控制台 /app/ehs.html",
@@ -60,19 +54,13 @@ def env_card(board: dict[str, Any]) -> Card:
     fields = [
         CardField(
             label=f"{it['point_name']} {it['kind_text']}"[:20],
-            value=(
-                f"{it['value']} / {it['limit_value']} {it['unit']} · "
-                f"{'达标' if it['passed'] else '超标 ⚠'}"
-            ),
+            value=f"{it['value']}/{it['limit_value']} {it['unit']} · {'达标' if it['passed'] else '超标 ⚠'}",
         )
         for it in board["items"][:6]
     ]
     return Card(
         title="环保排放监测看板",
-        text=(
-            f"共 {c['total']} 条监测记录：达标 {c['passed']} / 超标 {c['exceeded']}"
-            f"（达标率 {c['compliance_rate_pct']}%）。"
-        ),
+        text=f"共 {c['total']} 条监测：达标 {c['passed']} / 超标 {c['exceeded']}（达标率 {c['compliance_rate_pct']}%）。",
         fields=fields,
         data_mode=board["data_mode"],
         footer="详见控制台 /app/ehs.html",
