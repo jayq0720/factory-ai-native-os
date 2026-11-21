@@ -169,9 +169,7 @@ async def trigger_cert_remind(
     request: Request, session: SessionDep, p: CertWrite, mode: Literal["real", "mock"] = "real"
 ) -> dict[str, Any]:
     cfg = _cfg(request, p.tenant_id)
-    return await hrs.remind_expiring_certs(
-        session, p.tenant_id, cfg, _today(request, p.tenant_id), mode=mode
-    )
+    return await hrs.remind_expiring_certs(session, p.tenant_id, cfg, _today(request, p.tenant_id), mode=mode)
 
 
 # ---------------- 排班与计件考勤 ----------------
@@ -230,9 +228,7 @@ async def create_leave(body: hrs.LeaveIn, request: Request, session: SessionDep,
 
 
 @router.post("/leaves/{leave_id}/cancel")
-async def cancel_leave_ep(
-    leave_id: str, request: Request, session: SessionDep, p: LvWrite
-) -> dict[str, Any]:
+async def cancel_leave_ep(leave_id: str, request: Request, session: SessionDep, p: LvWrite) -> dict[str, Any]:
     _cfg(request, p.tenant_id)
     try:
         res = await hrs.cancel_leave(session, p, request.app.state.ledger, leave_id)

@@ -85,9 +85,8 @@ def hr_report_xlsx(
         )
 
     w_pay = wb.create_sheet("月度薪酬核算")
-    w_pay.append(
-        ["工号", "姓名", "部门", "出勤天", "加班(h)", "计件量", "基本折算", "加班费", "计件工资", "应发合计"]
-    )
+    pay_cols = ["工号", "姓名", "部门", "出勤天", "加班(h)", "计件量", "基本折算", "加班费", "计件", "应发"]
+    w_pay.append(pay_cols)
     for c in w_pay[1]:
         c.font = Font(bold=True)
     for p in payroll.get("items") or []:

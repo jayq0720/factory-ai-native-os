@@ -225,9 +225,7 @@ class WorkCertRenewIn(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list, max_length=10)
 
 
-def _cert_out(
-    o: ObjectState, emp_names: dict[str, str], today: date, remind_days: int
-) -> dict[str, Any]:
+def _cert_out(o: ObjectState, emp_names: dict[str, str], today: date, remind_days: int) -> dict[str, Any]:
     s = o.state
     eid = s.get("employee") or ""
     kd = s.get("kind") or "other"
