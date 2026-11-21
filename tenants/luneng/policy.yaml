@@ -78,6 +78,15 @@ rules:
       - {name: 总经理审批, role: gm}
     expires_hours: 48
 
+  ehs_high_risk_permit:
+    name: 动火与受限空间特种作业票需总经理审批
+    events: [ehs.permit_issued]
+    when:
+      - {field: kind, op: in, value: [hot_work, confined_space]}
+    steps:
+      - {name: 总经理审批, role: gm}
+    expires_hours: 12
+
   # ---------- 工程报价（方案 4.2 第 8 步：报价需销售负责人二次确认）----------
   # 毛利率 = (材料净价 - 材料成本) / 材料净价，由报价代码确定性计算后写在事件里。
   # 15% 与“低于成本不能报价”都是占位值，待试点确认。

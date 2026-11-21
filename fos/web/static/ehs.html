@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EHS 安全环保 · Factory AI Native OS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <strong>Factory AI Native OS</strong>
+      <a href="/app/">工作台</a>
+      <a href="/app/kiln.html">窑炉监控</a>
+      <a href="/app/quality.html">质量体系</a>
+      <a href="/app/finance.html">财务成本</a>
+      <a href="/app/eam.html">设备管理</a>
+      <a href="/app/ehs.html"><strong>安全环保</strong></a>
+      <span id="who" class="muted" style="margin-left:auto"></span>
+    </div>
+  </header>
+
+  <main style="max-width:1180px;margin:1rem auto;padding:0 1rem">
+    <section class="card">
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <label>API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
+        <button id="btnLoad">刷新看板</button>
+        <button id="btnRemind">生成隐患超期提醒</button>
+        <button id="btnExport">导出 EHS 合规报告 (.xlsx)</button>
+        <span id="msg" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>EHS 合规总览</h2>
+      <div id="kpiSummary" class="muted">加载中...</div>
+    </section>
+
+    <section class="card">
+      <h2>安全隐患排查台账</h2>
+      <table id="hzTable" style="width:100%">
+        <thead>
+          <tr><th>编号</th><th>位置</th><th>类别</th><th>等级</th><th>状态</th><th>整改期限</th><th>描述</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>特种作业票（动火/受限空间需总经理审批）</h2>
+      <table id="ptTable" style="width:100%">
+        <thead>
+          <tr><th>票号</th><th>类型</th><th>地点</th><th>负责人</th><th>状态</th><th>有效起时</th><th>有效止时</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>环保排放监测</h2>
+      <table id="envTable" style="width:100%">
+        <thead>
+          <tr><th>监测点位</th><th>指标</th><th>实测值</th><th>限值</th><th>单位</th><th>判定</th><th>监测时间</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>安全事故与险情</h2>
+      <table id="incTable" style="width:100%">
+        <thead>
+          <tr><th>编号</th><th>类型</th><th>地点</th><th>受伤人数</th><th>状态</th><th>经过描述</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="ehs.js"></script>
+</body>
+</html>

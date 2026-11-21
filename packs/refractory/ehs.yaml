@@ -1,0 +1,14 @@
+# 耐火材料行业 EHS 安全环保配置（W25）。
+# 排放限值参考耐材窑炉与工业粉尘通用国标，租户可在 tenants/<id>/ehs.yaml 按环评批复覆盖。
+
+env_limits:
+  dust: {name: 颗粒物/粉尘, unit: mg/m³, max: 20.0}
+  nox: {name: 氮氧化物 NOx, unit: mg/m³, max: 200.0}
+  so2: {name: 二氧化硫 SO2, unit: mg/m³, max: 100.0}
+  noise: {name: 厂界噪声, unit: dB(A), max: 85.0}
+  voc: {name: 挥发性有机物 VOC, unit: mg/m³, max: 60.0}
+
+auto_hazard_on_env_exceed: true
+hazard_remind_days: 3
+max_permit_hours: 72
+notify_roles: [shift_lead, engineer]
