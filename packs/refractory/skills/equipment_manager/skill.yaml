@@ -1,0 +1,27 @@
+id: equipment_manager
+name: 设备助理
+role: 设备与维保助理
+version: 1
+description: 查询设备台账状态、到期保养计划、维修工单进度、备件库存与设备可用率（MTBF/MTTR）
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "eam.*:read"
+  - "warehouse.material:read"
+  - "warehouse.material_lot:read"
+tools:
+  - eam.equipment
+  - eam.pm_due
+  - eam.work_orders
+  - eam.reliability
+  - objects.list
+keywords:
+  - 设备台账
+  - 保养计划
+  - 维修工单
+  - 故障报修
+  - 设备可用率
+  - MTBF
+  - MTTR
+  - 备件库存

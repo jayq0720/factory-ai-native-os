@@ -35,6 +35,7 @@ from fos.channels.cards import Card, CardField
 from fos.channels.types import ConversationRef, InboundMessage
 from fos.config import Settings
 from fos.db.models import CardRecord, ChannelIdentity, Event, ObjectState, Thread, Trigger, User, utcnow
+from fos.eam.config import EamConfig
 from fos.entry.draft import build_draft, draft_card
 from fos.extraction.service import Extractor, load_fields
 from fos.finance.config import FinanceConfig
@@ -123,6 +124,7 @@ class TriggerIntake:
         monitoring: dict[str, MonitorConfig] | None = None,
         quality: dict[str, QualityConfig] | None = None,
         finance: dict[str, FinanceConfig] | None = None,
+        eam: dict[str, EamConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -141,6 +143,7 @@ class TriggerIntake:
         self.monitoring = monitoring or {}
         self.quality = quality or {}
         self.finance = finance or {}
+        self.eam = eam or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -260,6 +263,8 @@ class TriggerIntake:
                 and (fm := _finance_word(msg.text.strip()))
             ):
                 await self._finance(session, msg, out, principal, *fm)
+            elif msg.kind == "text" and msg.tenant_id in self.eam and (em := _eam_word(msg.text.strip())):
+                await self._eam(session, msg, out, principal, em)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -883,6 +888,48 @@ class TriggerIntake:
         trig.result = {"batch": arg, "total_cost": rep["total_cost"]}
         await self._reply(None, msg, out, fc.batch_cost_card(rep))
 
+    # ---------------- 设备管理 EAM（只读 Fast Path） ----------------
+
+    async def _eam(self, session, msg: InboundMessage, out: Outcome, principal: Principal, kind: str):
+        from fos.eam import cards as ec
+        from fos.eam import service as es
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"eam_{kind}", "done"
+        tid = msg.tenant_id
+        cfg = self.eam[tid]
+        if kind == "equipment":
+            if not principal.can("eam.equipment:read"):
+                await self._reply(None, msg, out, "你没有查看设备台账的权限（eam.equipment:read）。")
+                return
+            board = await es.equipment_board(session, tid)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, ec.equipment_card(board))
+            return
+        if kind == "pm":
+            if not principal.can("eam.maintenance:read"):
+                await self._reply(None, msg, out, "你没有查看保养计划的权限（eam.maintenance:read）。")
+                return
+            board = await es.pm_board(session, tid, cfg, self._today(msg))
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, ec.pm_card(board))
+            return
+        if kind == "work_orders":
+            if not principal.can("eam.work_order:read"):
+                await self._reply(None, msg, out, "你没有查看维修工单的权限（eam.work_order:read）。")
+                return
+            rows = await es.work_orders_board(session, tid)
+            trig.result = {"total": len(rows)}
+            await self._reply(None, msg, out, ec.work_orders_card(rows))
+            return
+        if not principal.can("eam.equipment:read"):
+            await self._reply(None, msg, out, "你没有查看备件库存的权限（eam.equipment:read）。")
+            return
+        board = await es.spare_parts_board(session, tid)
+        trig.result = board["counts"]
+        await self._reply(None, msg, out, ec.spare_parts_card(board))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -971,6 +1018,20 @@ def _finance_word(text: str) -> tuple[str, str] | None:
         return "vouchers", ""
     if m := BATCH_COST.match(text):
         return "cost", m.group(1)
+    return None
+
+
+def _eam_word(text: str) -> str | None:
+    from fos.eam.cards import EQUIPMENT, PM_DUE, SPARE_PARTS, WORK_ORDERS
+
+    if EQUIPMENT.match(text):
+        return "equipment"
+    if PM_DUE.match(text):
+        return "pm"
+    if WORK_ORDERS.match(text):
+        return "work_orders"
+    if SPARE_PARTS.match(text):
+        return "spare_parts"
     return None
 
 

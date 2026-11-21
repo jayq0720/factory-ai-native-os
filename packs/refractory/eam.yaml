@@ -1,0 +1,7 @@
+# 耐火材料行业设备管理（EAM）配置（W24）。
+
+pm_remind_days: 7
+auto_wo_on_abnormal: true
+default_window_days: 30
+planned_hours_per_day: 24.0
+notify_roles: [shift_lead, engineer]
