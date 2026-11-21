@@ -639,7 +639,7 @@ async def record_env_reading(
                 level="major",
                 description=desc,
                 due_date=today + timedelta(days=max(1, cfg.hazard_remind_days)),
-                evidence=[Evidence(kind="system", ref=f"env:{eid}", note="环保超标自动触发重大隐患")],
+                evidence=[Evidence(kind="calculation", ref=f"env:{eid}", note="环保超标自动触发重大隐患")],
                 data_mode=body.data_mode,
             ),
             causation_id=res.event_id,

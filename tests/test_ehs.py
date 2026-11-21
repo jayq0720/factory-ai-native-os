@@ -99,7 +99,7 @@ def test_ehs_end_to_end_flow(client, keys):
         client.post(
             f"/v1/ehs/hazards/{hid}/rectify",
             json={"rectification_plan": "更换耐高温密封垫并紧固法兰"},
-            headers=_h(keys, "shift"),
+            headers=_h(keys, "shift_lead"),
         ).status_code
         == 200
     )
@@ -224,7 +224,7 @@ def test_ehs_end_to_end_flow(client, keys):
             "description": "叉车转弯视线盲区险些碰撞托盘",
             "injured_count": 0,
         },
-        headers=_h(keys, "shift"),
+        headers=_h(keys, "shift_lead"),
     )
     assert r_inc.status_code == 201, r_inc.text
     inc_id = r_inc.json()["id"]
