@@ -22,9 +22,11 @@ def hazards_card(board: dict[str, Any]) -> Card:
         )
         for it in board["items"][:6]
     ]
+    d = board["date"]
+    text = f"{d}：共 {c['total']} 项，待改 {c['open']} / 整改 {c['rectifying']} / 超期 {c['overdue']}。"
     return Card(
         title="安全隐患排查台账",
-        text=f"截至 {board['date']}：共 {c['total']} 项，待改 {c['open']} / 整改 {c['rectifying']} / 超期 {c['overdue']}。",
+        text=text,
         fields=fields,
         data_mode=board["data_mode"],
         footer="详见控制台 /app/ehs.html",
@@ -58,9 +60,11 @@ def env_card(board: dict[str, Any]) -> Card:
         )
         for it in board["items"][:6]
     ]
+    rate = c["compliance_rate_pct"]
+    text = f"共 {c['total']} 条监测：达标 {c['passed']} / 超标 {c['exceeded']}（达标率 {rate}%）。"
     return Card(
         title="环保排放监测看板",
-        text=f"共 {c['total']} 条监测：达标 {c['passed']} / 超标 {c['exceeded']}（达标率 {c['compliance_rate_pct']}%）。",
+        text=text,
         fields=fields,
         data_mode=board["data_mode"],
         footer="详见控制台 /app/ehs.html",
