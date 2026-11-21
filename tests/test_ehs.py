@@ -208,7 +208,7 @@ def test_ehs_end_to_end_flow(client, keys):
     apr_id = r_hot.json()["approval"]["id"]
     dec = client.post(
         f"/v1/approvals/{apr_id}/decide",
-        json={"decision": "approve", "note": "现场安全措施到位，同意动火"},
+        json={"decision": "approve", "comment": "现场安全措施到位，同意动火"},
         headers=_h(keys, "gm"),
     )
     assert dec.status_code == 200, dec.text
@@ -267,14 +267,13 @@ def test_ehs_end_to_end_flow(client, keys):
 
 
 def test_ehs_im_fast_path(client, keys):
-    me = client.get("/v1/me", headers=_h(keys, "engineer")).json()
     assert (
-        client.post(
+        client.put(
             "/v1/channels/identities",
-            json={"channel": "mock", "external_id": "ehs_eng_1", "user_id": me["subject_id"]},
+            json={"channel": "mock", "external_id": "ehs_eng_1", "login": "engineer"},
             headers=_h(keys, "admin"),
         ).status_code
-        == 201
+        == 200
     )
 
     cases = [
@@ -284,17 +283,11 @@ def test_ehs_im_fast_path(client, keys):
     ]
     for idx, (word, expected_route, title_kw) in enumerate(cases):
         r = client.post(
-            "/v1/channels/mock/inbound",
-            json={
-                "message_id": f"ehs_fp_{idx}",
-                "sender_id": "ehs_eng_1",
-                "conversation_id": "c_ehs",
-                "conversation_type": "dm",
-                "text": word,
-            },
+            "/v1/channels/mock/messages",
+            json={"external_msg_id": f"ehs_fp_{idx}", "sender_id": "ehs_eng_1", "text": word},
             headers=_h(keys, "admin"),
         )
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["route"] == expected_route
+        assert data["route"] == expected_route and data["status"] == "done"
         assert title_kw in data["replies"][0]["card"]["title"]
