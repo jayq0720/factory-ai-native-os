@@ -198,3 +198,53 @@ async def get_tenant_budget(request: Request, session: SessionDep, p: OpsAdmin) 
     if tenant is None:
         raise HTTPException(404, detail="租户不存在")
     return await check_tenant_budget(session, tenant)
+
+
+@router.get("/keys")
+async def list_tenant_keys(
+    session: SessionDep, p: OpsAdmin, include_revoked: bool = False
+) -> dict[str, Any]:
+    """列出当前租户 API Key 脱敏元数据（永不返回明文或哈希）。"""
+    from fos.governance import apikeys
+
+    items = await apikeys.list_keys(session, p.tenant_id, include_revoked=include_revoked)
+    return {"tenant_id": p.tenant_id, "count": len(items), "items": items}
+
+
+@router.post("/keys", status_code=201)
+async def issue_tenant_key(body: dict[str, Any], session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """为同租户活跃用户签发新 API Key（明文仅返回这一次）。"""
+    from sqlalchemy import select
+
+    from fos.db.models import User
+    from fos.governance import apikeys
+
+    login = str(body.get("login") or "").strip()
+    label = str(body.get("label") or "").strip()[:64]
+    edge_id = str(body.get("edge_id") or "").strip() or None
+    if not login:
+        raise HTTPException(422, detail="login 不能为空")
+    u = (
+        await session.execute(select(User).where(User.tenant_id == p.tenant_id, User.login == login))
+    ).scalar_one_or_none()
+    if u is None or not u.is_active:
+        raise HTTPException(404, detail=f"同租户活跃用户不存在：{login}")
+    issued = await apikeys.issue(session, u, label=label, edge_id=edge_id)
+    return {
+        "key_id": issued.key_id,
+        "plaintext": issued.plaintext,
+        "login": u.login,
+        "label": label,
+        "edge_id": edge_id,
+    }
+
+
+@router.post("/keys/{key_id}/revoke")
+async def revoke_tenant_key(key_id: str, session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """按租户隔离吊销指定 API Key（跨租户返回 404）。"""
+    from fos.governance import apikeys
+
+    k = await apikeys.revoke(session, p.tenant_id, key_id)
+    if k is None:
+        raise HTTPException(404, detail=f"未找到本租户密钥：{key_id}")
+    return {"id": k.id, "revoked_at": k.revoked_at.isoformat() if k.revoked_at else None}
