@@ -293,9 +293,7 @@ class TriggerIntake:
             ):
                 await self._construction(session, msg, out, principal, cm)
             elif (
-                msg.kind == "text"
-                and msg.tenant_id in self.market
-                and (mm := _market_word(msg.text.strip()))
+                msg.kind == "text" and msg.tenant_id in self.market and (mm := _market_word(msg.text.strip()))
             ):
                 await self._market(session, msg, out, principal, mm)
             elif msg.kind in ("text", "rich") and msg.text:
