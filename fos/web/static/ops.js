@@ -98,6 +98,30 @@
       setMsg(e.message);
     }
   });
+  $("btnEval").addEventListener("click", async () => {
+    setMsg("正在执行黄金评测...");
+    try {
+      const r = await (await api("/v1/ops/eval")).json();
+      const status = r.all_passed ? "100% 全部通过" : `存在 ${r.failed} 条 Badcase`;
+      $("evalSummary").textContent =
+        `数据集 ${r.suite} | 总计 ${r.total} 条 | 通过 ${r.passed} | 失败 ${r.failed} | 通过率 ${r.pass_rate_pct}%（${status}）`;
+      const rows = Object.entries(r.categories || {}).map(([cat, s]) => ({
+        cat,
+        total: s.total,
+        passed: s.passed,
+        failed: s.failed,
+      }));
+      fillTable("evalTable", rows, [
+        (x) => x.cat,
+        (x) => x.total,
+        (x) => x.passed,
+        (x) => x.failed,
+      ]);
+      setMsg(`黄金评测完成：${status}`);
+    } catch (e) {
+      setMsg(e.message);
+    }
+  });
 
   const saved = localStorage.getItem(KEY_STORE);
   if (saved) {

@@ -180,6 +180,52 @@ async def _run(args: argparse.Namespace) -> int:
         return await commands.daily(s, args.tenant, args.login, args.date, send=args.send)
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
+    if args.cmd in ("eval", "security-check", "watchdog"):
+        from datetime import date
+        from pathlib import Path
+
+        from fos.eval.runner import run_golden_eval
+        from fos.ops.service import security_baseline
+        from fos.ops.watchdog import run_tenant_watchdog
+        from fos.services import Services
+
+        svc = Services.build(s)
+        try:
+            if svc.registry.get(args.tenant) is None:
+                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+                return 1
+            if args.cmd == "eval":
+                sp = Path(args.suite) if args.suite else None
+                res = run_golden_eval(svc, args.tenant, suite_path=sp)
+                print(
+                    f"{res['tenant_id']} [{res['suite']}]: "
+                    f"{res['passed']}/{res['total']} ({res['pass_rate_pct']}%)"
+                )
+                for cat, st in res["categories"].items():
+                    print(f"  {cat:<28} {st['passed']}/{st['total']} (failed={st['failed']})")
+                for bc in res["badcases"]:
+                    print(
+                        f"  [BADCASE] {bc['category']}:{bc['id']} "
+                        f"expect={bc['expected']!r} got={bc['actual']!r}"
+                    )
+                return 0 if res["all_passed"] else 1
+            if args.cmd == "security-check":
+                res = security_baseline(svc, args.tenant)
+                for chk in res["checks"]:
+                    mark = "OK" if chk["ok"] else "FAIL"
+                    print(f"  [{mark:<4}] ({chk['severity']:<5}) {chk['name']}: {chk['detail']}")
+                return 0 if res["passed"] else 1
+            async with svc.sessionmaker() as session, session.begin():
+                res = await run_tenant_watchdog(session, svc, args.tenant, date.today())
+            print(
+                f"{res['tenant_id']} Watchdog ({res['date']}): "
+                f"新建待办 {res['total_todos_created']} 条，清理超时审批 {res['expired_approvals']} 条"
+            )
+            for mod, cnt in res["modules"].items():
+                print(f"  {mod:<24} +{cnt}")
+            return 0
+        finally:
+            await svc.aclose()
     registry = TenantRegistry.load(s.tenants_dir)
     if args.cmd == "tenants":
         for tid in registry.ids():
@@ -339,6 +385,13 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8000)
     sm = sub.add_parser("samples")
     sm.add_argument("out")
+    ev = sub.add_parser("eval", help="运行行业包黄金数据集回归评测")
+    ev.add_argument("tenant")
+    ev.add_argument("--suite", default="", help="自定义黄金评测 YAML 路径")
+    sc = sub.add_parser("security-check", help="运行租户安全与上线基线自检")
+    sc.add_argument("tenant")
+    wd = sub.add_parser("watchdog", help="单次执行全厂统一 Watchdog 巡检")
+    wd.add_argument("tenant")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":

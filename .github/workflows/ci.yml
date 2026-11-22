@@ -35,6 +35,8 @@ jobs:
       - name: 测试（PostgreSQL，含并发追加）
         run: FOS_TEST_DATABASE_URL=$FOS_DATABASE_URL .venv/bin/pytest -q
       - run: .venv/bin/fos tenants
+      - run: .venv/bin/fos eval luneng
+      - run: .venv/bin/fos security-check luneng
 
   rust:
     runs-on: ubuntu-latest

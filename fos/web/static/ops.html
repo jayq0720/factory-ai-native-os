@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SaaS 运营与 Watchdog 巡检 · Factory AI Native OS</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="app.css" />
 </head>
 <body>
   <header>
@@ -23,6 +23,7 @@
         <label>管理员 API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
         <button id="btnLoad">刷新运营总览</button>
         <button id="btnWatchdog">立即执行全厂 Watchdog 巡检</button>
+        <button id="btnEval">运行黄金数据集评测</button>
         <span id="msg" class="muted"></span>
       </div>
     </section>
@@ -43,6 +44,17 @@
       <table id="secTable" style="width:100%">
         <thead>
           <tr><th>检查项</th><th>结果</th><th>级别</th><th>详情</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>黄金数据集回归评测（W29）</h2>
+      <div id="evalSummary" class="muted">点击“运行黄金数据集评测”执行全量确定性回归。</div>
+      <table id="evalTable" style="width:100%;margin-top:.5rem">
+        <thead>
+          <tr><th>评测类别</th><th>用例总数</th><th>通过</th><th>失败</th></tr>
         </thead>
         <tbody></tbody>
       </table>
