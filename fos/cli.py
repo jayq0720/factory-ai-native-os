@@ -228,6 +228,48 @@ async def _run(args: argparse.Namespace) -> int:
             return 0
         finally:
             await svc.aclose()
+    if args.cmd == "backup-ledger":
+        from pathlib import Path
+
+        from fos.ops.backup import export_tenant_ledger_jsonl
+        from fos.services import Services
+
+        svc = Services.build(s)
+        try:
+            if svc.registry.get(args.tenant) is None:
+                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+                return 1
+            mode = None if args.include_mock else "real"
+            async with svc.sessionmaker() as session:
+                content, summary = await export_tenant_ledger_jsonl(session, args.tenant, data_mode=mode)
+            out_path = Path(args.out)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content, encoding="utf-8")
+            print(
+                f"已导出 {summary['tenant_id']} 账本灾备 -> {out_path} | "
+                f"事件 {summary['count']} 条 | sha256={summary['sha256']}"
+            )
+            return 0
+        finally:
+            await svc.aclose()
+    if args.cmd == "verify-backup":
+        from pathlib import Path
+
+        from fos.ops.backup import verify_ledger_backup_jsonl
+
+        p_file = Path(args.file)
+        if not p_file.exists():
+            print(f"文件不存在：{p_file}", file=sys.stderr)
+            return 1
+        res = verify_ledger_backup_jsonl(p_file.read_text(encoding="utf-8"))
+        if not res["ok"]:
+            print(f"校验失败：{res['error']}", file=sys.stderr)
+            return 1
+        print(
+            f"校验通过：{res['tenant_id']} | 事件 {res['count']} 条 | "
+            f"seq={res['first_seq']}..{res['last_seq']} | sha256={res['sha256']}"
+        )
+        return 0
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -469,6 +511,12 @@ def main(argv: list[str] | None = None) -> int:
     mr.add_argument("tenant")
     mr.add_argument("--month", default="", help="统计月份 YYYY-MM（默认当月）")
     mr.add_argument("--xlsx", default="", help="可选：导出正式三表 Excel 文件路径")
+    bl = sub.add_parser("backup-ledger", help="导出租户不可变事件账本防篡改灾备文件（JSONL + SHA-256）")
+    bl.add_argument("tenant")
+    bl.add_argument("out")
+    bl.add_argument("--include-mock", action="store_true", help="包含模拟数据（默认仅真实账本）")
+    vb = sub.add_parser("verify-backup", help="离线校验账本灾备 JSONL 完整性与 SHA-256")
+    vb.add_argument("file")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":

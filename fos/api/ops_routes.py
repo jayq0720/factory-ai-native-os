@@ -117,3 +117,73 @@ async def get_audit_log(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/audit.xlsx")
+async def export_audit_xlsx(
+    request: Request,
+    session: SessionDep,
+    p: OpsAdmin,
+    event_prefix: str | None = None,
+    object_type: str | None = None,
+    actor_id: str | None = None,
+    data_mode: Literal["real", "mock"] = "real",
+    limit: int = 200,
+):
+    """导出合规审计流水 Excel（默认仅含真实数据，全部单元格防公式注入）。"""
+    from urllib.parse import quote
+
+    from fastapi import Response
+
+    from fos.ops.backup import render_audit_xlsx
+    from fos.ops.metrics import query_audit_log
+
+    data = await query_audit_log(
+        session,
+        p.tenant_id,
+        event_prefix=event_prefix,
+        object_type=object_type,
+        actor_id=actor_id,
+        data_mode=data_mode,
+        limit=limit,
+        offset=0,
+    )
+    xlsx = render_audit_xlsx(data)
+    today = _today(request, p.tenant_id).isoformat()
+    fname = f"账本审计流水_{p.tenant_id}_{today}.xlsx"
+    return Response(
+        content=xlsx,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
+
+
+@router.get("/backup.jsonl")
+async def export_ledger_backup(
+    request: Request,
+    session: SessionDep,
+    p: OpsAdmin,
+    include_mock: bool = False,
+):
+    """下载当前租户防篡改 JSONL 事件账本灾备包（含 SHA-256 校验尾）。"""
+    from urllib.parse import quote
+
+    from fastapi import Response
+
+    from fos.ops.backup import export_tenant_ledger_jsonl
+
+    if "*.*:*" not in p.permissions:
+        raise HTTPException(403, detail="仅平台超级管理员可下载全量账本灾备包")
+    mode = None if include_mock else "real"
+    content, summary = await export_tenant_ledger_jsonl(session, p.tenant_id, data_mode=mode)
+    today = _today(request, p.tenant_id).isoformat()
+    fname = f"ledger_backup_{p.tenant_id}_{today}.jsonl"
+    return Response(
+        content=content,
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}",
+            "X-Ledger-Sha256": summary["sha256"],
+            "X-Ledger-Count": str(summary["count"]),
+        },
+    )
