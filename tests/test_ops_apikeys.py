@@ -51,7 +51,7 @@ def test_ops_apikey_lifecycle_and_tenant_isolation(client, keys) -> None:
     r_active = client.get("/v1/ops/keys", headers=_h(keys, "admin")).json()
     assert all(it["id"] != key_id for it in r_active["items"])
     r_all = client.get("/v1/ops/keys?include_revoked=true", headers=_h(keys, "admin")).json()
-    rev_item = [it for it in r_all["items"] if it["id"] == key_id][0]
+    rev_item = next(it for it in r_all["items"] if it["id"] == key_id)
     assert rev_item["active"] is False
 
     # 6. 验证 ops.html 已接入预算租约与密钥治理表格
