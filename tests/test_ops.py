@@ -98,11 +98,11 @@ def test_unified_watchdog_and_saas_ops(client, keys):
 def test_second_factory_zero_code_replication(tmp_path: Path):
     """验证第二家同行业工厂仅靠 tenant.yaml 即可零代码复用全套本体、策略与 Skill。"""
     tdir = tmp_path / "tenants"
-    (tdir / "huadong_ref").mkdir(parents=True)
-    (tdir / "huadong_ref" / "tenant.yaml").write_text(
+    (tdir / "huadong-ref").mkdir(parents=True)
+    (tdir / "huadong-ref" / "tenant.yaml").write_text(
         textwrap.dedent(
             """
-            id: huadong_ref
+            id: huadong-ref
             name: 华东耐材二厂
             industry_pack: refractory
             timezone: Asia/Shanghai
@@ -118,7 +118,7 @@ def test_second_factory_zero_code_replication(tmp_path: Path):
         ),
         encoding="utf-8",
     )
-    res = verify_tenant_replication(packs_dir=REPO / "packs", tenants_dir=tdir, tenant_id="huadong_ref")
+    res = verify_tenant_replication(packs_dir=REPO / "packs", tenants_dir=tdir, tenant_id="huadong-ref")
     assert res["ready"] is True
     assert res["objects_count"] >= 25 and res["events_count"] >= 45
     assert res["skills_count"] >= 8
