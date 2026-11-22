@@ -17,6 +17,7 @@ from fos.market.service import executive_cockpit
 
 if TYPE_CHECKING:
     from fos.services import Services
+    from fos.tenancy import TenantRegistry
 
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
@@ -32,12 +33,13 @@ def _month_bounds(month: str) -> tuple[datetime, datetime, date]:
 
 async def build_monthly_report(
     session: AsyncSession,
-    svc: Services,
+    svc_or_registry: Services | TenantRegistry,
     tenant_id: str,
     month: str,
 ) -> dict[str, Any]:
     """跨模块确定性生成月度经营与治理报表（规则 4：正式月报严格仅汇总真实数据）。"""
-    tenant = svc.registry.get(tenant_id)
+    reg = getattr(svc_or_registry, "registry", svc_or_registry)
+    tenant = reg.get(tenant_id)
     if tenant is None:
         raise ValueError(f"租户 {tenant_id} 不存在")
     start, end, as_of = _month_bounds(month)

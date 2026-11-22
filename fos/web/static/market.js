@@ -112,6 +112,40 @@
     }
   });
 
+  const now = new Date();
+  $("reportMonth").value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  $("btnMonthly").addEventListener("click", async () => {
+    const m = $("reportMonth").value.trim();
+    setMsg("正在生成月度经营报告...");
+    try {
+      const q = m ? `?month=${encodeURIComponent(m)}` : "";
+      const rep = await (await api(`/v1/market/monthly-report${q}`)).json();
+      $("monthlyCard").style.display = "block";
+      $("monthlyPreview").textContent = rep.markdown || "";
+      setMsg(`已加载 ${rep.month} 经营月报`);
+    } catch (e) {
+      setMsg(e.message);
+    }
+  });
+
+  $("btnMonthlyXlsx").addEventListener("click", async () => {
+    const m = $("reportMonth").value.trim();
+    try {
+      const q = m ? `?month=${encodeURIComponent(m)}` : "";
+      const res = await api(`/v1/market/monthly-report.xlsx${q}`);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `全厂经营月报_${m || "current"}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setMsg("已导出全厂月度经营报表 (.xlsx)");
+    } catch (e) {
+      setMsg(e.message);
+    }
+  });
+
   const saved = localStorage.getItem(KEY_STORE);
   if (saved) {
     $("apiKey").value = saved;

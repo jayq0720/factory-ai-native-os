@@ -21,6 +21,7 @@ fast_path_routing:
   - {id: fp_mkt_ck, text: 驾驶舱, expect: market_cockpit}
   - {id: fp_mkt_fn, text: 商机, expect: market_funnel}
   - {id: fp_mkt_in, text: 竞品, expect: market_intel}
+  - {id: fp_mkt_mo, text: 经营月报, expect: market_monthly}
   - {id: fp_fin_ar, text: 应收, expect: finance_ar}
   - {id: fp_fin_ap, text: 应付, expect: finance_ap}
   - {id: fp_q_ncr, text: 不合格, expect: quality_ncr}
