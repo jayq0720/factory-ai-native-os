@@ -15,13 +15,13 @@ roles:
     permissions: ["*.*:read", "*.*:approve", "platform.todo:write"]
   sales:
     name: 销售
-    permissions: ["sales.*:read", "sales.*:write", "eng.project:read", "eng.eng_project:read", "eng.quote:read",
+    permissions: ["sales.*:read", "sales.*:write", "market.*:read", "market.*:write", "eng.project:read", "eng.eng_project:read", "eng.quote:read",
                   "doc.document:read", "doc.document:write", "doc.field:write",
                   "production.production_batch:read", "quality.inspection:read", "warehouse.shipment:read",
                   "pmc.kiln_plan:read"]
   sales_lead:
     name: 销售负责人
-    permissions: ["sales.*:*", "eng.*:read", "eng.quote:approve", "doc.*:*",
+    permissions: ["sales.*:*", "market.*:*", "eng.*:read", "eng.quote:approve", "doc.*:*",
                   "production.production_batch:read", "quality.inspection:read", "warehouse.shipment:read",
                   "pmc.kiln_plan:read"]
   engineer:

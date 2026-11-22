@@ -67,6 +67,9 @@ from fos.hr.guards import (
 )
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, load_trace_config
+from fos.market import tools as market_tools  # noqa: F401  注册市场商机与经营决策工具
+from fos.market.config import MarketConfig, load_market_config
+from fos.market.guards import LEAD_CLOSE_EVENT, LEAD_CREATE_EVENT, LEAD_UPDATE_EVENT, MarketGuard
 from fos.monitoring.config import MonitorConfig, load_monitor_config
 from fos.monitoring.edge import CommandSigner
 from fos.onboarding.config import ImportConfig, load_import_config
@@ -150,6 +153,7 @@ class Services:
     hr: dict[str, HrConfig]
     rnd: dict[str, RndConfig]
     construction: dict[str, ConstructionConfig]
+    market: dict[str, MarketConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -357,6 +361,17 @@ class Services:
         }
         for ev in (SITE_CREATE_EVENT, LOG_RECORD_EVENT, SITE_ACCEPT_EVENT):
             ledger.add_guard(ev, ConstructionGuard(ev, construction))
+        # 市场商机与经营决策驾驶舱（W27c）：只给本体里有商机（market_lead）的租户开
+        market = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "market_lead" in ontologies[tid].objects
+            and (cfg := load_market_config(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir))
+            is not None
+        }
+        for ev in (LEAD_CREATE_EVENT, LEAD_UPDATE_EVENT, LEAD_CLOSE_EVENT):
+            ledger.add_guard(ev, MarketGuard(ev))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -394,6 +409,7 @@ class Services:
                 hr=hr,
                 rnd=rnd,
                 construction=construction,
+                market=market,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -414,6 +430,7 @@ class Services:
                         "hr": hr.get(tid),
                         "rnd": rnd.get(tid),
                         "construction": construction.get(tid),
+                        "market": market.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -439,6 +456,7 @@ class Services:
             hr=hr,
             rnd=rnd,
             construction=construction,
+            market=market,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 

@@ -1,0 +1,23 @@
+id: executive_advisor
+name: 经营决策与市场助理
+role: 经营决策与市场分析助理
+version: 1
+description: 查询跨部门经营决策驾驶舱指标、市场商机漏斗加权预测额、赢单率与竞品行情情报
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "market.*:read"
+tools:
+  - market.cockpit
+  - market.funnel
+  - market.intel
+  - objects.list
+keywords:
+  - 经营决策
+  - 驾驶舱
+  - 市场商机
+  - 商机漏斗
+  - 赢单率
+  - 竞品情报
+  - 客户线索

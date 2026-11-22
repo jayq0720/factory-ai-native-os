@@ -45,6 +45,7 @@ from fos.governance.principal import Principal, principal_for_user
 from fos.hr.config import HrConfig
 from fos.ledger import Ledger
 from fos.ledger.report import TraceConfig, find_root, report_card, trace_report
+from fos.market.config import MarketConfig
 from fos.monitoring.config import MonitorConfig
 from fos.ontology import Ontology
 from fos.orders.cards import BOARD, ORDER, board_card, order_card
@@ -133,6 +134,7 @@ class TriggerIntake:
         hr: dict[str, HrConfig] | None = None,
         rnd: dict[str, RndConfig] | None = None,
         construction: dict[str, ConstructionConfig] | None = None,
+        market: dict[str, MarketConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -156,6 +158,7 @@ class TriggerIntake:
         self.hr = hr or {}
         self.rnd = rnd or {}
         self.construction = construction or {}
+        self.market = market or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -289,6 +292,10 @@ class TriggerIntake:
                 and (cm := _construction_word(msg.text.strip()))
             ):
                 await self._construction(session, msg, out, principal, cm)
+            elif (
+                msg.kind == "text" and msg.tenant_id in self.market and (mm := _market_word(msg.text.strip()))
+            ):
+                await self._market(session, msg, out, principal, mm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -1090,6 +1097,39 @@ class TriggerIntake:
         trig.result = board["counts"]
         await self._reply(None, msg, out, cc.dryout_card(board))
 
+    async def _market(
+        self, session: AsyncSession, msg: InboundMessage, out: Outcome, principal: Principal, kind: str
+    ) -> None:
+        from fos.market import cards as mc
+        from fos.market import service as ms
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"market_{kind}", "done"
+        tid = msg.tenant_id
+        if kind == "cockpit":
+            if not principal.can("market.lead:read"):
+                await self._reply(None, msg, out, "你没有查看经营决策驾驶舱的权限（market.lead:read）。")
+                return
+            cockpit = await ms.executive_cockpit(session, tid, self._today(msg))
+            trig.result = cockpit["kpis"]
+            await self._reply(None, msg, out, mc.cockpit_card(cockpit))
+            return
+        if kind == "funnel":
+            if not principal.can("market.lead:read"):
+                await self._reply(None, msg, out, "你没有查看市场商机的权限（market.lead:read）。")
+                return
+            board = await ms.funnel_board(session, tid)
+            trig.result = board["metrics"]
+            await self._reply(None, msg, out, mc.funnel_card(board))
+            return
+        if not principal.can("market.intel:read"):
+            await self._reply(None, msg, out, "你没有查看竞品情报的权限（market.intel:read）。")
+            return
+        board = await ms.intel_board(session, tid)
+        trig.result = board["counts"]
+        await self._reply(None, msg, out, mc.intel_card(board))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -1240,6 +1280,18 @@ def _construction_word(text: str) -> str | None:
         return "logs"
     if DRYOUT.match(text):
         return "dryout"
+    return None
+
+
+def _market_word(text: str) -> str | None:
+    from fos.market.cards import COCKPIT, FUNNEL, INTEL
+
+    if COCKPIT.match(text):
+        return "cockpit"
+    if FUNNEL.match(text):
+        return "funnel"
+    if INTEL.match(text):
+        return "intel"
     return None
 
 

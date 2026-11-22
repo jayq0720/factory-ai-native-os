@@ -112,6 +112,16 @@ rules:
       - {name: 总经理审批, role: gm}
     expires_hours: 48
 
+  market_large_lead_lost:
+    name: 50 万元及以上大额商机丢单关闭需销售负责人复盘确认
+    events: [market.lead_closed]
+    when:
+      - {field: stage, op: eq, value: lost}
+      - {field: est_amount, op: gte, value: 500000}
+    steps:
+      - {name: 销售负责人复盘确认, role: sales_lead}
+    expires_hours: 48
+
   # ---------- 工程报价（方案 4.2 第 8 步：报价需销售负责人二次确认）----------
   # 毛利率 = (材料净价 - 材料成本) / 材料净价，由报价代码确定性计算后写在事件里。
   # 15% 与“低于成本不能报价”都是占位值，待试点确认。

@@ -27,6 +27,7 @@ def test_layers_merge():
         "pack:refractory/engineering",
         "pack:refractory/finance",
         "pack:refractory/hr",
+        "pack:refractory/market",
         "pack:refractory/monitoring",
         "pack:refractory/planning",
         "pack:refractory/quality",
@@ -41,6 +42,7 @@ def test_layers_merge():
     assert "employee" in o.objects and "work_cert" in o.objects and "shift_roster" in o.objects
     assert "rnd_project" in o.objects and "formula_version" in o.objects and "lab_trial" in o.objects
     assert "site_project" in o.objects and "site_log" in o.objects and "dryout_record" in o.objects
+    assert "market_lead" in o.objects and "competitor_intel" in o.objects
     # 行业包给核心对象追加了属性
     assert o.objects["inspection"].properties["bulk_density"].unit == "g/cm³"
     assert o.objects["production_batch"].properties["kiln_run"].target == "kiln_run"

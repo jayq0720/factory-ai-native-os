@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>经营驾驶舱与市场商机 · Factory AI Native OS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <strong>Factory AI Native OS</strong>
+      <a href="/app/">工作台</a>
+      <a href="/app/finance.html">财务成本</a>
+      <a href="/app/ehs.html">安全环保</a>
+      <a href="/app/hr.html">人力薪酬</a>
+      <a href="/app/rnd.html">研发配方</a>
+      <a href="/app/construction.html">筑炉施工</a>
+      <a href="/app/market.html"><strong>经营与市场</strong></a>
+      <span id="who" class="muted" style="margin-left:auto"></span>
+    </div>
+  </header>
+
+  <main style="max-width:1180px;margin:1rem auto;padding:0 1rem">
+    <section class="card">
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <label>API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
+        <button id="btnLoad">刷新看板</button>
+        <button id="btnExport">导出经营与市场报表 (.xlsx)</button>
+        <span id="msg" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>工厂经营决策驾驶舱（跨部门实时汇总）</h2>
+      <div id="cockpitSummary" class="muted">加载中...</div>
+    </section>
+
+    <section class="card">
+      <h2>市场商机漏斗（50 万元及以上丢单需销售负责人复盘确认）</h2>
+      <div id="funnelSummary" class="muted">加载中...</div>
+      <table id="leadTable" style="width:100%;margin-top:.5rem">
+        <thead>
+          <tr><th>商机号</th><th>客户</th><th>行业</th><th>意向产品</th><th>预计金额</th><th>概率%</th><th>加权额</th><th>阶段</th><th>负责人</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>竞品行情情报</h2>
+      <table id="intelTable" style="width:100%">
+        <thead>
+          <tr><th>情报号</th><th>竞争对手</th><th>产品大类</th><th>参考吨价</th><th>区域</th><th>日期</th><th>行情摘要</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="market.js"></script>
+</body>
+</html>

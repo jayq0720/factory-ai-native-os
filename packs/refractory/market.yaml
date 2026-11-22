@@ -1,0 +1,13 @@
+# 耐火材料行业市场商机与经营决策配置（W27c）。
+# 租户可在 tenants/<id>/market.yaml 覆盖各阶段默认赢单概率与大额商机阈值。
+
+stage_probabilities:
+  new: 10
+  qualified: 30
+  quoted: 50
+  negotiation: 75
+  won: 100
+  lost: 0
+stale_lead_days: 14
+large_lead_amount: 500000.0
+notify_roles: [sales_lead, gm]
