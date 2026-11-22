@@ -187,3 +187,14 @@ async def export_ledger_backup(
             "X-Ledger-Count": str(summary["count"]),
         },
     )
+
+
+@router.get("/budget")
+async def get_tenant_budget(request: Request, session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """查询当前租户当日与当月 LLM Token 预算租约状态（ok / warn / exceeded）。"""
+    from fos.governance.budget import check_tenant_budget
+
+    tenant = request.app.state.registry.get(p.tenant_id)
+    if tenant is None:
+        raise HTTPException(404, detail="租户不存在")
+    return await check_tenant_budget(session, tenant)

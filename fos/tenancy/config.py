@@ -43,6 +43,14 @@ class ReportsConfig(BaseModel):
     daily: DailyReportSchedule | None = None
 
 
+class BudgetConfig(BaseModel):
+    """按租户 LLM Token 预算租约配置（方案 2.6 / 11：0 表示不限）。"""
+
+    daily_tokens: int = Field(default=2_000_000, ge=0)
+    monthly_tokens: int = Field(default=30_000_000, ge=0)
+    warn_ratio: float = Field(default=0.8, gt=0.0, le=1.0)
+
+
 class TenantConfig(BaseModel):
     id: str
     name: str
@@ -53,6 +61,7 @@ class TenantConfig(BaseModel):
     # 自治级别上限：某类动作 Agent 最多能做到 L 几（方案 2.7）
     autonomy: dict[str, Literal["L0", "L1", "L2", "L3"]] = Field(default_factory=dict)
     reports: ReportsConfig = Field(default_factory=ReportsConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
 
     @field_validator("id")
     @classmethod

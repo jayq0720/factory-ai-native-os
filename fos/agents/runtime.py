@@ -96,6 +96,18 @@ class AgentRuntime:
             user_id=trig.sender_ref if trig.payload.get("conversation_type") == "direct" else None,
         )
         out = RunOutcome(to=to)
+        from fos.governance.budget import check_tenant_budget
+
+        b_stat = await check_tenant_budget(session, tenant)
+        if not b_stat["allowed"]:
+            trig.status = "rejected"
+            trig.result = {"budget_exceeded": b_stat}
+            out.decision = "budget_exceeded"
+            out.replies.append(
+                f"当前工厂 AI 调用预算已达上限（{b_stat['reason']}），"
+                "请联系管理员调整配额，或使用零成本快捷指令（如“驾驶舱”“设备”“隐患”）。"
+            )
+            return out
         skills = self.skills.get(trig.tenant_id, {})
         extras = {**self.tool_extras.get(tenant.id, {}), "autonomy": tenant.autonomy}
 
