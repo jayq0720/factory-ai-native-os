@@ -53,9 +53,10 @@
     try {
       const me = await (await api("/v1/me")).json();
       $("who").textContent = `${me.tenant_name} · ${me.display_name}`;
-      const [ov, sec] = await Promise.all([
+      const [ov, sec, aud] = await Promise.all([
         api("/v1/ops/tenants").then((r) => r.json()),
         api("/v1/ops/security").then((r) => r.json()),
+        api("/v1/ops/audit?limit=20").then((r) => r.json()),
       ]);
       const t = ov.totals;
       $("saasSummary").textContent =
@@ -79,6 +80,15 @@
         (r) => (r.ok ? "通过" : "未通过"),
         (r) => r.severity,
         (r) => r.detail,
+      ]);
+      fillTable("auditTable", aud.items || [], [
+        (r) => r.seq,
+        (r) => r.type,
+        (r) => `${r.object_type}:${r.object_id}`,
+        (r) => `${r.actor_name} (${r.actor_kind})`,
+        (r) => r.data_mode,
+        (r) => r.evidence_count,
+        (r) => (r.occurred_at || "").slice(0, 19).replace("T", " "),
       ]);
       setMsg("已刷新");
     } catch (e) {

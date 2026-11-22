@@ -75,3 +75,45 @@ async def run_eval_ep(request: Request, p: OpsAdmin) -> dict[str, Any]:
         return run_golden_eval(request.app.state.services, p.tenant_id)
     except ValueError as e:
         raise HTTPException(404, detail=str(e)) from e
+
+
+@router.get("/metrics")
+async def get_prometheus_metrics(request: Request, session: SessionDep, p: OpsAdmin):
+    """导出标准 Prometheus OpenMetrics 指标（需平台超级管理员权限）。"""
+    from fastapi import Response
+
+    from fos.ops.metrics import HttpMetrics, render_prometheus
+
+    if "*.*:*" not in p.permissions:
+        raise HTTPException(403, detail="仅平台超级管理员可抓取系统指标")
+    ov = await ops.saas_overview(session, request.app.state.services, _today(request, p.tenant_id))
+    hm = getattr(request.app.state, "http_metrics", None) or HttpMetrics()
+    body = render_prometheus(hm, ov)
+    return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+@router.get("/audit")
+async def get_audit_log(
+    request: Request,
+    session: SessionDep,
+    p: OpsAdmin,
+    event_prefix: str | None = None,
+    object_type: str | None = None,
+    actor_id: str | None = None,
+    data_mode: Literal["real", "mock"] | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """查询当前租户不可变事件账本审计流水（倒序分页）。"""
+    from fos.ops.metrics import query_audit_log
+
+    return await query_audit_log(
+        session,
+        p.tenant_id,
+        event_prefix=event_prefix,
+        object_type=object_type,
+        actor_id=actor_id,
+        data_mode=data_mode,
+        limit=limit,
+        offset=offset,
+    )
