@@ -26,10 +26,7 @@ def _month_bounds(month: str) -> tuple[datetime, datetime, date]:
         raise ValueError(f"月份格式需为 YYYY-MM：{month}")
     year, mon = int(month[:4]), int(month[5:7])
     start = datetime(year, mon, 1, tzinfo=UTC)
-    if mon == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=UTC)
-    else:
-        end = datetime(year, mon + 1, 1, tzinfo=UTC)
+    end = datetime(year + 1, 1, 1, tzinfo=UTC) if mon == 12 else datetime(year, mon + 1, 1, tzinfo=UTC)
     return start, end, date(year, mon, 1)
 
 
@@ -139,27 +136,20 @@ def render_monthly_markdown(report: dict[str, Any]) -> str:
     """将月度经营数据渲染为适合 IM 推送与管理层审阅的中文 Markdown 报告。"""
     k = report["kpis"]
     act = report["activity"]
+    ar, ap = k.get("ar_balance", 0), k.get("ap_balance", 0)
+    pipe, won = k.get("weighted_pipeline_amount", 0), k.get("won_amount", 0)
+    emp, wo = k.get("active_employees", 0), k.get("open_work_orders", 0)
+    ncr, haz = k.get("open_ncrs", 0), k.get("open_hazards", 0)
+    rnd, site = k.get("active_rnd_projects", 0), k.get("active_sites", 0)
     lines = [
         f"# {report['factory_name']} · {report['month']} 经营与合规月报",
         "",
         "## 一、核心经营指标（仅统计真实账本数据）",
-        f"- 财务往来：应收余额 ¥{k.get('ar_balance', 0):,.2f} / 应付余额 ¥{k.get('ap_balance', 0):,.2f}",
-        (
-            f"- 市场商机：在途加权额 ¥{k.get('weighted_pipeline_amount', 0):,.2f} / "
-            f"赢单额 ¥{k.get('won_amount', 0):,.2f}"
-        ),
-        (
-            f"- 生产保障：在册员工 {k.get('active_employees', 0)} 人 | "
-            f"未闭环维修工单 {k.get('open_work_orders', 0)} 单"
-        ),
-        (
-            f"- 质量与安全：未关闭 NCR {k.get('open_ncrs', 0)} 项 | "
-            f"未闭环安全隐患 {k.get('open_hazards', 0)} 项"
-        ),
-        (
-            f"- 研发与工程：在研项目 {k.get('active_rnd_projects', 0)} 项 | "
-            f"在建筑炉项目 {k.get('active_sites', 0)} 项"
-        ),
+        f"- 财务往来：应收余额 ¥{ar:,.2f} / 应付余额 ¥{ap:,.2f}",
+        f"- 市场商机：在途加权额 ¥{pipe:,.2f} / 赢单额 ¥{won:,.2f}",
+        f"- 生产保障：在册员工 {emp} 人 | 未闭环维修工单 {wo} 单",
+        f"- 质量与安全：未关闭 NCR {ncr} 项 | 未闭环安全隐患 {haz} 项",
+        f"- 研发与工程：在研项目 {rnd} 项 | 在建筑炉项目 {site} 项",
         "",
         "## 二、月度系统运行与治理",
         f"- 本月账本事件：{act['events_total']} 条（Token 消耗 {act['llm_tokens']:,}）",
