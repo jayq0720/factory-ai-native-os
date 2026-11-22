@@ -114,18 +114,13 @@ def test_monthly_report_im_fast_path_and_web_ui(client, keys) -> None:
     )
     r = client.post(
         "/v1/channels/mock/messages",
-        json={
-            "external_user_id": "im_gm_mo",
-            "conversation_id": "conv_mo",
-            "text": "经营月报",
-            "is_group": False,
-        },
+        json={"external_msg_id": "mkt_mo_1", "sender_id": "im_gm_mo", "text": "经营月报"},
         headers=_h(keys, "admin"),
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     body = r.json()
-    assert body["route"] == "market_monthly"
-    assert any("经营月报" in str(rep) for rep in body["replies"])
+    assert body["route"] == "market_monthly" and body["status"] == "done"
+    assert "经营月报" in body["replies"][0]["card"]["title"]
 
     html = (Path(__file__).resolve().parent.parent / "fos/web/static/market.html").read_text(encoding="utf-8")
     assert 'id="btnMonthly"' in html
