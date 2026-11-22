@@ -100,3 +100,28 @@ def test_cli_monthly_report_with_xlsx(
         assert main(["monthly-report", "luneng", "--month", "bad-month"]) == 1
     finally:
         get_settings.cache_clear()
+
+
+def test_monthly_report_im_fast_path_and_web_ui(client, keys) -> None:
+    """验证 IM Fast Path（经营月报）零模型成本直出卡片，以及前端页面已接入月报按钮。"""
+    assert (
+        client.put(
+            "/v1/channels/identities",
+            json={"channel": "mock", "external_id": "im_gm_mo", "login": "gm"},
+            headers=_h(keys, "admin"),
+        ).status_code
+        == 200
+    )
+    r = client.post(
+        "/v1/channels/mock/messages",
+        json={"external_msg_id": "mkt_mo_1", "sender_id": "im_gm_mo", "text": "经营月报"},
+        headers=_h(keys, "admin"),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["route"] == "market_monthly" and body["status"] == "done"
+    assert "经营月报" in body["replies"][0]["card"]["title"]
+
+    html = (Path(__file__).resolve().parent.parent / "fos/web/static/market.html").read_text(encoding="utf-8")
+    assert 'id="btnMonthly"' in html
+    assert 'id="btnMonthlyXlsx"' in html

@@ -1123,6 +1123,17 @@ class TriggerIntake:
             trig.result = board["metrics"]
             await self._reply(None, msg, out, mc.funnel_card(board))
             return
+        if kind == "monthly":
+            if not principal.can("market.lead:read"):
+                await self._reply(None, msg, out, "你没有查看经营月报的权限（market.lead:read）。")
+                return
+            from fos.reports.monthly import build_monthly_report
+
+            month = self._today(msg).strftime("%Y-%m")
+            rep = await build_monthly_report(session, self.registry, tid, month)
+            trig.result = {"month": month, "events_total": rep["activity"]["events_total"]}
+            await self._reply(None, msg, out, mc.monthly_card(rep))
+            return
         if not principal.can("market.intel:read"):
             await self._reply(None, msg, out, "你没有查看竞品情报的权限（market.intel:read）。")
             return
@@ -1284,7 +1295,7 @@ def _construction_word(text: str) -> str | None:
 
 
 def _market_word(text: str) -> str | None:
-    from fos.market.cards import COCKPIT, FUNNEL, INTEL
+    from fos.market.cards import COCKPIT, FUNNEL, INTEL, MONTHLY
 
     if COCKPIT.match(text):
         return "cockpit"
@@ -1292,6 +1303,8 @@ def _market_word(text: str) -> str | None:
         return "funnel"
     if INTEL.match(text):
         return "intel"
+    if MONTHLY.match(text):
+        return "monthly"
     return None
 
 

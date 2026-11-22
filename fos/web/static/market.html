@@ -27,6 +27,9 @@
         <label>API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
         <button id="btnLoad">刷新看板</button>
         <button id="btnExport">导出经营与市场报表 (.xlsx)</button>
+        <label>月报月份：<input id="reportMonth" type="month" /></label>
+        <button id="btnMonthly">预览月度经营报告</button>
+        <button id="btnMonthlyXlsx">导出月报 (.xlsx)</button>
         <span id="msg" class="muted"></span>
       </div>
     </section>
@@ -34,6 +37,11 @@
     <section class="card">
       <h2>工厂经营决策驾驶舱（跨部门实时汇总）</h2>
       <div id="cockpitSummary" class="muted">加载中...</div>
+    </section>
+
+    <section class="card" id="monthlyCard" style="display:none">
+      <h2>全厂月度经营与合规汇总报表</h2>
+      <pre id="monthlyPreview" style="white-space:pre-wrap;margin:0;font-family:inherit"></pre>
     </section>
 
     <section class="card">
