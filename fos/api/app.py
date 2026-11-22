@@ -101,6 +101,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await svc.aclose()
 
     app = FastAPI(title="Factory AI Native OS", version=__version__, lifespan=lifespan)
+    from time import perf_counter
+
+    from fos.ops.metrics import HttpMetrics
+
+    http_metrics = HttpMetrics()
+    app.state.http_metrics = http_metrics
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -110,8 +116,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def request_id(request: Request, call_next):
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex
         request.state.request_id = rid
+        t0 = perf_counter()
         response = await call_next(request)
+        elapsed = perf_counter() - t0
+        http_metrics.record(request.method, response.status_code, elapsed)
         response.headers["x-request-id"] = rid
+        response.headers["x-response-time-ms"] = f"{elapsed * 1000.0:.2f}"
         response.headers.setdefault("x-content-type-options", "nosniff")
         response.headers.setdefault("x-frame-options", "DENY")
         response.headers.setdefault("referrer-policy", "no-referrer")
