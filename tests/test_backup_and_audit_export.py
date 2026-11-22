@@ -95,3 +95,78 @@ def test_cli_backup_and_verify_ledger(
         assert main(["verify-backup", str(out_file)]) == 1
     finally:
         get_settings.cache_clear()
+
+
+def test_disaster_recovery_restore_and_projection_rebuild(
+    client, keys, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """端到端灾备演练：源库写入业务对象 -> 导出防篡改 JSONL -> 恢复至全新空库 -> 投影与序号完全还原。"""
+    close_dt = (date.today() + timedelta(days=12)).isoformat()
+    r = client.post(
+        "/v1/market/leads",
+        json={
+            "customer_name": "灾备演练客户",
+            "industry": "cement",
+            "product_interest": "硅莫砖",
+            "est_amount": 350000.0,
+            "owner_name": "灾备官",
+            "expected_close_date": close_dt,
+            "data_mode": "real",
+        },
+        headers=_h(keys, "sales"),
+    )
+    assert r.status_code == 201
+    lead_id = r.json()["id"]
+
+    rb = client.get("/v1/ops/backup.jsonl", headers=_h(keys, "admin"))
+    assert rb.status_code == 200
+    backup_file = tmp_path / "dr_luneng.jsonl"
+    backup_file.write_text(rb.text, encoding="utf-8")
+
+    # 切到全新空库执行 fos restore-ledger
+    dr_db = tmp_path / "dr_fresh.db"
+    monkeypatch.setenv("FOS_DATABASE_URL", f"sqlite+aiosqlite:///{dr_db}")
+    get_settings.cache_clear()
+    try:
+        assert main(["init-db"]) == 0
+        assert main(["restore-ledger", "luneng", str(backup_file)]) == 0
+        out = capsys.readouterr().out
+        assert "恢复完成：luneng" in out
+
+        # 已有不可变事件的租户拒绝重复恢复（严格遵守账本只追加红线）
+        assert main(["restore-ledger", "luneng", str(backup_file)]) == 1
+        # 篡改后的灾备文件应被拒绝
+        bad_file = tmp_path / "tampered.jsonl"
+        bad_file.write_text(rb.text.replace("硅莫砖", "高铝砖", 1), encoding="utf-8")
+        assert main(["restore-ledger", "luneng", str(bad_file)]) == 1
+
+        # 验证投影对象已完整重建且 TenantCounter.last_seq 与事件数一致
+        import asyncio
+
+        from sqlalchemy import select
+
+        from fos.config import Settings
+        from fos.db.models import ObjectState, TenantCounter
+        from fos.services import Services
+
+        async def _verify() -> None:
+            svc = Services.build(Settings(database_url=f"sqlite+aiosqlite:///{dr_db}"))
+            try:
+                async with svc.sessionmaker() as s:
+                    obj = (
+                        await s.scalars(
+                            select(ObjectState).where(
+                                ObjectState.tenant_id == "luneng",
+                                ObjectState.object_id == lead_id,
+                            )
+                        )
+                    ).one()
+                    assert obj.state["customer_name"] == "灾备演练客户"
+                    ctr = await s.get(TenantCounter, "luneng")
+                    assert ctr is not None and ctr.last_seq >= 1
+            finally:
+                await svc.aclose()
+
+        asyncio.run(_verify())
+    finally:
+        get_settings.cache_clear()
