@@ -132,6 +132,26 @@
       setMsg(e.message);
     }
   });
+  async function downloadFile(url, fallbackName, okText) {
+    try {
+      const res = await api(url);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = fallbackName;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setMsg(okText);
+    } catch (e) {
+      setMsg(e.message);
+    }
+  }
+  $("btnAuditXlsx").addEventListener("click", () =>
+    downloadFile("/v1/ops/audit.xlsx", "账本审计流水.xlsx", "已导出审计流水 (.xlsx)")
+  );
+  $("btnBackupJsonl").addEventListener("click", () =>
+    downloadFile("/v1/ops/backup.jsonl", "ledger_backup.jsonl", "已下载防篡改账本灾备 (.jsonl)")
+  );
 
   const saved = localStorage.getItem(KEY_STORE);
   if (saved) {
