@@ -48,6 +48,7 @@
 - `fos/construction/`：筑炉施工与烘炉验收（W27b）。`metrics.py` 确定性砌筑进度重算与烘炉温差/升温速率防爆裂校验，`guards.py` 开竣工日期、施工日报人数/吨位与正常验收进度门槛账本守卫，`service.py` 施工立项、日报自动更新进度、烘炉超限自动派发待办、带尾项条件验收总经理审批，`export.py` 三表 Excel 报表，`cards.py` IM「施工」「施工日报」「烘炉」，`tools.py` 施工只读工具；本体 `packs/<pack>/ontology/construction.yaml`，配置 `packs/<pack>/construction.yaml`，Skill `packs/<pack>/skills/site_supervisor/`；API `/v1/construction/*`，网页 `/app/construction.html`；说明见 `docs/construction.md`
 - `fos/market/`：经营决策驾驶舱与市场商机线索（W27c）。`analytics.py` 确定性商机漏斗加权预测/赢单率与全厂跨部门经营驾驶舱 KPI 汇总，`guards.py` 金额/概率合法性与防重复结案账本守卫，`service.py` 商机跟进、50 万以上丢单销售负责人复盘审批、竞品行情与经营总览，`export.py` 三表 Excel 报表，`cards.py` IM「驾驶舱」「商机」「竞品」，`tools.py` 经营与市场只读工具；本体 `packs/<pack>/ontology/market.yaml`，配置 `packs/<pack>/market.yaml`，Skill `packs/<pack>/skills/executive_advisor/`；API `/v1/market/*`，网页 `/app/market.html`；说明见 `docs/market.md`
 - `fos/ops/`：统一 Watchdog 巡检与 SaaS 运营后台（W28）。`watchdog.py` 单次幂等触发质量/财务/EAM/EHS/HR 五大到期提醒并清理超时审批，`service.py` 单租户健康快照、安全基线自检、多租户 SaaS 总览与第二家工厂零代码复制验证；API `/v1/ops/*`，网页 `/app/ops.html`；说明见 `docs/ops.md`
+- `fos/eval/`：黄金数据集评测与 Badcase 回归引擎（W29）。`runner.py` 零模型成本回归 Fast Path 分流、Skill 关键词路由、核心确定性算子与审批红线策略，配置 `packs/<pack>/eval/golden_suite.yaml`；API `GET /v1/ops/eval`；说明见 `docs/eval.md`
 
 ## 规则（不要破坏）
 

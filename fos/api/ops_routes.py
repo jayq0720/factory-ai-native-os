@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from fos.api.deps import SessionDep, require
 from fos.db.models import utcnow
+from fos.eval.runner import run_golden_eval
 from fos.governance.principal import Principal
 from fos.ops import service as ops
 from fos.ops import watchdog as wd
@@ -64,5 +65,13 @@ async def check_replication(tenant_id: str, request: Request, p: OpsAdmin) -> di
         return ops.verify_tenant_replication(
             packs_dir=st.packs_dir, tenants_dir=st.tenants_dir, tenant_id=tenant_id
         )
+    except ValueError as e:
+        raise HTTPException(404, detail=str(e)) from e
+
+
+@router.get("/eval")
+async def run_eval_ep(request: Request, p: OpsAdmin) -> dict[str, Any]:
+    try:
+        return run_golden_eval(request.app.state.services, p.tenant_id)
     except ValueError as e:
         raise HTTPException(404, detail=str(e)) from e

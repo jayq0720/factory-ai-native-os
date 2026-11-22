@@ -1,0 +1,120 @@
+# 耐火材料工厂 AI OS 黄金评测数据集（W29）。
+# 覆盖四类零模型成本确定性回归：Fast Path 分流、Skill 关键词路由、核心确定性算子、审批红线策略。
+
+fast_path_routing:
+  - {id: fp_eam_eq, text: 设备, expect: eam_equipment}
+  - {id: fp_eam_pm, text: 保养, expect: eam_pm}
+  - {id: fp_eam_wo, text: 工单, expect: eam_work_orders}
+  - {id: fp_eam_sp, text: 备件, expect: eam_spare_parts}
+  - {id: fp_ehs_hz, text: 隐患, expect: ehs_hazards}
+  - {id: fp_ehs_pt, text: 作业票, expect: ehs_permits}
+  - {id: fp_ehs_env, text: 环保, expect: ehs_env}
+  - {id: fp_hr_rst, text: 排班, expect: hr_roster}
+  - {id: fp_hr_cert, text: 资质, expect: hr_certs}
+  - {id: fp_hr_pay, text: 工资, expect: hr_payroll}
+  - {id: fp_rnd_proj, text: 研发, expect: rnd_projects}
+  - {id: fp_rnd_frm, text: 配方, expect: rnd_formulas}
+  - {id: fp_rnd_trl, text: 试验, expect: rnd_trials}
+  - {id: fp_cst_site, text: 施工, expect: construction_sites}
+  - {id: fp_cst_log, text: 施工日报, expect: construction_logs}
+  - {id: fp_cst_dry, text: 烘炉, expect: construction_dryout}
+  - {id: fp_mkt_ck, text: 驾驶舱, expect: market_cockpit}
+  - {id: fp_mkt_fn, text: 商机, expect: market_funnel}
+  - {id: fp_mkt_in, text: 竞品, expect: market_intel}
+  - {id: fp_fin_ar, text: 应收, expect: finance_ar}
+  - {id: fp_fin_ap, text: 应付, expect: finance_ap}
+  - {id: fp_q_ncr, text: 不合格, expect: quality_ncr}
+  - {id: fp_nl_fallthrough, text: 帮我分析一下上个月高铝砖的毛利率为什么下降了, expect: router}
+
+skill_routing:
+  - {id: sk_ehs, text: 查看车间的安全隐患整改和动火作业审批情况, expect_skill: ehs_officer}
+  - {id: sk_hr, text: 统计本月计件工资和员工花名册情况, expect_skill: hr_assistant}
+  - {id: sk_rnd, text: 查看当前高铝砖的研发项目和配方版本成本, expect_skill: rnd_engineer}
+  - {id: sk_cst, text: 海螺水泥回转窑的筑炉施工和烘炉曲线正常吗, expect_skill: site_supervisor}
+  - {id: sk_mkt, text: 看一下全厂经营决策驾驶舱和市场商机漏斗, expect_skill: executive_advisor}
+  - {id: sk_eam, text: 查一下压机设备台账和预防性保养计划, expect_skill: equipment_manager}
+  - {id: sk_fin, text: 查看本月的应收账款账龄和凭证草稿, expect_skill: finance_assistant}
+  - {id: sk_qual, text: 查一下最近的不合格品报告和计量器具校准, expect_skill: quality_inspector}
+  - {id: sk_chat_reply, text: 早上好辛苦了, expect_skill: null}
+
+deterministic_calculators:
+  - id: calc_ehs_env_exceed
+    kind: ehs_env
+    input: {metric: dust, value: 25.0}
+    expect: {passed: false}
+  - id: calc_ehs_env_ok
+    kind: ehs_env
+    input: {metric: dust, value: 18.0}
+    expect: {passed: true}
+  - id: calc_hr_payroll
+    kind: hr_payroll
+    input: {base_salary: 4400.0, present_days: 1, overtime_hours: 2.0, piece_qty: 20.0, piece_rate: 15.0}
+    expect: {gross_pay: 575.0}
+  - id: calc_rnd_formula
+    kind: rnd_formula
+    input:
+      ingredients:
+        - {name: 矾土, pct: 70.0, al2o3_pct: 85.0, unit_cost: 2200.0}
+        - {name: 刚玉, pct: 20.0, al2o3_pct: 95.0, unit_cost: 4500.0}
+        - {name: 粘土, pct: 10.0, al2o3_pct: 35.0, unit_cost: 800.0}
+    expect: {calc_al2o3_pct: 82.0, est_cost_per_ton: 2520.0}
+  - id: calc_cst_dryout_alert
+    kind: construction_dryout
+    input: {target_temp_c: 300.0, actual_temp_c: 340.0, ramp_rate_c_per_h: 45.0}
+    expect: {within_spec: false}
+  - id: calc_mkt_funnel
+    kind: market_funnel
+    input:
+      leads:
+        - {stage: quoted, est_amount: 200000.0, probability: 50}
+        - {stage: won, est_amount: 300000.0, probability: 100}
+    expect: {weighted_pipeline_amount: 100000.0, won_amount: 300000.0}
+
+policy_redlines:
+  - id: pol_hot_work
+    event: ehs.permit_issued
+    payload: {kind: hot_work}
+    expect_effect: approve
+  - id: pol_high_alt
+    event: ehs.permit_issued
+    payload: {kind: high_altitude}
+    expect_effect: allow
+  - id: pol_long_leave
+    event: hr.leave_submitted
+    payload: {days: 3}
+    expect_effect: approve
+  - id: pol_short_leave
+    event: hr.leave_submitted
+    payload: {days: 1}
+    expect_effect: allow
+  - id: pol_rnd_release
+    event: rnd.formula_released
+    payload: {status: approved}
+    expect_effect: approve
+  - id: pol_cst_cond
+    event: construction.site_accepted
+    payload: {acceptance_type: conditional, status: accepted}
+    expect_effect: approve
+  - id: pol_cst_norm
+    event: construction.site_accepted
+    payload: {acceptance_type: normal, status: accepted}
+    expect_effect: allow
+  - id: pol_mkt_large_lost
+    event: market.lead_closed
+    payload: {stage: lost}
+    state: {est_amount: 600000}
+    expect_effect: approve
+  - id: pol_mkt_small_lost
+    event: market.lead_closed
+    payload: {stage: lost}
+    state: {est_amount: 100000}
+    expect_effect: allow
+  - id: pol_eam_retire_a
+    event: eam.equipment_retired
+    payload: {status: retired}
+    state: {criticality: A}
+    expect_effect: approve
+  - id: pol_fin_large_ap
+    event: finance.ap_paid
+    payload: {last_payment_amount: 60000}
+    expect_effect: approve
