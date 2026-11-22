@@ -201,9 +201,7 @@ async def get_tenant_budget(request: Request, session: SessionDep, p: OpsAdmin) 
 
 
 @router.get("/keys")
-async def list_tenant_keys(
-    session: SessionDep, p: OpsAdmin, include_revoked: bool = False
-) -> dict[str, Any]:
+async def list_tenant_keys(session: SessionDep, p: OpsAdmin, include_revoked: bool = False) -> dict[str, Any]:
     """列出当前租户 API Key 脱敏元数据（永不返回明文或哈希）。"""
     from fos.governance import apikeys
 

@@ -55,7 +55,5 @@ def test_ops_apikey_lifecycle_and_tenant_isolation(client, keys) -> None:
     assert rev_item["active"] is False
 
     # 6. 验证 ops.html 已接入预算租约与密钥治理表格
-    ops_html = (Path(__file__).resolve().parent.parent / "fos/web/static/ops.html").read_text(
-        encoding="utf-8"
-    )
+    ops_html = (Path(__file__).resolve().parent.parent / "fos/web/static/ops.html").read_text(encoding="utf-8")
     assert 'id="budgetSummary"' in ops_html and 'id="keyTable"' in ops_html
