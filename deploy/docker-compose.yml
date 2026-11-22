@@ -27,6 +27,17 @@ x-fos-env: &fos-env
   FOS_DINGTALK_LUNENG_CLIENT_SECRET: ${FOS_DINGTALK_LUNENG_CLIENT_SECRET:-}
   FOS_DINGTALK_LUNENG_ROBOT_CODE: ${FOS_DINGTALK_LUNENG_ROBOT_CODE:-}
   FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID: ${FOS_DINGTALK_LUNENG_CARD_TEMPLATE_ID:-}
+  # 飞书企业自建应用（W22b）
+  FOS_FEISHU_LUNENG_APP_ID: ${FOS_FEISHU_LUNENG_APP_ID:-}
+  FOS_FEISHU_LUNENG_APP_SECRET: ${FOS_FEISHU_LUNENG_APP_SECRET:-}
+  FOS_FEISHU_LUNENG_VERIFICATION_TOKEN: ${FOS_FEISHU_LUNENG_VERIFICATION_TOKEN:-}
+  FOS_FEISHU_LUNENG_ENCRYPT_KEY: ${FOS_FEISHU_LUNENG_ENCRYPT_KEY:-}
+  # 企业微信自建应用（W22b）
+  FOS_WECOM_LUNENG_CORP_ID: ${FOS_WECOM_LUNENG_CORP_ID:-}
+  FOS_WECOM_LUNENG_AGENT_ID: ${FOS_WECOM_LUNENG_AGENT_ID:-}
+  FOS_WECOM_LUNENG_CORP_SECRET: ${FOS_WECOM_LUNENG_CORP_SECRET:-}
+  FOS_WECOM_LUNENG_TOKEN: ${FOS_WECOM_LUNENG_TOKEN:-}
+  FOS_WECOM_LUNENG_ENCODING_AES_KEY: ${FOS_WECOM_LUNENG_ENCODING_AES_KEY:-}
 
 x-fos-build: &fos-build
   context: ..
@@ -126,6 +137,18 @@ services:
     environment: *fos-env
     volumes:
       - blobs:/data/blobs
+
+  # 全厂统一 Watchdog 守护巡检（到期校准/逾期账款/保养/隐患/证照/超时审批），按需加 --profile ops
+  watchdog:
+    profiles: ["ops"]
+    build: *fos-build
+    image: fos-api:local
+    command: ["sh", "-c", "fos watchdog --all --interval ${FOS_WATCHDOG_INTERVAL:-1800}"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *fos-env
 
 volumes:
   pgdata:

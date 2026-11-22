@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from contextlib import suppress
 from datetime import UTC, date
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +20,8 @@ from fos.quality.service import remind_calibration_due
 
 if TYPE_CHECKING:
     from fos.services import Services
+
+logger = logging.getLogger(__name__)
 
 
 def _created_count(res: dict[str, Any]) -> int:
@@ -89,3 +94,40 @@ async def run_tenant_watchdog(
         "total_todos_created": sum(modules.values()),
         "expired_approvals": expired_approvals,
     }
+
+
+async def watchdog_loop(
+    svc: Services,
+    tenant_ids: list[str] | None = None,
+    *,
+    interval_seconds: float = 1800.0,
+    stop_event: asyncio.Event | None = None,
+    max_cycles: int | None = None,
+) -> int:
+    """周期性全厂 Watchdog 守护循环：按固定间隔幂等巡检所有目标租户，异常隔离不中断进程。"""
+    cycles = 0
+    targets = tenant_ids or list(svc.registry.ids())
+    while True:
+        today = date.today()
+        for tid in targets:
+            try:
+                async with svc.sessionmaker() as session, session.begin():
+                    res = await run_tenant_watchdog(session, svc, tid, today)
+                logger.info(
+                    "watchdog %s: todos=+%s expired_approvals=%s",
+                    tid,
+                    res["total_todos_created"],
+                    res["expired_approvals"],
+                )
+            except Exception:
+                logger.exception("watchdog 巡检租户 %s 失败，将在下个周期重试", tid)
+        cycles += 1
+        if max_cycles is not None and cycles >= max_cycles:
+            return cycles
+        if stop_event is not None:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            if stop_event.is_set():
+                return cycles
+        else:
+            await asyncio.sleep(interval_seconds)

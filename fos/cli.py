@@ -180,17 +180,67 @@ async def _run(args: argparse.Namespace) -> int:
         return await commands.daily(s, args.tenant, args.login, args.date, send=args.send)
     if args.cmd == "channels":
         return await _run_channels([args.tenant] if args.tenant else [])
+    if args.cmd == "clone-tenant":
+        from fos.ops.provision import provision_tenant
+
+        im_list = [x.strip() for x in args.im.split(",") if x.strip()]
+        try:
+            rep = provision_tenant(
+                packs_dir=s.packs_dir,
+                tenants_dir=s.tenants_dir,
+                tenant_id=args.tenant_id,
+                name=args.name,
+                industry_pack=args.pack,
+                im=im_list,
+                template_tenant=args.template or None,
+            )
+        except ValueError as e:
+            print(f"创建失败：{e}", file=sys.stderr)
+            return 1
+        print(
+            f"已创建并验证新租户 {rep['tenant_id']}（{rep['name']}）-> {rep['tenant_dir']} | "
+            f"对象 {rep['objects_count']} / 事件 {rep['events_count']} / "
+            f"规则 {rep['policy_rules_count']} / Skill {rep['skills_count']}"
+        )
+        return 0
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
 
         from fos.eval.runner import run_golden_eval
         from fos.ops.service import security_baseline
-        from fos.ops.watchdog import run_tenant_watchdog
+        from fos.ops.watchdog import run_tenant_watchdog, watchdog_loop
         from fos.services import Services
 
         svc = Services.build(s)
         try:
+            if args.cmd == "watchdog":
+                if args.all:
+                    targets = list(svc.registry.ids())
+                else:
+                    if not args.tenant or svc.registry.get(args.tenant) is None:
+                        print(f"租户 {args.tenant or '(未指定)'} 不存在", file=sys.stderr)
+                        return 1
+                    targets = [args.tenant]
+                if args.interval and args.interval > 0:
+                    logging.basicConfig(
+                        level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+                    )
+                    await watchdog_loop(svc, targets, interval_seconds=float(args.interval))
+                    return 0
+                today = date.today()
+                for tid in targets:
+                    async with svc.sessionmaker() as session, session.begin():
+                        res = await run_tenant_watchdog(session, svc, tid, today)
+                    print(
+                        f"{res['tenant_id']} Watchdog ({res['date']}): "
+                        f"新建待办 {res['total_todos_created']} 条，"
+                        f"清理超时审批 {res['expired_approvals']} 条"
+                    )
+                    for mod, cnt in res["modules"].items():
+                        print(f"  {mod:<24} +{cnt}")
+                return 0
             if svc.registry.get(args.tenant) is None:
                 print(f"租户 {args.tenant} 不存在", file=sys.stderr)
                 return 1
@@ -209,21 +259,11 @@ async def _run(args: argparse.Namespace) -> int:
                         f"expect={bc['expected']!r} got={bc['actual']!r}"
                     )
                 return 0 if res["all_passed"] else 1
-            if args.cmd == "security-check":
-                res = security_baseline(svc, args.tenant)
-                for chk in res["checks"]:
-                    mark = "OK" if chk["ok"] else "FAIL"
-                    print(f"  [{mark:<4}] ({chk['severity']:<5}) {chk['name']}: {chk['detail']}")
-                return 0 if res["passed"] else 1
-            async with svc.sessionmaker() as session, session.begin():
-                res = await run_tenant_watchdog(session, svc, args.tenant, date.today())
-            print(
-                f"{res['tenant_id']} Watchdog ({res['date']}): "
-                f"新建待办 {res['total_todos_created']} 条，清理超时审批 {res['expired_approvals']} 条"
-            )
-            for mod, cnt in res["modules"].items():
-                print(f"  {mod:<24} +{cnt}")
-            return 0
+            res = security_baseline(svc, args.tenant)
+            for chk in res["checks"]:
+                mark = "OK" if chk["ok"] else "FAIL"
+                print(f"  [{mark:<4}] ({chk['severity']:<5}) {chk['name']}: {chk['detail']}")
+            return 0 if res["passed"] else 1
         finally:
             await svc.aclose()
     registry = TenantRegistry.load(s.tenants_dir)
@@ -390,8 +430,16 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--suite", default="", help="自定义黄金评测 YAML 路径")
     sc = sub.add_parser("security-check", help="运行租户安全与上线基线自检")
     sc.add_argument("tenant")
-    wd = sub.add_parser("watchdog", help="单次执行全厂统一 Watchdog 巡检")
-    wd.add_argument("tenant")
+    wd = sub.add_parser("watchdog", help="执行全厂统一 Watchdog 巡检（支持单次或守护循环）")
+    wd.add_argument("tenant", nargs="?", default="")
+    wd.add_argument("--all", action="store_true", help="巡检全部已注册租户")
+    wd.add_argument("--interval", type=int, default=0, help="周期守护间隔（秒），>0 时常驻循环")
+    ct = sub.add_parser("clone-tenant", help="一键复制新工厂租户目录并校验就绪")
+    ct.add_argument("tenant_id")
+    ct.add_argument("name")
+    ct.add_argument("--pack", default="refractory", help="行业包名称")
+    ct.add_argument("--im", default="dingtalk", help="启用的 IM 信道（逗号分隔）")
+    ct.add_argument("--template", default="luneng", help="模板租户（留空则仅生成最小角色）")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":
