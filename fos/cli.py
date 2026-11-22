@@ -203,6 +203,31 @@ async def _run(args: argparse.Namespace) -> int:
             f"规则 {rep['policy_rules_count']} / Skill {rep['skills_count']}"
         )
         return 0
+    if args.cmd == "monthly-report":
+        from datetime import date
+        from pathlib import Path
+
+        from fos.reports.monthly import build_monthly_report, render_monthly_xlsx
+        from fos.services import Services
+
+        svc = Services.build(s)
+        try:
+            month = args.month or date.today().strftime("%Y-%m")
+            async with svc.sessionmaker() as session:
+                try:
+                    rep = await build_monthly_report(session, svc, args.tenant, month)
+                except ValueError as e:
+                    print(f"生成失败：{e}", file=sys.stderr)
+                    return 1
+            print(rep["markdown"])
+            if args.xlsx:
+                out_path = Path(args.xlsx)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_bytes(render_monthly_xlsx(rep))
+                print(f"已导出 Excel：{out_path}")
+            return 0
+        finally:
+            await svc.aclose()
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -440,6 +465,10 @@ def main(argv: list[str] | None = None) -> int:
     ct.add_argument("--pack", default="refractory", help="行业包名称")
     ct.add_argument("--im", default="dingtalk", help="启用的 IM 信道（逗号分隔）")
     ct.add_argument("--template", default="luneng", help="模板租户（留空则仅生成最小角色）")
+    mr = sub.add_parser("monthly-report", help="生成全厂月度经营与合规汇总报表（Markdown + Excel）")
+    mr.add_argument("tenant")
+    mr.add_argument("--month", default="", help="统计月份 YYYY-MM（默认当月）")
+    mr.add_argument("--xlsx", default="", help="可选：导出正式三表 Excel 文件路径")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":

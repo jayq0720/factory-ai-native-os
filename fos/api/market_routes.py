@@ -193,3 +193,40 @@ async def export_market_report(request: Request, session: SessionDep, p: LeadRea
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
     )
+
+
+@router.get("/monthly-report")
+async def get_monthly_report(
+    request: Request, session: SessionDep, p: LeadRead, month: str | None = None
+) -> dict[str, Any]:
+    """跨模块确定性生成月度经营与合规汇总报表（JSON + Markdown，仅真实数据）。"""
+    from fos.reports.monthly import build_monthly_report
+
+    _cfg(request, p.tenant_id)
+    m = month or _today(request, p.tenant_id).strftime("%Y-%m")
+    try:
+        return await build_monthly_report(session, request.app.state.services, p.tenant_id, m)
+    except ValueError as e:
+        raise HTTPException(422, detail=str(e)) from e
+
+
+@router.get("/monthly-report.xlsx")
+async def export_monthly_report_xlsx(
+    request: Request, session: SessionDep, p: LeadRead, month: str | None = None
+) -> Response:
+    """导出全厂月度经营与合规三表 Excel（规则 4：正式报表仅统计真实数据）。"""
+    from fos.reports.monthly import build_monthly_report, render_monthly_xlsx
+
+    _cfg(request, p.tenant_id)
+    m = month or _today(request, p.tenant_id).strftime("%Y-%m")
+    try:
+        rep = await build_monthly_report(session, request.app.state.services, p.tenant_id, m)
+    except ValueError as e:
+        raise HTTPException(422, detail=str(e)) from e
+    xlsx = render_monthly_xlsx(rep)
+    fname = f"全厂经营月报_{rep['factory_name']}_{m}.xlsx"
+    return Response(
+        content=xlsx,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
