@@ -133,10 +133,12 @@ def test_disaster_recovery_restore_and_projection_rebuild(
         out = capsys.readouterr().out
         assert "恢复完成：luneng" in out
 
-        # 不带 --force 再次恢复已有事件的租户应被拒绝
+        # 已有不可变事件的租户拒绝重复恢复（严格遵守账本只追加红线）
         assert main(["restore-ledger", "luneng", str(backup_file)]) == 1
-        # 带 --force 覆盖恢复应成功
-        assert main(["restore-ledger", "luneng", str(backup_file), "--force"]) == 0
+        # 篡改后的灾备文件应被拒绝
+        bad_file = tmp_path / "tampered.jsonl"
+        bad_file.write_text(rb.text.replace("硅莫砖", "高铝砖", 1), encoding="utf-8")
+        assert main(["restore-ledger", "luneng", str(bad_file)]) == 1
 
         # 验证投影对象已完整重建且 TenantCounter.last_seq 与事件数一致
         import asyncio

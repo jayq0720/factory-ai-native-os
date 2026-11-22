@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from openpyxl import Workbook
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.db.models import Event, TenantCounter, utcnow
@@ -191,10 +191,8 @@ async def restore_tenant_ledger_jsonl(
     onto: Ontology,
     tenant_id: str,
     content: str,
-    *,
-    force: bool = False,
 ) -> dict[str, Any]:
-    """校验防篡改灾备 JSONL 后原子恢复单租户事件账本，同步 TenantCounter 并重建全部投影。"""
+    """校验防篡改灾备 JSONL 后原子恢复空租户事件账本（遵守只追加红线），同步序号并重建投影。"""
     ver = verify_ledger_backup_jsonl(content)
     if not ver["ok"]:
         raise ValueError(f"灾备文件校验失败：{ver['error']}")
@@ -205,12 +203,8 @@ async def restore_tenant_ledger_jsonl(
         (await session.scalar(select(func.count()).select_from(Event).where(Event.tenant_id == tenant_id)))
         or 0
     )
-    if existing > 0 and not force:
-        raise ValueError(f"租户 {tenant_id} 已有 {existing} 条事件，请加 --force 确认覆盖恢复")
-
     if existing > 0:
-        await session.execute(delete(Event).where(Event.tenant_id == tenant_id))
-        await session.flush()
+        raise ValueError(f"租户 {tenant_id} 已有 {existing} 条不可变事件，仅允许向空租户恢复")
 
     raw_lines = [ln for ln in content.splitlines() if ln.strip()]
     max_seq = 0

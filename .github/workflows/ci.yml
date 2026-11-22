@@ -31,7 +31,7 @@ jobs:
           .venv/bin/alembic check
           .venv/bin/alembic downgrade base
       - name: 测试（SQLite）
-        run: .venv/bin/pytest tests/test_backup_and_audit_export.py -vv --tb=short || (.venv/bin/pytest tests/test_backup_and_audit_export.py -q --tb=line | while IFS= read -r l; do echo "::error::$l"; done; exit 1)
+        run: .venv/bin/pytest -q
       - name: 测试（PostgreSQL，含并发追加）
         run: FOS_TEST_DATABASE_URL=$FOS_DATABASE_URL .venv/bin/pytest -q
       - run: .venv/bin/fos tenants

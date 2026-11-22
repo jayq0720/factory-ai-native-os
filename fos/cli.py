@@ -289,7 +289,7 @@ async def _run(args: argparse.Namespace) -> int:
             raw = p_file.read_text(encoding="utf-8")
             try:
                 async with svc.sessionmaker() as session, session.begin():
-                    res = await restore_tenant_ledger_jsonl(session, onto, args.tenant, raw, force=args.force)
+                    res = await restore_tenant_ledger_jsonl(session, onto, args.tenant, raw)
             except ValueError as e:
                 print(f"恢复失败：{e}", file=sys.stderr)
                 return 1
@@ -547,10 +547,9 @@ def main(argv: list[str] | None = None) -> int:
     bl.add_argument("--include-mock", action="store_true", help="包含模拟数据（默认仅真实账本）")
     vb = sub.add_parser("verify-backup", help="离线校验账本灾备 JSONL 完整性与 SHA-256")
     vb.add_argument("file")
-    rl = sub.add_parser("restore-ledger", help="校验防篡改灾备文件并恢复租户账本与投影")
+    rl = sub.add_parser("restore-ledger", help="校验防篡改灾备文件并向空租户恢复账本与投影")
     rl.add_argument("tenant")
     rl.add_argument("file")
-    rl.add_argument("--force", action="store_true", help="目标租户已有事件时允许覆盖恢复")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":
