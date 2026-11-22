@@ -9,6 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from fos.agents.runtime import AgentRuntime
 from fos.config import Settings
+from fos.construction import tools as construction_tools  # noqa: F401  注册筑炉施工工具
+from fos.construction.config import ConstructionConfig, load_construction_config
+from fos.construction.guards import (
+    LOG_RECORD_EVENT,
+    SITE_ACCEPT_EVENT,
+    SITE_CREATE_EVENT,
+    ConstructionGuard,
+)
 from fos.db.session import make_engine, make_sessionmaker
 from fos.eam import tools as eam_tools  # noqa: F401  注册设备管理工具
 from fos.eam.config import EamConfig, load_eam_config
@@ -141,6 +149,7 @@ class Services:
     ehs: dict[str, EhsConfig]
     hr: dict[str, HrConfig]
     rnd: dict[str, RndConfig]
+    construction: dict[str, ConstructionConfig]
     # fos-edge 命令签名（W21）：私钥来自环境变量 FOS_EDGE_COMMAND_KEY；没配置为 None，不能下发命令
     edge_signer: CommandSigner | None = None
 
@@ -333,6 +342,21 @@ class Services:
         }
         for ev in (FORMULA_CREATE_EVENT, FORMULA_RELEASE_EVENT, FORMULA_REJECT_EVENT):
             ledger.add_guard(ev, RndGuard(ev, rnd))
+        # 筑炉施工与烘炉验收（W27b）：只给本体里有施工项目（site_project）的租户开
+        construction = {
+            tid: cfg
+            for tid in registry.ids()
+            if (t := registry.get(tid)) is not None
+            and "site_project" in ontologies[tid].objects
+            and (
+                cfg := load_construction_config(
+                    t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir
+                )
+            )
+            is not None
+        }
+        for ev in (SITE_CREATE_EVENT, LOG_RECORD_EVENT, SITE_ACCEPT_EVENT):
+            ledger.add_guard(ev, ConstructionGuard(ev, construction))
         extractor = Extractor(schemas, llm, settings)
         sessionmaker = make_sessionmaker(engine)
         return cls(
@@ -369,6 +393,7 @@ class Services:
                 ehs=ehs,
                 hr=hr,
                 rnd=rnd,
+                construction=construction,
             ),
             skills=skills,
             runtime=AgentRuntime(
@@ -388,6 +413,7 @@ class Services:
                         "ehs": ehs.get(tid),
                         "hr": hr.get(tid),
                         "rnd": rnd.get(tid),
+                        "construction": construction.get(tid),
                         "tz": ZoneInfo(t.timezone),
                     }
                     for tid in registry.ids()
@@ -412,6 +438,7 @@ class Services:
             ehs=ehs,
             hr=hr,
             rnd=rnd,
+            construction=construction,
             edge_signer=CommandSigner.from_setting(settings.edge_command_key),
         )
 

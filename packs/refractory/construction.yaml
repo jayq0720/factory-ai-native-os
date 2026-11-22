@@ -1,0 +1,7 @@
+# 耐火材料行业筑炉施工与烘炉验收配置（W27b）。
+# 租户可在 tenants/<id>/construction.yaml 覆盖烘炉温差/速率红线与验收最低进度。
+
+max_temp_deviation_c: 25.0
+max_ramp_rate_c_per_h: 35.0
+min_progress_for_accept_pct: 95.0
+notify_roles: [engineer, shift_lead]

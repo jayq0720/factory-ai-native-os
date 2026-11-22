@@ -1,0 +1,94 @@
+# 耐火材料行业筑炉施工与烘炉验收本体扩展（W27b）。
+# 施工项目、施工日报进度、烘炉升温记录与竣工验收全部走事件账本，由 fos/construction/guards.py 校验门禁。
+
+objects:
+  site_project:
+    name: 筑炉施工项目
+    domain: construction
+    description: 客户现场窑炉砌筑/浇注施工项目、砌筑吨位进度与竣工验收台账
+    properties:
+      site_no: {type: string, name: 项目编号, required: true}
+      name: {type: string, name: 工程名称, required: true}
+      customer_name: {type: string, name: 客户名称, required: true}
+      furnace_type: {type: string, name: 窑炉/炉型, required: true}
+      location: {type: string, name: 施工地点, required: true}
+      supervisor: {type: string, name: 现场负责人, required: true}
+      planned_tons: {type: number, name: 计划砌筑量(吨), required: true}
+      completed_tons: {type: number, name: 累计完成量(吨)}
+      progress_pct: {type: number, name: 施工进度(%)}
+      start_date: {type: date, name: 开工日期, required: true}
+      due_date: {type: date, name: 计划竣工日, required: true}
+      status: {type: enum, name: 状态, values: [mobilizing, building, drying, accepted, suspended], required: true}
+      acceptance_type: {type: enum, name: 验收类型, values: [normal, conditional]}
+      handover_note: {type: text, name: 竣工验收说明}
+
+  site_log:
+    name: 施工日报
+    domain: construction
+    description: 每日现场作业人数、完成砌筑吨位、安全检查与施工纪要
+    properties:
+      log_no: {type: string, name: 日报编号, required: true}
+      site: {type: ref, target: site_project, name: 施工项目, required: true}
+      log_date: {type: date, name: 施工日期, required: true}
+      crew_size: {type: integer, name: 作业人数, required: true}
+      tons_installed: {type: number, name: 当日完成量(吨), required: true}
+      weather: {type: string, name: 天气}
+      safety_ok: {type: bool, name: 现场安全正常, required: true}
+      summary: {type: text, name: 施工内容与问题, required: true}
+
+  dryout_record:
+    name: 烘炉升温记录
+    domain: construction
+    description: 耐材砌体烘炉曲线实测温度、升温速率与确定性防爆裂达标判定
+    properties:
+      dryout_no: {type: string, name: 记录编号, required: true}
+      site: {type: ref, target: site_project, name: 施工项目, required: true}
+      recorded_at: {type: datetime, name: 测温时间, required: true}
+      stage_name: {type: string, name: 烘炉阶段, required: true}
+      target_temp_c: {type: number, name: 目标温度(℃), required: true}
+      actual_temp_c: {type: number, name: 实测温度(℃), required: true}
+      ramp_rate_c_per_h: {type: number, name: 升温速率(℃/h), required: true}
+      within_spec: {type: bool, name: 符合曲线要求, required: true}
+      note: {type: text, name: 备注}
+
+events:
+  construction.site_created:
+    name: 筑炉施工项目立项
+    object: site_project
+    op: create
+    permission: construction.site:write
+    evidence: required
+    fields:
+      [site_no, name, customer_name, furnace_type, location, supervisor, planned_tons, completed_tons, progress_pct, start_date, due_date, status]
+
+  construction.site_updated:
+    name: 更新施工项目进度与状态
+    object: site_project
+    op: update
+    permission: construction.site:write
+    evidence: required
+    fields: [completed_tons, progress_pct, status, due_date, handover_note]
+
+  construction.site_accepted:
+    name: 施工项目竣工验收
+    object: site_project
+    op: update
+    permission: construction.site:write
+    evidence: required
+    fields: [status, acceptance_type, handover_note]
+
+  construction.log_recorded:
+    name: 登记施工日报
+    object: site_log
+    op: create
+    permission: construction.log:write
+    evidence: required
+    fields: [log_no, site, log_date, crew_size, tons_installed, weather, safety_ok, summary]
+
+  construction.dryout_logged:
+    name: 登记烘炉升温记录
+    object: dryout_record
+    op: create
+    permission: construction.dryout:write
+    evidence: required
+    fields: [dryout_no, site, recorded_at, stage_name, target_temp_c, actual_temp_c, ramp_rate_c_per_h, within_spec, note]

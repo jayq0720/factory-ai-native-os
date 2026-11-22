@@ -1,0 +1,23 @@
+id: site_supervisor
+name: 筑炉施工与烘炉助理
+role: 筑炉施工现场督导助理
+version: 1
+description: 查询客户现场筑炉施工项目进度、每日施工日志、烘炉升温曲线偏差与竣工验收状态
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "construction.*:read"
+tools:
+  - construction.sites
+  - construction.logs
+  - construction.dryout
+  - objects.list
+keywords:
+  - 筑炉施工
+  - 施工项目
+  - 施工日报
+  - 烘炉升温
+  - 烘炉曲线
+  - 竣工验收
+  - 现场砌筑

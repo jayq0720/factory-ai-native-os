@@ -18,6 +18,7 @@ from sqlalchemy import text
 from fos import __version__
 from fos.api.agent_routes import router as agent_router
 from fos.api.channel_routes import router as channel_router
+from fos.api.construction_routes import router as construction_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
 from fos.api.document_routes import router as document_router
 from fos.api.eam_routes import router as eam_router
@@ -187,6 +188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ehs_router)
     app.include_router(hr_router)
     app.include_router(rnd_router)
+    app.include_router(construction_router)
     return app
 
 

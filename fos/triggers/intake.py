@@ -34,6 +34,7 @@ from fos.channels.base import ChannelAdapter, ChannelError
 from fos.channels.cards import Card, CardField
 from fos.channels.types import ConversationRef, InboundMessage
 from fos.config import Settings
+from fos.construction.config import ConstructionConfig
 from fos.db.models import CardRecord, ChannelIdentity, Event, ObjectState, Thread, Trigger, User, utcnow
 from fos.eam.config import EamConfig
 from fos.ehs.config import EhsConfig
@@ -131,6 +132,7 @@ class TriggerIntake:
         ehs: dict[str, EhsConfig] | None = None,
         hr: dict[str, HrConfig] | None = None,
         rnd: dict[str, RndConfig] | None = None,
+        construction: dict[str, ConstructionConfig] | None = None,
     ):
         self.registry = registry
         self.ledger = ledger
@@ -153,6 +155,7 @@ class TriggerIntake:
         self.ehs = ehs or {}
         self.hr = hr or {}
         self.rnd = rnd or {}
+        self.construction = construction or {}
 
     def channel_enabled(self, tenant_id: str, channel: str) -> bool:
         tenant = self.registry.get(tenant_id)
@@ -280,6 +283,12 @@ class TriggerIntake:
                 await self._hr(session, msg, out, principal, hrm)
             elif msg.kind == "text" and msg.tenant_id in self.rnd and (rm := _rnd_word(msg.text.strip())):
                 await self._rnd(session, msg, out, principal, rm)
+            elif (
+                msg.kind == "text"
+                and msg.tenant_id in self.construction
+                and (cm := _construction_word(msg.text.strip()))
+            ):
+                await self._construction(session, msg, out, principal, cm)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -1048,6 +1057,39 @@ class TriggerIntake:
         trig.result = board["counts"]
         await self._reply(None, msg, out, rc.trials_card(board))
 
+    async def _construction(
+        self, session: AsyncSession, msg: InboundMessage, out: Outcome, principal: Principal, kind: str
+    ) -> None:
+        from fos.construction import cards as cc
+        from fos.construction import service as cs
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"construction_{kind}", "done"
+        tid = msg.tenant_id
+        if kind == "sites":
+            if not principal.can("construction.site:read"):
+                await self._reply(None, msg, out, "你没有查看施工项目的权限（construction.site:read）。")
+                return
+            board = await cs.sites_board(session, tid)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, cc.sites_card(board))
+            return
+        if kind == "logs":
+            if not principal.can("construction.log:read"):
+                await self._reply(None, msg, out, "你没有查看施工日报的权限（construction.log:read）。")
+                return
+            board = await cs.logs_board(session, tid)
+            trig.result = board["counts"]
+            await self._reply(None, msg, out, cc.logs_card(board))
+            return
+        if not principal.can("construction.dryout:read"):
+            await self._reply(None, msg, out, "你没有查看烘炉记录的权限（construction.dryout:read）。")
+            return
+        board = await cs.dryout_board(session, tid)
+        trig.result = board["counts"]
+        await self._reply(None, msg, out, cc.dryout_card(board))
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -1186,6 +1228,18 @@ def _rnd_word(text: str) -> str | None:
         return "formulas"
     if TRIALS.match(text):
         return "trials"
+    return None
+
+
+def _construction_word(text: str) -> str | None:
+    from fos.construction.cards import DRYOUT, LOGS, SITES
+
+    if SITES.match(text):
+        return "sites"
+    if LOGS.match(text):
+        return "logs"
+    if DRYOUT.match(text):
+        return "dryout"
     return None
 
 
