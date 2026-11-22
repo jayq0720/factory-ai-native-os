@@ -101,12 +101,12 @@ async def build_monthly_report(
 
     kpis = cockpit["kpis"]
     risks: list[dict[str, Any]] = []
-    if kpis.get("open_hazards", 0) > 0:
-        risks.append({"domain": "EHS 安全环保", "item": "未闭环安全隐患", "count": kpis["open_hazards"]})
-    if kpis.get("open_ncrs", 0) > 0:
-        risks.append({"domain": "质量体系", "item": "未关闭不合格品 NCR", "count": kpis["open_ncrs"]})
-    if kpis.get("open_work_orders", 0) > 0:
-        risks.append({"domain": "设备管理", "item": "未闭环维修工单", "count": kpis["open_work_orders"]})
+    if kpis.get("ehs_open_hazards", 0) > 0:
+        risks.append({"domain": "EHS 安全环保", "item": "未闭环安全隐患", "count": kpis["ehs_open_hazards"]})
+    if kpis.get("quality_open_ncr", 0) > 0:
+        risks.append({"domain": "质量体系", "item": "未关闭不合格品 NCR", "count": kpis["quality_open_ncr"]})
+    if kpis.get("eam_open_wo", 0) > 0:
+        risks.append({"domain": "设备管理", "item": "未闭环维修工单", "count": kpis["eam_open_wo"]})
     if app_by_status.get("expired", 0) > 0:
         risks.append({"domain": "审批治理", "item": "本月超时过期审批", "count": app_by_status["expired"]})
 
@@ -136,11 +136,11 @@ def render_monthly_markdown(report: dict[str, Any]) -> str:
     """将月度经营数据渲染为适合 IM 推送与管理层审阅的中文 Markdown 报告。"""
     k = report["kpis"]
     act = report["activity"]
-    ar, ap = k.get("ar_balance", 0), k.get("ap_balance", 0)
-    pipe, won = k.get("weighted_pipeline_amount", 0), k.get("won_amount", 0)
-    emp, wo = k.get("active_employees", 0), k.get("open_work_orders", 0)
-    ncr, haz = k.get("open_ncrs", 0), k.get("open_hazards", 0)
-    rnd, site = k.get("active_rnd_projects", 0), k.get("active_sites", 0)
+    ar, ap = k.get("finance_ar_outstanding", 0), k.get("finance_ap_outstanding", 0)
+    pipe, won = k.get("market_weighted_pipeline", 0), k.get("market_won_amount", 0)
+    emp, wo = k.get("hr_active_headcount", 0), k.get("eam_open_wo", 0)
+    ncr, haz = k.get("quality_open_ncr", 0), k.get("ehs_open_hazards", 0)
+    rnd, site = k.get("rnd_active_projects", 0), k.get("construction_active_sites", 0)
     lines = [
         f"# {report['factory_name']} · {report['month']} 经营与合规月报",
         "",
@@ -181,16 +181,16 @@ def render_monthly_xlsx(report: dict[str, Any]) -> bytes:
     overview_rows = [
         ("工厂名称", report["factory_name"], report["tenant_id"]),
         ("统计月份", report["month"], "仅含真实数据（real）"),
-        ("应收余额（元）", k.get("ar_balance", 0.0), "财务应收账款"),
-        ("应付余额（元）", k.get("ap_balance", 0.0), "财务应付账款"),
-        ("在途商机加权额（元）", k.get("weighted_pipeline_amount", 0.0), "市场商机漏斗"),
-        ("累计赢单额（元）", k.get("won_amount", 0.0), "市场商机漏斗"),
-        ("未关闭不合格品 NCR", k.get("open_ncrs", 0), "质量体系"),
-        ("未闭环维修工单", k.get("open_work_orders", 0), "设备管理 EAM"),
-        ("未闭环安全隐患", k.get("open_hazards", 0), "安全环保 EHS"),
-        ("在册员工数", k.get("active_employees", 0), "人力薪酬"),
-        ("在研项目数", k.get("active_rnd_projects", 0), "研发配方"),
-        ("在建筑炉项目数", k.get("active_sites", 0), "筑炉施工"),
+        ("应收余额（元）", k.get("finance_ar_outstanding", 0.0), "财务应收账款"),
+        ("应付余额（元）", k.get("finance_ap_outstanding", 0.0), "财务应付账款"),
+        ("在途商机加权额（元）", k.get("market_weighted_pipeline", 0.0), "市场商机漏斗"),
+        ("累计赢单额（元）", k.get("market_won_amount", 0.0), "市场商机漏斗"),
+        ("未关闭不合格品 NCR", k.get("quality_open_ncr", 0), "质量体系"),
+        ("未闭环维修工单", k.get("eam_open_wo", 0), "设备管理 EAM"),
+        ("未闭环安全隐患", k.get("ehs_open_hazards", 0), "安全环保 EHS"),
+        ("在册员工数", k.get("hr_active_headcount", 0), "人力薪酬"),
+        ("在研项目数", k.get("rnd_active_projects", 0), "研发配方"),
+        ("在建筑炉项目数", k.get("construction_active_sites", 0), "筑炉施工"),
         ("本月账本事件数", act["events_total"], "真实业务事件"),
         ("本月待办闭环率（%）", act["todo_close_rate_pct"], f"{act['todos_done']}/{act['todos_total']}"),
         ("本月 LLM Token 消耗", act["llm_tokens"], "AI 运行成本"),

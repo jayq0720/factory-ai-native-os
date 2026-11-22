@@ -67,7 +67,7 @@ def test_monthly_report_api_and_excel_export(client, keys) -> None:
     body = r.json()
     assert body["data_mode"] == "real"
     assert body["month"] == month
-    assert body["kpis"]["weighted_pipeline_amount"] == 200000.0
+    assert body["kpis"]["market_weighted_pipeline"] == 200000.0
     assert body["activity"]["events_total"] >= 1
     assert "market" in body["activity"]["domain_counts"]
     assert f"{month} 经营与合规月报" in body["markdown"]
