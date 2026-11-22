@@ -5,14 +5,17 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from datetime import datetime
 from typing import Any
 
 from openpyxl import Workbook
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fos.db.models import Event, utcnow
+from fos.db.models import Event, TenantCounter, utcnow
 from fos.excel_safe import excel_row
+from fos.ledger.projection import rebuild
+from fos.ontology import Ontology
 
 
 def _canonical_event(e: Event) -> dict[str, Any]:
@@ -177,3 +180,82 @@ def render_audit_xlsx(audit_data: dict[str, Any]) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _parse_dt(val: str | None) -> datetime:
+    return datetime.fromisoformat(val) if val else utcnow()
+
+
+async def restore_tenant_ledger_jsonl(
+    session: AsyncSession,
+    onto: Ontology,
+    tenant_id: str,
+    content: str,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """校验防篡改灾备 JSONL 后原子恢复单租户事件账本，同步 TenantCounter 并重建全部投影。"""
+    ver = verify_ledger_backup_jsonl(content)
+    if not ver["ok"]:
+        raise ValueError(f"灾备文件校验失败：{ver['error']}")
+    if ver["tenant_id"] != tenant_id:
+        raise ValueError(f"租户不匹配：备份属于 {ver['tenant_id']}，目标租户为 {tenant_id}")
+
+    existing = int(
+        (await session.scalar(select(func.count()).select_from(Event).where(Event.tenant_id == tenant_id)))
+        or 0
+    )
+    if existing > 0 and not force:
+        raise ValueError(f"租户 {tenant_id} 已有 {existing} 条事件，请加 --force 确认覆盖恢复")
+
+    if existing > 0:
+        await session.execute(delete(Event).where(Event.tenant_id == tenant_id))
+        await session.flush()
+
+    raw_lines = [ln for ln in content.splitlines() if ln.strip()]
+    max_seq = 0
+    restored = 0
+    for line in raw_lines[1:-1]:
+        ev = json.loads(line)
+        seq = int(ev["seq"])
+        max_seq = max(max_seq, seq)
+        session.add(
+            Event(
+                id=ev["id"],
+                tenant_id=tenant_id,
+                seq=seq,
+                type=ev["type"],
+                object_type=ev["object_type"],
+                object_id=ev["object_id"],
+                payload=ev["payload"],
+                evidence=ev.get("evidence") or [],
+                actor_kind=ev["actor_kind"],
+                actor_id=ev["actor_id"],
+                actor_name=ev["actor_name"],
+                data_mode=ev.get("data_mode") or "real",
+                occurred_at=_parse_dt(ev.get("occurred_at")),
+                recorded_at=_parse_dt(ev.get("recorded_at")),
+                idempotency_key=ev.get("idempotency_key"),
+                causation_id=ev.get("causation_id"),
+                correlation_id=ev.get("correlation_id"),
+                ontology_layers=ev.get("ontology_layers") or [],
+            )
+        )
+        restored += 1
+
+    await session.flush()
+    ctr = await session.get(TenantCounter, tenant_id)
+    if ctr is None:
+        session.add(TenantCounter(tenant_id=tenant_id, last_seq=max_seq))
+    else:
+        ctr.last_seq = max_seq
+    await session.flush()
+
+    replayed = await rebuild(session, onto, tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "restored_events": restored,
+        "replayed_events": replayed,
+        "last_seq": max_seq,
+        "sha256": ver["sha256"],
+    }

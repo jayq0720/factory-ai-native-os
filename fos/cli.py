@@ -270,6 +270,36 @@ async def _run(args: argparse.Namespace) -> int:
             f"seq={res['first_seq']}..{res['last_seq']} | sha256={res['sha256']}"
         )
         return 0
+    if args.cmd == "restore-ledger":
+        from pathlib import Path
+
+        from fos.ops.backup import restore_tenant_ledger_jsonl
+        from fos.services import Services
+
+        p_file = Path(args.file)
+        if not p_file.exists():
+            print(f"文件不存在：{p_file}", file=sys.stderr)
+            return 1
+        svc = Services.build(s)
+        try:
+            onto = svc.ontologies.get(args.tenant)
+            if onto is None:
+                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+                return 1
+            raw = p_file.read_text(encoding="utf-8")
+            try:
+                async with svc.sessionmaker() as session, session.begin():
+                    res = await restore_tenant_ledger_jsonl(session, onto, args.tenant, raw, force=args.force)
+            except ValueError as e:
+                print(f"恢复失败：{e}", file=sys.stderr)
+                return 1
+            print(
+                f"恢复完成：{res['tenant_id']} | 恢复事件 {res['restored_events']} 条 | "
+                f"重放投影 {res['replayed_events']} 条 | last_seq={res['last_seq']}"
+            )
+            return 0
+        finally:
+            await svc.aclose()
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -517,6 +547,10 @@ def main(argv: list[str] | None = None) -> int:
     bl.add_argument("--include-mock", action="store_true", help="包含模拟数据（默认仅真实账本）")
     vb = sub.add_parser("verify-backup", help="离线校验账本灾备 JSONL 完整性与 SHA-256")
     vb.add_argument("file")
+    rl = sub.add_parser("restore-ledger", help="校验防篡改灾备文件并恢复租户账本与投影")
+    rl.add_argument("tenant")
+    rl.add_argument("file")
+    rl.add_argument("--force", action="store_true", help="目标租户已有事件时允许覆盖恢复")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":
