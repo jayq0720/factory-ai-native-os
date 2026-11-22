@@ -53,15 +53,20 @@
     try {
       const me = await (await api("/v1/me")).json();
       $("who").textContent = `${me.tenant_name} · ${me.display_name}`;
-      const [ov, sec, aud] = await Promise.all([
+      const [ov, sec, aud, bud, ks] = await Promise.all([
         api("/v1/ops/tenants").then((r) => r.json()),
         api("/v1/ops/security").then((r) => r.json()),
         api("/v1/ops/audit?limit=20").then((r) => r.json()),
+        api("/v1/ops/budget").then((r) => r.json()),
+        api("/v1/ops/keys").then((r) => r.json()),
       ]);
       const t = ov.totals;
       $("saasSummary").textContent =
         `已接入工厂 ${ov.tenant_count} 家 | 活跃用户 ${t.users_active} | 账本事件 ${t.events_total}` +
         ` | 未闭环待办 ${t.open_todos} | 待审批 ${t.pending_approvals} | 7日 Token ${t.llm_tokens_7d}`;
+      $("budgetSummary").textContent =
+        `状态：${bud.status}（${bud.reason}） | 今日 ${bud.daily_used}/${bud.daily_limit} (${bud.daily_pct}%)` +
+        ` | 本月 ${bud.monthly_used}/${bud.monthly_limit} (${bud.monthly_pct}%)`;
 
       fillTable("tenantTable", ov.tenants || [], [
         (r) => r.tenant_id,
@@ -81,6 +86,38 @@
         (r) => r.severity,
         (r) => r.detail,
       ]);
+      const keyTbody = $("keyTable").querySelector("tbody");
+      keyTbody.textContent = "";
+      for (const k of ks.items || []) {
+        const tr = document.createElement("tr");
+        const cells = [
+          k.id,
+          k.login,
+          (k.roles || []).join(","),
+          k.label || "",
+          k.edge_id || "-",
+          k.active ? "有效" : "已吊销",
+          (k.last_used_at || "-").slice(0, 19).replace("T", " "),
+        ];
+        for (const val of cells) {
+          const td = document.createElement("td");
+          td.textContent = String(val);
+          tr.appendChild(td);
+        }
+        const actTd = document.createElement("td");
+        if (k.active) {
+          const btn = document.createElement("button");
+          btn.textContent = "吊销";
+          btn.addEventListener("click", async () => {
+            await api(`/v1/ops/keys/${encodeURIComponent(k.id)}/revoke`, { method: "POST" });
+            setMsg(`已吊销密钥 ${k.id}`);
+            loadAll();
+          });
+          actTd.appendChild(btn);
+        }
+        tr.appendChild(actTd);
+        keyTbody.appendChild(tr);
+      }
       fillTable("auditTable", aud.items || [], [
         (r) => r.seq,
         (r) => r.type,
