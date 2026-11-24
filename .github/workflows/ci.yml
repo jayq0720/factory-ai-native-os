@@ -37,6 +37,7 @@ jobs:
       - run: .venv/bin/fos tenants
       - run: .venv/bin/fos eval luneng
       - run: .venv/bin/fos security-check luneng
+      - run: .venv/bin/fos validate-pack
 
   rust:
     runs-on: ubuntu-latest

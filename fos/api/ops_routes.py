@@ -389,3 +389,16 @@ async def list_im_bindings(session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
         "coverage_pct": cov,
         "items": items,
     }
+
+
+@router.get("/packs")
+async def get_industry_packs(request: Request, p: OpsAdmin) -> dict[str, Any]:
+    """列出已安装行业包目录及其本体/Skill/模块/黄金评测集校验结果。"""
+    from fos.ops.packs import list_packs
+
+    items = list_packs(request.app.state.settings.packs_dir)
+    return {
+        "count": len(items),
+        "all_ok": all(it["ok"] for it in items),
+        "items": items,
+    }
