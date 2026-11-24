@@ -1156,6 +1156,7 @@ class TriggerIntake:
         from fos.governance.budget import check_tenant_budget
         from fos.ops import cards as oc
         from fos.ops.edge_fleet import edge_fleet_summary
+        from fos.ops.ledger_audit import verify_tenant_ledger
 
         trig = out.trigger
         assert trig is not None
@@ -1166,6 +1167,15 @@ class TriggerIntake:
         tid = msg.tenant_id
         tenant = self.registry.get(tid)
         tname = tenant.name if tenant else tid
+        if kind == "ledger":
+            rep = await verify_tenant_ledger(session, tid)
+            trig.result = {
+                "ok": rep["ok"],
+                "events_total": rep["events_total"],
+                "evidence_coverage_pct": rep["evidence_coverage_pct"],
+            }
+            await self._reply(None, msg, out, oc.ledger_audit_card(tname, rep))
+            return
         fleet = await edge_fleet_summary(session, tid)
         if kind == "fleet":
             trig.result = {
@@ -1372,12 +1382,14 @@ def _market_word(text: str) -> str | None:
 
 
 def _ops_word(text: str) -> str | None:
-    from fos.ops.cards import EDGE_FLEET, OPS_STATUS
+    from fos.ops.cards import EDGE_FLEET, LEDGER_CHECK, OPS_STATUS
 
     if OPS_STATUS.match(text):
         return "status"
     if EDGE_FLEET.match(text):
         return "fleet"
+    if LEDGER_CHECK.match(text):
+        return "ledger"
     return None
 
 

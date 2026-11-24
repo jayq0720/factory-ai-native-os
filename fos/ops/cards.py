@@ -9,6 +9,7 @@ from fos.channels.cards import Card, CardField
 
 OPS_STATUS = re.compile(r"^(?:系统状态|运维状态|预算状态|平台状态)$")
 EDGE_FLEET = re.compile(r"^(?:网关状态|厂端网关|边缘网关)$")
+LEDGER_CHECK = re.compile(r"^(?:账本校验|账本审计|账本完整性|账本自检)$")
 
 
 def ops_status_card(
@@ -58,6 +59,33 @@ def edge_fleet_card(tenant_name: str, fleet: dict[str, Any]) -> Card:
             f"未闭环窑炉告警 {fleet['open_alarms_total']} 条。"
         ),
         fields=fields,
+        data_mode="real",
+        footer="详见运营总控 /app/ops.html",
+    )
+
+
+def ledger_audit_card(tenant_name: str, report: dict[str, Any]) -> Card:
+    seq_txt = "连续无断层" if report["seq_monotonic_ok"] else f"断层 {report['gaps_count']} 处"
+    ctr_txt = (
+        f"对齐（{report['counter_seq']}）"
+        if report["counter_aligned"]
+        else f"漂移（counter={report['counter_seq']} != {report['last_seq']}）"
+    )
+    proj_txt = f"{report['projected_objects_count']} / {report['event_distinct_objects_count']} 个对象"
+    ev_pct = report["evidence_coverage_pct"]
+    ev_txt = f"{ev_pct}%（{report['real_events_with_evidence']}/{report['real_events_total']}）"
+    rows = [
+        ("审计状态", "完整通过" if report["ok"] else "发现异常"),
+        ("账本事件", f"{report['events_total']} 条（last_seq={report['last_seq']}）"),
+        ("序号连续", seq_txt),
+        ("计数器对齐", ctr_txt),
+        ("证据链覆盖", ev_txt),
+        ("投影同步", proj_txt),
+    ]
+    return Card(
+        title=f"{tenant_name} · 账本一致性审计",
+        text="零模型成本只读实时审计（序号连续性 / 计数器对齐 / 证据链 / 投影同步）。",
+        fields=[CardField(label=lb, value=val) for lb, val in rows],
         data_mode="real",
         footer="详见运营总控 /app/ops.html",
     )

@@ -36,7 +36,7 @@ jobs:
         run: FOS_TEST_DATABASE_URL=$FOS_DATABASE_URL .venv/bin/pytest -q
       - run: .venv/bin/fos tenants
       - run: .venv/bin/fos eval --all
-      - run: .venv/bin/fos security-check luneng
+      - run: .venv/bin/fos security-check --all
       - run: .venv/bin/fos validate-pack
       - run: .venv/bin/fos doctor --skip-db
 
