@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fos-api
+  namespace: fos
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/v1/ops/metrics"
+    prometheus.io/port: "8000"
+spec:
+  type: ClusterIP
+  selector:
+    app: fos-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fos-api
+  namespace: fos
+  labels:
+    app: fos-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fos-api
+  template:
+    metadata:
+      labels:
+        app: fos-api
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: fos-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: fos-config
+          env:
+            - name: FOS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fos-secrets
+                  key: database-url
+            - name: FOS_LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fos-secrets
+                  key: litellm-api-key
+                  optional: true
+            - name: FOS_OCR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fos-secrets
+                  key: ocr-api-key
+                  optional: true
+            - name: FOS_EDGE_COMMAND_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fos-secrets
+                  key: edge-command-key
+                  optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: blobs
+              mountPath: /data/blobs
+      volumes:
+        - name: blobs
+          emptyDir: {}
