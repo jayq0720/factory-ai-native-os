@@ -11,4 +11,8 @@ data:
   FOS_OCR_TIMEOUT_S: "120"
   FOS_RATE_LIMIT_PER_MIN: "600"
   FOS_AGENT_MAX_TOKENS: "40000"
+  FOS_BLOB_BACKEND: "local"
   FOS_BLOB_DIR: "/data/blobs"
+  FOS_S3_REGION: "cn-shanghai"
+  FOS_S3_PREFIX: "blobs/"
+  FOS_SESSION_TTL_HOURS: "12"

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>统一登录 · Factory AI Native OS</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <main style="max-width:520px;margin:48px auto;padding:24px;border:1px solid #d9dee7;border-radius:12px;">
+    <h1>Factory AI Native OS · 统一登录</h1>
+    <p style="color:#556">输入一次 API Key 即可签发 HttpOnly 会话 Cookie，直接访问全厂 16 个工作台。</p>
+    <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+      <label>API Key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx"
+               style="width:100%;padding:10px;margin-top:4px;box-sizing:border-box;" required />
+      </label>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn primary">登录并建立会话</button>
+        <button type="button" id="logoutBtn" class="btn">退出登录</button>
+      </div>
+    </form>
+    <div id="status" style="margin-top:16px;padding:12px;border-radius:8px;background:#f5f7fa;">正在检查登录态…</div>
+    <nav id="links" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;">
+      <a href="/app/">主工作台</a>
+      <a href="/app/ops.html">运营总控</a>
+      <a href="/app/kiln.html">窑炉监控</a>
+      <a href="/app/eng.html">工程方案</a>
+      <a href="/app/tender.html">招标拆解</a>
+      <a href="/app/quality.html">质量管理</a>
+      <a href="/app/finance.html">财务成本</a>
+      <a href="/app/market.html">经营驾驶舱</a>
+    </nav>
+  </main>
+  <script>
+    const st = document.getElementById("status");
+    async function refreshSession() {
+      const r = await fetch("/v1/auth/session", { credentials: "same-origin" });
+      if (r.ok) {
+        const d = await r.json();
+        st.textContent = `已登录：${d.display_name}（${d.tenant_name} · 角色：${d.roles.join(", ")}）`;
+      } else {
+        st.textContent = "当前未登录，请输入 API Key。";
+      }
+    }
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const api_key = document.getElementById("apiKey").value.trim();
+      const r = await fetch("/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ api_key }),
+      });
+      if (r.ok) {
+        document.getElementById("apiKey").value = "";
+        await refreshSession();
+      } else {
+        const err = await r.json().catch(() => ({}));
+        st.textContent = `登录失败：${err.detail || r.status}`;
+      }
+    });
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await fetch("/v1/auth/logout", { method: "POST", credentials: "same-origin" });
+      await refreshSession();
+    });
+    refreshSession();
+  </script>
+</body>
+</html>

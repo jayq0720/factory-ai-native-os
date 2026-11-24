@@ -52,7 +52,7 @@ from fos.orders.cards import BOARD, ORDER, board_card, order_card
 from fos.orders.config import OrdersConfig
 from fos.orders.data import find_by
 from fos.orders.progress import order_board, order_progress
-from fos.perception.blobs import LocalBlobStore
+from fos.perception.blobs import BlobStore
 from fos.perception.ocr import OCRProvider
 from fos.perception.service import IngestError, IngestResult, ingest_document
 from fos.planning.cards import EVALUATE, PLAN, SHORTAGE, evaluation_card, plan_card, shortage_card
@@ -115,7 +115,7 @@ class TriggerIntake:
         registry: TenantRegistry,
         ledger: Ledger,
         ocr: OCRProvider,
-        blobs: LocalBlobStore,
+        blobs: BlobStore,
         settings: Settings,
         approvals: ApprovalService | None = None,
         extractor: Extractor | None = None,

@@ -429,6 +429,34 @@ async def _run(args: argparse.Namespace) -> int:
             return 0 if rep["ok"] else 1
         finally:
             await svc.aclose()
+    if args.cmd == "benchmark-ledger":
+        import json
+
+        from fos.ops.benchmark import format_benchmark_text, run_ledger_benchmark
+        from fos.services import Services
+
+        svc = Services.build(s)
+        try:
+            async with svc.sessionmaker() as session:
+                try:
+                    rep = await run_ledger_benchmark(
+                        session,
+                        args.tenant,
+                        events_count=args.events,
+                        objects_count=args.objects,
+                        allow_nonempty=args.allow_nonempty,
+                    )
+                    await session.commit()
+                except ValueError as e:
+                    print(str(e), file=sys.stderr)
+                    return 1
+            if args.json:
+                print(json.dumps(rep, ensure_ascii=False, indent=2))
+            else:
+                print(format_benchmark_text(rep))
+            return 0 if rep["audit_ok"] and rep["verify_backup_ok"] else 1
+        finally:
+            await svc.aclose()
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -725,6 +753,12 @@ def main(argv: list[str] | None = None) -> int:
     vl.add_argument("tenant", nargs="?", default="")
     vl.add_argument("--all", action="store_true", help="审计全部已注册租户")
     vl.add_argument("--json", action="store_true", help="输出机器可读 JSON")
+    bm = sub.add_parser("benchmark-ledger", help="运行账本写入/实时审计/灾备导出与校验性能基准")
+    bm.add_argument("tenant", help="用于基准测试的空租户 ID（如 bench_tenant）")
+    bm.add_argument("--events", type=int, default=1000, help="写入事件条数（默认 1000）")
+    bm.add_argument("--objects", type=int, default=50, help="投影对象数量（默认 50）")
+    bm.add_argument("--allow-nonempty", action="store_true", help="允许在非空租户追加压测事件")
+    bm.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":

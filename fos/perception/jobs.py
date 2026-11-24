@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from fos.config import Settings
 from fos.db.models import Document
 from fos.extraction.service import Extractor
-from fos.perception.blobs import LocalBlobStore
+from fos.perception.blobs import BlobStore
 from fos.perception.ocr import OCRProvider
 from fos.perception.parser import ParseError, count_pages
 from fos.perception.service import load_pages, parse_bytes, store_parsed
@@ -32,7 +32,7 @@ class DocumentJobs:
         self,
         sessionmaker: async_sessionmaker,
         ocr: OCRProvider,
-        blobs: LocalBlobStore,
+        blobs: BlobStore,
         extractor: Extractor,
         settings: Settings,
         max_docs: int = 2,

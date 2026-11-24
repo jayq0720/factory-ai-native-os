@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.config import Settings
 from fos.db.models import Document, DocumentPage
-from fos.perception.blobs import LocalBlobStore
+from fos.perception.blobs import BlobStore
 from fos.perception.ocr import OCRError, OCRProvider
 from fos.perception.parser import ParseError, ProgressFn, parse, sniff
 from fos.perception.types import ParsedDocument
@@ -64,7 +64,7 @@ async def register_document(
     data: bytes,
     filename: str,
     kind: str,
-    blobs: LocalBlobStore,
+    blobs: BlobStore,
     settings: Settings,
 ) -> tuple[Document, bool]:
     """存原件并登记（status=queued）。返回 (文档, 是否重复)。之前解析失败的同一文件会重新排队。"""
@@ -159,7 +159,7 @@ async def ingest_document(
     filename: str,
     kind: str,
     ocr: OCRProvider,
-    blobs: LocalBlobStore,
+    blobs: BlobStore,
     settings: Settings,
     extractor: Extractor | None = None,
 ) -> IngestResult:

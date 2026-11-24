@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from fos import __version__
 from fos.api.agent_routes import router as agent_router
+from fos.api.auth_routes import router as auth_router
 from fos.api.channel_routes import router as channel_router
 from fos.api.construction_routes import router as construction_router
 from fos.api.deps import PrincipalDep, RegistryDep, SessionDep, require
@@ -29,6 +30,7 @@ from fos.api.hr_routes import router as hr_router
 from fos.api.inbox_routes import router as inbox_router
 from fos.api.ledger_routes import router as ledger_router
 from fos.api.market_routes import router as market_router
+from fos.api.mcp_routes import router as mcp_router
 from fos.api.monitor_routes import router as monitor_router
 from fos.api.ops_routes import router as ops_router
 from fos.api.order_routes import router as order_router
@@ -103,11 +105,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Factory AI Native OS", version=__version__, lifespan=lifespan)
     from time import perf_counter
 
-    from fos.governance.ratelimit import SlidingWindowLimiter, client_bucket_key
+    from fos.governance.ratelimit import build_rate_limiter, client_bucket_key
     from fos.ops.metrics import HttpMetrics
 
     http_metrics = HttpMetrics()
-    rate_limiter = SlidingWindowLimiter(settings.rate_limit_per_min)
+    rate_limiter = build_rate_limiter(settings.rate_limit_per_min, settings.redis_url)
     app.state.http_metrics = http_metrics
     app.state.rate_limiter = rate_limiter
 
@@ -208,6 +210,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     static = Path(__file__).parent.parent / "web" / "static"
     app.mount("/app", StaticFiles(directory=static, html=True), name="web")
 
+    app.include_router(auth_router)
+    app.include_router(mcp_router)
     app.include_router(ledger_router)
     app.include_router(document_router)
     app.include_router(channel_router)

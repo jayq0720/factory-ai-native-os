@@ -35,8 +35,15 @@ class Settings(BaseSettings):
     litellm_api_key: str = ""  # LiteLLM master key，从 KMS / 凭据管家注入
     llm_timeout_s: float = 60.0
 
-    # 文档解析
-    blob_dir: Path = Field(default=Path("var/blobs"))  # 本地原件存储；生产换 OSS
+    # 文档解析与对象存储（local 本地目录；s3 支持阿里云 OSS / AWS S3 / MinIO 兼容接口）
+    blob_backend: Literal["local", "s3"] = "local"
+    blob_dir: Path = Field(default=Path("var/blobs"))  # local 模式下的原件目录
+    s3_endpoint: str = ""  # 如 https://oss-cn-shanghai.aliyuncs.com 或 http://minio:9000
+    s3_bucket: str = ""
+    s3_region: str = "cn-shanghai"
+    s3_access_key: str = ""  # 仅从环境变量 / KMS 注入
+    s3_secret_key: str = ""  # 仅从环境变量 / KMS 注入
+    s3_prefix: str = "blobs/"
     ocr_mode: OCRMode = OCRMode.mock
     ocr_base_url: str = ""  # 留空按模式取默认：xiaomi → http://localhost:8001/v1，qwen_vl → 百炼
     ocr_api_key: str = ""  # qwen_vl 填百炼 API Key；本地 vLLM 一般不需要
@@ -60,8 +67,13 @@ class Settings(BaseSettings):
     agent_max_tokens: int = 40_000
     agent_tool_result_chars: int = 4_000  # 工具结果放进上下文的上限，超出部分只存在运行记录里（Spill）
 
-    # API 滑动窗口限流（每分钟每调用方上限；0 表示关闭）
+    # API 滑动窗口限流（每分钟每调用方上限；0 表示关闭）与可选分布式 Redis 后端
     rate_limit_per_min: int = 600
+    redis_url: str = ""  # 留空使用进程内滑动窗口；多副本 K8s 填入 redis://host:6379/0 启用共享限流
+
+    # Web 工作台统一登录 HttpOnly 会话 Cookie 签名密钥与有效期（小时）
+    session_secret: str = ""
+    session_ttl_hours: int = 12
 
 
 @lru_cache
