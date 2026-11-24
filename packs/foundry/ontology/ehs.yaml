@@ -1,0 +1,143 @@
+# 耐火材料行业 EHS 安全环保与特种作业本体扩展（W25）。
+# 隐患排查、危险作业票、事故险情与环保监测全部走事件账本，由 fos/ehs/guards.py 强制闭环校验。
+
+objects:
+  safety_hazard:
+    name: 安全隐患
+    domain: ehs
+    description: 现场隐患排查、整改与复查闭环台账
+    properties:
+      hazard_no: {type: string, name: 隐患编号, required: true}
+      location: {type: string, name: 位置/车间, required: true}
+      category:
+        type: enum
+        name: 隐患类别
+        values: [dust, gas, electrical, mechanical, fire, high_temp, ppe, other]
+        required: true
+      level: {type: enum, name: 隐患等级, values: [general, major], required: true}
+      description: {type: text, name: 隐患描述, required: true}
+      rectification_plan: {type: text, name: 整改措施}
+      due_date: {type: date, name: 整改期限, required: true}
+      assignee_role: {type: string, name: 责任岗位}
+      status: {type: enum, name: 状态, values: [open, rectifying, verified], required: true}
+      verified_note: {type: text, name: 复查验收说明}
+      reported_at: {type: datetime, name: 上报时间, required: true}
+      closed_at: {type: datetime, name: 销项时间}
+
+  work_permit:
+    name: 特种作业票
+    domain: ehs
+    description: 动火、受限空间、高处、临时用电、吊装等危险作业许可，动火/受限空间需总经理审批
+    properties:
+      permit_no: {type: string, name: 作业票号, required: true}
+      kind:
+        type: enum
+        name: 作业类型
+        values: [hot_work, confined_space, high_altitude, electrical, lifting]
+        required: true
+      location: {type: string, name: 作业地点, required: true}
+      description: {type: text, name: 作业内容, required: true}
+      worker_name: {type: string, name: 作业负责人, required: true}
+      safety_measures: {type: text, name: 安全防护措施, required: true}
+      valid_from: {type: datetime, name: 有效起时, required: true}
+      valid_until: {type: datetime, name: 有效止时, required: true}
+      status: {type: enum, name: 状态, values: [pending, active, closed, revoked], required: true}
+      closed_note: {type: text, name: 完工验收说明}
+
+  safety_incident:
+    name: 安全事故与险情
+    domain: ehs
+    description: 未遂险情、轻伤/重伤、火灾或环保泄漏事故报告与根因闭环
+    properties:
+      incident_no: {type: string, name: 事故编号, required: true}
+      kind:
+        type: enum
+        name: 事件类型
+        values: [near_miss, minor_injury, major_injury, equipment_fire, env_leak]
+        required: true
+      location: {type: string, name: 发生地点, required: true}
+      occurred_at: {type: datetime, name: 发生时间, required: true}
+      description: {type: text, name: 经过描述, required: true}
+      injured_count: {type: integer, name: 受伤人数}
+      root_cause: {type: text, name: 根本原因}
+      corrective_action: {type: text, name: 纠正预防措施}
+      status: {type: enum, name: 状态, values: [open, investigated, closed], required: true}
+
+  env_reading:
+    name: 环保监测记录
+    domain: ehs
+    description: 粉尘、氮氧化物、二氧化硫、噪声、VOC 等排放监测与确定性达标判定
+    properties:
+      point_name: {type: string, name: 监测点位, required: true}
+      kind: {type: enum, name: 监测指标, values: [dust, nox, so2, noise, voc], required: true}
+      value: {type: number, name: 实测值, required: true}
+      unit: {type: string, name: 单位, required: true}
+      limit_value: {type: number, name: 排放限值, required: true}
+      passed: {type: bool, name: 是否达标, required: true}
+      measured_at: {type: datetime, name: 监测时间, required: true}
+      note: {type: text, name: 备注}
+
+events:
+  ehs.hazard_reported:
+    name: 上报安全隐患
+    object: safety_hazard
+    op: create
+    permission: ehs.hazard:write
+    evidence: required
+    fields: [hazard_no, location, category, level, description, due_date, assignee_role, status, reported_at]
+
+  ehs.hazard_rectified:
+    name: 登记隐患整改
+    object: safety_hazard
+    op: update
+    permission: ehs.hazard:write
+    evidence: required
+    fields: [rectification_plan, status]
+
+  ehs.hazard_verified:
+    name: 隐患复查销项
+    object: safety_hazard
+    op: update
+    permission: ehs.hazard:write
+    evidence: required
+    fields: [verified_note, status, closed_at]
+
+  ehs.permit_issued:
+    name: 签发特种作业票
+    object: work_permit
+    op: create
+    permission: ehs.permit:write
+    evidence: required
+    fields: [permit_no, kind, location, description, worker_name, safety_measures, valid_from, valid_until, status]
+
+  ehs.permit_closed:
+    name: 特种作业完工关闭
+    object: work_permit
+    op: update
+    permission: ehs.permit:write
+    evidence: required
+    fields: [status, closed_note]
+
+  ehs.incident_reported:
+    name: 上报安全事故/险情
+    object: safety_incident
+    op: create
+    permission: ehs.incident:write
+    evidence: required
+    fields: [incident_no, kind, location, occurred_at, description, injured_count, status]
+
+  ehs.incident_closed:
+    name: 事故调查闭环
+    object: safety_incident
+    op: update
+    permission: ehs.incident:write
+    evidence: required
+    fields: [root_cause, corrective_action, status]
+
+  ehs.env_recorded:
+    name: 登记环保监测数据
+    object: env_reading
+    op: create
+    permission: ehs.env:write
+    evidence: required
+    fields: [point_name, kind, value, unit, limit_value, passed, measured_at, note]

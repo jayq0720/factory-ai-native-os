@@ -32,9 +32,10 @@ def test_prometheus_metrics_and_response_time_header(client, keys) -> None:
     assert 'fos_budget_daily_ratio{tenant="luneng"}' in txt
     assert 'fos_budget_monthly_ratio{tenant="luneng"}' in txt
     assert 'fos_budget_allowed{tenant="luneng"} 1' in txt
-    assert "fos_industry_packs_total 2" in txt
+    assert "fos_industry_packs_total 3" in txt
     assert 'fos_industry_pack_ok{pack="refractory"} 1' in txt
     assert 'fos_industry_pack_ok{pack="ceramics"} 1' in txt
+    assert 'fos_industry_pack_ok{pack="foundry"} 1' in txt
     assert 'fos_ledger_integrity_ok{tenant="luneng"} 1' in txt
     assert 'fos_ledger_evidence_coverage_ratio{tenant="luneng"}' in txt
 

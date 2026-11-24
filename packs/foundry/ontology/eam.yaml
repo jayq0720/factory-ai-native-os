@@ -1,0 +1,126 @@
+# 耐火材料行业设备管理（EAM）本体扩展（W24）：设备台账扩展、保养计划、维修工单、日常点检。
+# 所有设备业务事实走事件账本，由 fos/eam/guards.py 强制状态流转与日期校验。
+
+extend:
+  equipment:
+    code: {type: string, name: 设备编码}
+    category:
+      type: enum
+      name: 设备类别
+      values: [kiln, press, mixer, dryer, crusher, dust_collector, crane, other]
+    manufacturer: {type: string, name: 生产厂家}
+    commission_date: {type: date, name: 投产日期}
+    criticality: {type: enum, name: 关键等级, values: [A, B, C]}
+    pm_cycle_days: {type: integer, name: 保养周期, unit: 天}
+    last_pm_date: {type: date, name: 上次保养日期}
+    next_pm_date: {type: date, name: 下次保养日期}
+    note: {type: text, name: 备注}
+
+objects:
+  maintenance_plan:
+    name: 保养计划
+    domain: eam
+    description: 设备预防性保养周期计划，到期自动提醒，完成后自动顺延下次保养日
+    properties:
+      plan_no: {type: string, name: 计划编号, required: true}
+      equipment: {type: ref, target: equipment, name: 关联设备, required: true}
+      title: {type: string, name: 保养项目, required: true}
+      cycle_days: {type: integer, name: 保养周期, unit: 天, required: true}
+      last_done_date: {type: date, name: 上次完成日期}
+      next_due_date: {type: date, name: 下次到期日, required: true}
+      checklist: {type: text, name: 保养要点清单}
+      assignee_role: {type: string, name: 负责岗位}
+      status: {type: enum, name: 状态, values: [active, paused, retired], required: true}
+      note: {type: text, name: 备注}
+
+  work_order:
+    name: 维修保养工单
+    domain: eam
+    description: 故障报修、预防保养与异常点检派发的执行工单，记录根因、备件与停机时长
+    properties:
+      wo_no: {type: string, name: 工单号, required: true}
+      equipment: {type: ref, target: equipment, name: 关联设备, required: true}
+      kind: {type: enum, name: 工单类型, values: [breakdown, preventive, inspection], required: true}
+      priority: {type: enum, name: 优先级, values: [low, normal, high, urgent], required: true}
+      symptom: {type: text, name: 故障现象/任务说明, required: true}
+      root_cause: {type: text, name: 故障根因}
+      action_taken: {type: text, name: 处理措施}
+      spare_parts: {type: text, name: 领用备件明细（JSON）}
+      downtime_minutes: {type: number, name: 停机时长, unit: min}
+      reported_at: {type: datetime, name: 报修时间, required: true}
+      started_at: {type: datetime, name: 开始维修时间}
+      completed_at: {type: datetime, name: 完工时间}
+      status: {type: enum, name: 状态, values: [open, in_progress, completed, cancelled], required: true}
+      note: {type: text, name: 备注}
+
+  inspection_log:
+    name: 设备点检记录
+    domain: eam
+    description: 班前/日常点检记录，发现异常自动开启维修工单
+    properties:
+      equipment: {type: ref, target: equipment, name: 关联设备, required: true}
+      checked_at: {type: datetime, name: 点检时间, required: true}
+      result: {type: enum, name: 点检结论, values: [normal, abnormal], required: true}
+      items: {type: text, name: 点检项明细（JSON）}
+      note: {type: text, name: 备注}
+
+events:
+  eam.equipment_updated:
+    name: 更新设备台账
+    object: equipment
+    op: update
+    permission: eam.equipment:write
+    fields: [code, name, model, category, location, manufacturer, commission_date, criticality, pm_cycle_days, last_pm_date, next_pm_date, status, note]
+
+  eam.equipment_retired:
+    name: 设备报废停用
+    object: equipment
+    op: update
+    permission: eam.equipment:write
+    evidence: required
+    fields: [status, note]
+
+  eam.pm_plan_created:
+    name: 创建保养计划
+    object: maintenance_plan
+    op: create
+    permission: eam.maintenance:write
+    fields: [plan_no, equipment, title, cycle_days, last_done_date, next_due_date, checklist, assignee_role, status, note]
+
+  eam.pm_completed:
+    name: 登记保养完成
+    object: maintenance_plan
+    op: update
+    permission: eam.maintenance:write
+    evidence: required
+    fields: [last_done_date, next_due_date, note]
+
+  eam.work_order_opened:
+    name: 创建维修工单
+    object: work_order
+    op: create
+    permission: eam.work_order:write
+    evidence: required
+    fields: [wo_no, equipment, kind, priority, symptom, reported_at, status, note]
+
+  eam.work_order_started:
+    name: 维修工单开工
+    object: work_order
+    op: update
+    permission: eam.work_order:write
+    fields: [started_at, status, note]
+
+  eam.work_order_completed:
+    name: 维修工单完工
+    object: work_order
+    op: update
+    permission: eam.work_order:write
+    evidence: required
+    fields: [root_cause, action_taken, spare_parts, downtime_minutes, completed_at, status, note]
+
+  eam.inspection_logged:
+    name: 登记设备点检
+    object: inspection_log
+    op: create
+    permission: eam.inspection:write
+    fields: [equipment, checked_at, result, items, note]
