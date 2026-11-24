@@ -1,0 +1,24 @@
+id: ceramic_process_advisor
+name: 陶瓷烧成与坯釉工艺助理
+role: 陶瓷工艺工程师
+version: 1
+description: 查询陶瓷窑炉烧成窑次、坯釉配方版本、抗弯强度/洛氏硬度/吸水率等理化检验记录
+autonomy: L1
+model: fos-chat
+max_steps: 5
+permissions:
+  - "production.*:read"
+  - "rnd.*:read"
+  - "quality.*:read"
+tools:
+  - ontology.describe
+  - objects.list
+  - objects.get
+keywords:
+  - 坯釉配方
+  - 烧成窑次
+  - 辊道窑
+  - 抗弯强度
+  - 吸水率
+  - 氧化铝陶瓷
+  - 氮化硅

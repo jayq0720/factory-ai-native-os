@@ -1,0 +1,22 @@
+id: ehs_officer
+name: 陶瓷车间安全环保助理
+role: EHS 安全环保助理
+version: 1
+description: 查询喷雾干燥塔/球磨车间粉尘排放、特种作业票与安全隐患整改情况
+autonomy: L1
+model: fos-chat
+max_steps: 4
+permissions:
+  - "ehs.*:read"
+tools:
+  - ehs.hazards
+  - ehs.permits
+  - ehs.env_summary
+  - ehs.summary
+  - objects.list
+keywords:
+  - 安全隐患
+  - 粉尘排放
+  - 环保监测
+  - 动火作业
+  - 特种作业票

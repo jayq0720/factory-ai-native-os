@@ -1,0 +1,11 @@
+# 工业陶瓷行业市场商机与经营决策默认配置
+stage_probabilities:
+  new: 10
+  qualified: 30
+  quoted: 55
+  negotiation: 80
+  won: 100
+  lost: 0
+stale_lead_days: 14
+large_lead_amount: 300000.0
+notify_roles: [admin, gm]
