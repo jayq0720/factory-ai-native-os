@@ -29,6 +29,12 @@ def test_prometheus_metrics_and_response_time_header(client, keys) -> None:
     assert "fos_tenants_total" in txt
     assert 'fos_events_total{tenant="luneng"}' in txt
     assert 'fos_security_baseline_ok{tenant="luneng"} 1' in txt
+    assert 'fos_budget_daily_ratio{tenant="luneng"}' in txt
+    assert 'fos_budget_monthly_ratio{tenant="luneng"}' in txt
+    assert 'fos_budget_allowed{tenant="luneng"} 1' in txt
+    assert "fos_industry_packs_total 2" in txt
+    assert 'fos_industry_pack_ok{pack="refractory"} 1' in txt
+    assert 'fos_industry_pack_ok{pack="ceramics"} 1' in txt
 
 
 def test_audit_log_query_and_filtering(client, keys) -> None:
@@ -69,7 +75,7 @@ def test_audit_log_query_and_filtering(client, keys) -> None:
     assert len(d_real["items"]) == 1
     assert d_real["items"][0]["data_mode"] == "real"
 
-    ops_html = (Path(__file__).resolve().parent.parent / "fos/web/static/ops.html").read_text(
-        encoding="utf-8"
-    )
+    ops_path = Path(__file__).resolve().parent.parent / "fos/web/static/ops.html"
+    ops_html = ops_path.read_text(encoding="utf-8")
     assert 'id="auditTable"' in ops_html
+    assert 'id="packSummary"' in ops_html and 'id="imSummary"' in ops_html
