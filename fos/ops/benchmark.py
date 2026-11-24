@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -11,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fos.db.models import Event, ObjectState, TenantCounter, utcnow
-from fos.ops.backup import export_tenant_ledger, verify_backup_file
+from fos.ops.backup import export_tenant_ledger_jsonl, verify_ledger_backup_jsonl
 from fos.ops.ledger_audit import verify_tenant_ledger
 
 
@@ -99,15 +97,13 @@ async def run_ledger_benchmark(
     audit = await verify_tenant_ledger(session, tenant_id)
     audit_ms = (perf_counter() - t1) * 1000.0
 
-    with tempfile.TemporaryDirectory(prefix="fos-bench-") as tmp:
-        out_path = Path(tmp) / f"{tenant_id}.jsonl"
-        t2 = perf_counter()
-        exp = await export_tenant_ledger(session, tenant_id, out_path, include_mock=True)
-        export_ms = (perf_counter() - t2) * 1000.0
+    t2 = perf_counter()
+    content, exp = await export_tenant_ledger_jsonl(session, tenant_id, data_mode=None)
+    export_ms = (perf_counter() - t2) * 1000.0
 
-        t3 = perf_counter()
-        ver = verify_backup_file(out_path)
-        verify_ms = (perf_counter() - t3) * 1000.0
+    t3 = perf_counter()
+    ver = verify_ledger_backup_jsonl(content)
+    verify_ms = (perf_counter() - t3) * 1000.0
 
     write_eps = round(n_ev / max(write_ms / 1000.0, 1e-6), 1)
     return {
@@ -119,7 +115,7 @@ async def run_ledger_benchmark(
         "audit_ms": round(audit_ms, 2),
         "audit_ok": bool(audit["ok"]),
         "export_ms": round(export_ms, 2),
-        "export_events": int(exp["events_count"]),
+        "export_events": int(exp["count"]),
         "verify_backup_ms": round(verify_ms, 2),
         "verify_backup_ok": bool(ver["ok"]),
     }
