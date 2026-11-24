@@ -1151,7 +1151,7 @@ class TriggerIntake:
         principal: Principal,
         kind: str,
     ) -> None:
-        from sqlalchemy import func
+        from sqlalchemy import distinct, func
 
         from fos.governance.budget import check_tenant_budget
         from fos.ops import cards as oc
@@ -1191,7 +1191,7 @@ class TriggerIntake:
         q_act = select(func.count(User.id)).where(User.tenant_id == tid, User.is_active.is_(True))
         active_users = int((await session.execute(q_act)).scalar_one() or 0)
         q_bnd = (
-            select(func.count(func.distinct(ChannelIdentity.user_id)))
+            select(func.count(distinct(ChannelIdentity.user_id)))
             .join(User, User.id == ChannelIdentity.user_id)
             .where(ChannelIdentity.tenant_id == tid, User.is_active.is_(True))
         )
