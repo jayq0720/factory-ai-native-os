@@ -53,7 +53,7 @@
     try {
       const me = await (await api("/v1/me")).json();
       $("who").textContent = `${me.tenant_name} · ${me.display_name}`;
-      const [ov, sec, aud, bud, ks, us, pks, imb] = await Promise.all([
+      const [ov, sec, aud, bud, ks, us, pks, imb, fleet] = await Promise.all([
         api("/v1/ops/tenants").then((r) => r.json()),
         api("/v1/ops/security").then((r) => r.json()),
         api("/v1/ops/audit?limit=20").then((r) => r.json()),
@@ -62,6 +62,7 @@
         api("/v1/ops/users").then((r) => r.json()),
         api("/v1/ops/packs").then((r) => r.json()),
         api("/v1/ops/im-bindings").then((r) => r.json()),
+        api("/v1/ops/edge-fleet").then((r) => r.json()),
       ]);
       const t = ov.totals;
       $("saasSummary").textContent =
@@ -76,6 +77,18 @@
       $("packSummary").textContent = `已安装行业包（${pks.count} 个）：${packStr}`;
       $("imSummary").textContent =
         `全厂 IM 绑定覆盖率：${imb.bound_active_users}/${imb.active_users} 活跃员工（${imb.coverage_pct}%）`;
+      $("edgeFleetSummary").textContent =
+        `已接入网关 ${fleet.gateways_total} 台（在线 ${fleet.gateways_online} 台）` +
+        ` | 未闭环窑炉告警 ${fleet.open_alarms_total} 条`;
+      fillTable("edgeFleetTable", fleet.gateways || [], [
+        (r) => r.edge_id,
+        (r) => (r.online ? "在线" : "离线"),
+        (r) => (r.last_seen_at || "-").slice(0, 19).replace("T", " "),
+        (r) => (r.age_s === null || r.age_s === undefined ? "-" : r.age_s),
+        (r) => r.last_seq,
+        (r) => r.pending_commands,
+        (r) => r.open_alarms,
+      ]);
 
       fillTable("tenantTable", ov.tenants || [], [
         (r) => r.tenant_id,

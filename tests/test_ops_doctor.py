@@ -25,13 +25,14 @@ def test_ops_doctor_api_and_permissions(client, keys) -> None:
     assert body["summary"]["fail"] == 0
 
     by_name = {c["name"]: c for c in body["checks"]}
-    for required in ("env_profile", "blob_dir", "packs", "tenants", "database", "budgets"):
+    for required in ("env_profile", "blob_dir", "packs", "tenants", "database", "budgets", "edge_fleet"):
         assert required in by_name
     assert by_name["packs"]["status"] == "ok"
     assert "refractory" in by_name["packs"]["detail"]
     assert "ceramics" in by_name["packs"]["detail"]
     assert by_name["database"]["status"] == "ok"
     assert by_name["budgets"]["status"] == "ok"
+    assert by_name["edge_fleet"]["status"] == "ok"
 
 
 def test_doctor_prod_warnings_and_text_render(tmp_path) -> None:

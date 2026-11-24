@@ -56,10 +56,11 @@ def test_prometheus_configs_and_alert_metric_alignment(client, keys) -> None:
 
 
 def test_ops_web_doctor_panel_hooks() -> None:
-    """验证 ops.html 与 ops.js 正确挂载控制面 Doctor 自检面板。"""
+    """验证 ops.html 与 ops.js 正确挂载控制面 Doctor 与 Edge Fleet 面板。"""
     html = (REPO_ROOT / "fos" / "web" / "static" / "ops.html").read_text(encoding="utf-8")
     js = (REPO_ROOT / "fos" / "web" / "static" / "ops.js").read_text(encoding="utf-8")
-    for marker in ("btnDoctor", "doctorSummary", "doctorTable"):
+    for marker in ("btnDoctor", "doctorSummary", "doctorTable", "edgeFleetSummary", "edgeFleetTable"):
         assert marker in html
         assert marker in js
     assert "/v1/ops/doctor" in js
+    assert "/v1/ops/edge-fleet" in js
