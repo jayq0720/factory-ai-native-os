@@ -38,6 +38,7 @@ jobs:
       - run: .venv/bin/fos eval luneng
       - run: .venv/bin/fos security-check luneng
       - run: .venv/bin/fos validate-pack
+      - run: .venv/bin/fos doctor --skip-db
 
   rust:
     runs-on: ubuntu-latest
