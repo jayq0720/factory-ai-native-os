@@ -436,3 +436,24 @@ async def get_edge_fleet(session: SessionDep, p: OpsAdmin, online_window_s: int 
     from fos.ops.edge_fleet import edge_fleet_summary
 
     return await edge_fleet_summary(session, p.tenant_id, online_window_s=online_window_s)
+
+
+@router.get("/support-bundle.zip")
+async def download_support_bundle(request: Request, session: SessionDep, p: OpsAdmin, audit_limit: int = 100):
+    """下载当前租户脱敏 SRE 运维诊断包 ZIP（不含任何明文密钥）。"""
+    from fastapi import Response
+
+    from fos.ops.bundle import build_support_bundle_zip
+
+    try:
+        raw, _ = await build_support_bundle_zip(
+            session, request.app.state.services, p.tenant_id, audit_limit=audit_limit
+        )
+    except ValueError as e:
+        raise HTTPException(404, detail=str(e)) from e
+    fname = f"fos_support_{p.tenant_id}.zip"
+    return Response(
+        content=raw,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )

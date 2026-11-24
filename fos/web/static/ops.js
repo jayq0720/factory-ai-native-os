@@ -258,6 +258,9 @@
   $("btnBackupJsonl").addEventListener("click", () =>
     downloadFile("/v1/ops/backup.jsonl", "ledger_backup.jsonl", "已下载防篡改账本灾备 (.jsonl)")
   );
+  $("btnSupportBundle").addEventListener("click", () =>
+    downloadFile("/v1/ops/support-bundle.zip", "fos_support_bundle.zip", "已下载脱敏运维诊断包 (.zip)")
+  );
 
   const saved = localStorage.getItem(KEY_STORE);
   if (saved) {

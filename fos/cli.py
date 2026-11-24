@@ -370,6 +370,31 @@ async def _run(args: argparse.Namespace) -> int:
         else:
             print(format_doctor_text(report))
         return 0 if report["ok"] else 1
+    if args.cmd == "support-bundle":
+        from pathlib import Path
+
+        from fos.ops.bundle import build_support_bundle_zip
+        from fos.services import Services
+
+        svc = Services.build(s)
+        try:
+            if svc.registry.get(args.tenant) is None:
+                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+                return 1
+            async with svc.sessionmaker() as session:
+                raw, mf = await build_support_bundle_zip(
+                    session, svc, args.tenant, audit_limit=args.audit_limit
+                )
+            out_path = Path(args.out)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(raw)
+            print(
+                f"已生成脱敏运维诊断包 -> {out_path} | 租户 {mf['tenant_id']} | "
+                f"{mf['files_count']} 个快照 | {len(raw)} bytes"
+            )
+            return 0
+        finally:
+            await svc.aclose()
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -629,6 +654,10 @@ def main(argv: list[str] | None = None) -> int:
     dc = sub.add_parser("doctor", help="云端控制面一键只读诊断（环境/行业包/租户/数据库/预算）")
     dc.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     dc.add_argument("--skip-db", action="store_true", help="跳过数据库连接与预算检查（离线自检）")
+    sb = sub.add_parser("support-bundle", help="生成单租户脱敏 SRE 运维诊断包（ZIP，零明文密钥）")
+    sb.add_argument("tenant")
+    sb.add_argument("out")
+    sb.add_argument("--audit-limit", type=int, default=100, help="附带最近 N 条账本审计流水（默认 100）")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":
