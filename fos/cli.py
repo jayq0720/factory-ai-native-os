@@ -247,9 +247,7 @@ async def _run(args: argparse.Namespace) -> int:
             if args.all:
                 out_dir = Path(args.out_dir or "var/backups")
                 if args.interval > 0:
-                    await backup_loop(
-                        svc, out_dir, interval_s=args.interval, keep=args.keep, data_mode=mode
-                    )
+                    await backup_loop(svc, out_dir, interval_s=args.interval, keep=args.keep, data_mode=mode)
                     return 0
                 async with svc.sessionmaker() as session:
                     res = await backup_all_tenants(
