@@ -246,3 +246,99 @@ async def revoke_tenant_key(key_id: str, session: SessionDep, p: OpsAdmin) -> di
     if k is None:
         raise HTTPException(404, detail=f"未找到本租户密钥：{key_id}")
     return {"id": k.id, "revoked_at": k.revoked_at.isoformat() if k.revoked_at else None}
+
+
+def _user_out(u: Any) -> dict[str, Any]:
+    return {
+        "id": u.id,
+        "login": u.login,
+        "display_name": u.display_name,
+        "roles": list(u.roles or []),
+        "is_active": bool(u.is_active),
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+    }
+
+
+@router.get("/users")
+async def list_tenant_users(session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """列出当前租户全部员工账号与角色状态。"""
+    from sqlalchemy import select
+
+    from fos.db.models import User
+
+    rows = (
+        await session.scalars(select(User).where(User.tenant_id == p.tenant_id).order_by(User.login.asc()))
+    ).all()
+    items = [_user_out(u) for u in rows]
+    return {"tenant_id": p.tenant_id, "count": len(items), "items": items}
+
+
+@router.post("/users", status_code=201)
+async def create_tenant_user(
+    body: dict[str, Any], request: Request, session: SessionDep, p: OpsAdmin
+) -> dict[str, Any]:
+    """在线创建同租户员工账号，严格校验角色合法性与登录名唯一性。"""
+    from sqlalchemy import select
+
+    from fos.db.models import User
+
+    tenant = request.app.state.registry.get(p.tenant_id)
+    if tenant is None:
+        raise HTTPException(404, detail="租户不存在")
+    login = str(body.get("login") or "").strip()
+    display_name = str(body.get("display_name") or "").strip()
+    roles = [str(r).strip() for r in (body.get("roles") or []) if str(r).strip()]
+    if not login or not display_name:
+        raise HTTPException(422, detail="login 与 display_name 不能为空")
+    unknown = [r for r in roles if r not in tenant.roles]
+    if unknown:
+        raise HTTPException(422, detail=f"未定义的角色：{unknown}")
+    dup = (
+        await session.execute(select(User).where(User.tenant_id == p.tenant_id, User.login == login))
+    ).scalar_one_or_none()
+    if dup is not None:
+        raise HTTPException(409, detail=f"登录名已存在：{login}")
+    u = User(tenant_id=p.tenant_id, login=login, display_name=display_name, roles=roles, im_ids={})
+    session.add(u)
+    await session.flush()
+    return _user_out(u)
+
+
+@router.patch("/users/{login}")
+async def update_tenant_user(
+    login: str, body: dict[str, Any], request: Request, session: SessionDep, p: OpsAdmin
+) -> dict[str, Any]:
+    """在线调整同租户员工角色、显示名或启停状态（防管理员误停用自身账号）。"""
+    from sqlalchemy import select
+
+    from fos.db.models import User
+
+    tenant = request.app.state.registry.get(p.tenant_id)
+    if tenant is None:
+        raise HTTPException(404, detail="租户不存在")
+    u = (
+        await session.execute(select(User).where(User.tenant_id == p.tenant_id, User.login == login))
+    ).scalar_one_or_none()
+    if u is None:
+        raise HTTPException(404, detail=f"本租户用户不存在：{login}")
+
+    if "display_name" in body:
+        dn = str(body["display_name"] or "").strip()
+        if not dn:
+            raise HTTPException(422, detail="display_name 不能为空")
+        u.display_name = dn
+    if "roles" in body:
+        roles = [str(r).strip() for r in (body["roles"] or []) if str(r).strip()]
+        unknown = [r for r in roles if r not in tenant.roles]
+        if unknown:
+            raise HTTPException(422, detail=f"未定义的角色：{unknown}")
+        if u.id == p.subject_id and "admin" not in roles:
+            raise HTTPException(400, detail="禁止移除当前管理员自身的 admin 角色")
+        u.roles = roles
+    if "is_active" in body:
+        active = bool(body["is_active"])
+        if u.id == p.subject_id and not active:
+            raise HTTPException(400, detail="禁止停用当前登录的管理员账号")
+        u.is_active = active
+    await session.flush()
+    return _user_out(u)

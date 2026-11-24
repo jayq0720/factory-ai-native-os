@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     agent_max_tokens: int = 40_000
     agent_tool_result_chars: int = 4_000  # 工具结果放进上下文的上限，超出部分只存在运行记录里（Spill）
 
+    # API 滑动窗口限流（每分钟每调用方上限；0 表示关闭）
+    rate_limit_per_min: int = 600
+
 
 @lru_cache
 def get_settings() -> Settings:
