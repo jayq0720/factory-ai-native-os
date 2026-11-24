@@ -103,10 +103,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Factory AI Native OS", version=__version__, lifespan=lifespan)
     from time import perf_counter
 
+    from fos.governance.ratelimit import SlidingWindowLimiter, client_bucket_key
     from fos.ops.metrics import HttpMetrics
 
     http_metrics = HttpMetrics()
+    rate_limiter = SlidingWindowLimiter(settings.rate_limit_per_min)
     app.state.http_metrics = http_metrics
+    app.state.rate_limiter = rate_limiter
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -117,11 +120,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex
         request.state.request_id = rid
         t0 = perf_counter()
+        path = request.url.path
+        rl_remaining: int | None = None
+        if rate_limiter.limit > 0 and path not in ("/healthz", "/readyz") and not path.startswith("/app"):
+            host = request.client.host if request.client else None
+            bkey = client_bucket_key(
+                request.headers.get("authorization"), request.headers.get("x-api-key"), host
+            )
+            ok, rl_remaining, retry_after = rate_limiter.check(bkey)
+            if not ok:
+                elapsed = perf_counter() - t0
+                http_metrics.record(request.method, 429, elapsed)
+                return JSONResponse(
+                    {"detail": "请求过于频繁，请稍后重试"},
+                    status_code=429,
+                    headers={
+                        "x-request-id": rid,
+                        "retry-after": str(retry_after),
+                        "x-ratelimit-limit": str(rate_limiter.limit),
+                        "x-ratelimit-remaining": "0",
+                    },
+                )
         response = await call_next(request)
         elapsed = perf_counter() - t0
         http_metrics.record(request.method, response.status_code, elapsed)
         response.headers["x-request-id"] = rid
         response.headers["x-response-time-ms"] = f"{elapsed * 1000.0:.2f}"
+        if rl_remaining is not None:
+            response.headers["x-ratelimit-limit"] = str(rate_limiter.limit)
+            response.headers["x-ratelimit-remaining"] = str(rl_remaining)
         response.headers.setdefault("x-content-type-options", "nosniff")
         response.headers.setdefault("x-frame-options", "DENY")
         response.headers.setdefault("referrer-policy", "no-referrer")

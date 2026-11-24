@@ -53,12 +53,13 @@
     try {
       const me = await (await api("/v1/me")).json();
       $("who").textContent = `${me.tenant_name} · ${me.display_name}`;
-      const [ov, sec, aud, bud, ks] = await Promise.all([
+      const [ov, sec, aud, bud, ks, us] = await Promise.all([
         api("/v1/ops/tenants").then((r) => r.json()),
         api("/v1/ops/security").then((r) => r.json()),
         api("/v1/ops/audit?limit=20").then((r) => r.json()),
         api("/v1/ops/budget").then((r) => r.json()),
         api("/v1/ops/keys").then((r) => r.json()),
+        api("/v1/ops/users").then((r) => r.json()),
       ]);
       const t = ov.totals;
       $("saasSummary").textContent =
@@ -86,6 +87,35 @@
         (r) => r.severity,
         (r) => r.detail,
       ]);
+      const userTbody = $("userTable").querySelector("tbody");
+      userTbody.textContent = "";
+      for (const u of us.items || []) {
+        const tr = document.createElement("tr");
+        for (const val of [u.login, u.display_name, (u.roles || []).join(","), u.is_active ? "启用" : "停用"]) {
+          const td = document.createElement("td");
+          td.textContent = String(val);
+          tr.appendChild(td);
+        }
+        const actTd = document.createElement("td");
+        const btn = document.createElement("button");
+        btn.textContent = u.is_active ? "停用" : "启用";
+        btn.addEventListener("click", async () => {
+          try {
+            await api(`/v1/ops/users/${encodeURIComponent(u.login)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ is_active: !u.is_active }),
+            });
+            setMsg(`已更新用户 ${u.login} 状态`);
+            loadAll();
+          } catch (e) {
+            setMsg(e.message);
+          }
+        });
+        actTd.appendChild(btn);
+        tr.appendChild(actTd);
+        userTbody.appendChild(tr);
+      }
       const keyTbody = $("keyTable").querySelector("tbody");
       keyTbody.textContent = "";
       for (const k of ks.items || []) {
