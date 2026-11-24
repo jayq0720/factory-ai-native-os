@@ -26,7 +26,7 @@
 | `packs/foundry/` | 精密铸造行业包：熔炼炉次/模具/金相本体扩展、铸造工艺与安环 Skill、12 条黄金评测数据集 |
 | `tenants/<id>/` | 租户目录（`tenant.yaml` 与可选 `policy.yaml`，不含密钥，支持 `fos clone-tenant` 一键复制） |
 | `migrations/` | Alembic PostgreSQL 迁移脚本 |
-| `deploy/` | Docker Compose（`db`/`api`/`ocr`/`litellm`/`channels`/`watchdog`/`backup`）、Prometheus/Grafana 监控包（`deploy/monitoring/`）与阿里云部署脚本 |
+| `deploy/` | Docker Compose（`db`/`api`/`ocr`/`litellm`/`channels`/`watchdog`/`backup`）、Kubernetes Kustomize（`deploy/k8s/`）、Prometheus/Grafana 监控包（`deploy/monitoring/`）与阿里云部署脚本 |
 
 ## 本地快速试用与开发
 
@@ -38,13 +38,15 @@ export FOS_DATABASE_URL=sqlite+aiosqlite:///var/fos.db
 .venv/bin/fos quickstart && .venv/bin/fos samples ./samples && .venv/bin/fos serve
 
 # 常用运维、灾备与门禁命令
-.venv/bin/fos doctor --json                                   # 云端控制面六维一键自检
+.venv/bin/fos doctor --json                                   # 云端控制面八维一键自检
 .venv/bin/fos validate-pack                                   # 校验全部行业包本体/Skill/黄金评测集
-.venv/bin/fos eval luneng                                     # 运行 50 条黄金数据集回归评测
-.venv/bin/fos security-check luneng                           # 运行租户安全与上线基线自检
+.venv/bin/fos eval --all                                      # 运行全租户黄金数据集回归评测
+.venv/bin/fos security-check --all --json                     # 运行全租户安全与上线基线自检
+.venv/bin/fos verify-ledger --all --json                      # 实时只读审计全租户账本完整性
 .venv/bin/fos watchdog --all                                  # 执行全厂统一 Watchdog 巡检
 .venv/bin/fos monthly-report luneng --xlsx monthly.xlsx       # 生成全厂经营月报（Markdown + Excel）
 .venv/bin/fos backup-ledger --all --out-dir ./backups         # 全租户防篡改灾备（落盘自检 + 保留清理）
+.venv/bin/fos support-bundle luneng ./support-bundle.zip      # 导出脱敏 SRE 运维诊断包（零明文密钥）
 .venv/bin/fos clone-tenant huadong-ref 华东耐材二厂            # 一键零代码复制第二家工厂并验证就绪
 
 # 完整测试与代码检查

@@ -51,3 +51,27 @@ def test_ops_im_fast_path_cards_and_permissions(client, keys) -> None:
     b_gw = r_gw.json()
     assert b_gw["route"] == "ops_fleet" and b_gw["status"] == "done"
     assert "厂端网关车队状态" in b_gw["replies"][0]["card"]["title"]
+
+    # 管理员查询“账本校验”（零模型成本只读账本完整性审计）
+    r_lg = client.post(
+        "/v1/channels/mock/messages",
+        json={"external_msg_id": "ops_fp_lg", "sender_id": "im_ops_admin", "text": "账本校验"},
+        headers=_h(keys, "admin"),
+    )
+    assert r_lg.status_code == 200
+    b_lg = r_lg.json()
+    assert b_lg["route"] == "ops_ledger" and b_lg["status"] == "done"
+    card_lg = b_lg["replies"][0]["card"]
+    assert "账本一致性审计" in card_lg["title"]
+    lg_labels = {f["label"] for f in card_lg["fields"]}
+    assert {"审计状态", "序号连续", "计数器对齐", "证据链覆盖"}.issubset(lg_labels)
+
+    # 非管理员发“账本校验”同样被权限拦截
+    r_lg_deny = client.post(
+        "/v1/channels/mock/messages",
+        json={"external_msg_id": "ops_fp_lg_deny", "sender_id": "im_ops_sales", "text": "账本校验"},
+        headers=_h(keys, "admin"),
+    )
+    assert r_lg_deny.status_code == 200
+    assert r_lg_deny.json()["route"] == "ops_ledger"
+    assert "platform.ops:admin" in r_lg_deny.json()["replies"][0]["text"]

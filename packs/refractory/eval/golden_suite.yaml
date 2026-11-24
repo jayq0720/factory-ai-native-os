@@ -24,6 +24,7 @@ fast_path_routing:
   - {id: fp_mkt_mo, text: 经营月报, expect: market_monthly}
   - {id: fp_ops_st, text: 系统状态, expect: ops_status}
   - {id: fp_ops_gw, text: 网关状态, expect: ops_fleet}
+  - {id: fp_ops_ledger, text: 账本校验, expect: ops_ledger}
   - {id: fp_fin_ar, text: 应收, expect: finance_ar}
   - {id: fp_fin_ap, text: 应付, expect: finance_ap}
   - {id: fp_q_ncr, text: 不合格, expect: quality_ncr}

@@ -493,14 +493,32 @@ async def _run(args: argparse.Namespace) -> int:
                     if not res["all_passed"]:
                         all_passed = False
                 return 0 if all_passed else 1
-            if svc.registry.get(args.tenant) is None:
-                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+            if args.all:
+                sc_targets = sorted(svc.registry.ids())
+            elif not args.tenant or svc.registry.get(args.tenant) is None:
+                print(f"租户 {args.tenant or '(未指定)'} 不存在", file=sys.stderr)
                 return 1
-            res = security_baseline(svc, args.tenant)
-            for chk in res["checks"]:
-                mark = "OK" if chk["ok"] else "FAIL"
-                print(f"  [{mark:<4}] ({chk['severity']:<5}) {chk['name']}: {chk['detail']}")
-            return 0 if res["passed"] else 1
+            else:
+                sc_targets = [args.tenant]
+            items = [security_baseline(svc, tid) for tid in sc_targets]
+            all_ok = all(r["passed"] for r in items)
+            if args.json:
+                import json
+
+                out_obj = (
+                    {"all_ok": all_ok, "tenants_count": len(items), "items": items}
+                    if args.all
+                    else items[0]
+                )
+                print(json.dumps(out_obj, ensure_ascii=False, indent=2))
+            else:
+                for res in items:
+                    if len(items) > 1:
+                        print(f"[{res['tenant_id']}] passed={res['passed']}")
+                    for chk in res["checks"]:
+                        mark = "OK" if chk["ok"] else "FAIL"
+                        print(f"  [{mark:<4}] ({chk['severity']:<5}) {chk['name']}: {chk['detail']}")
+            return 0 if all_ok else 1
         finally:
             await svc.aclose()
     registry = TenantRegistry.load(s.tenants_dir)
@@ -667,7 +685,9 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--all", action="store_true", help="评测全部已注册租户")
     ev.add_argument("--suite", default="", help="自定义黄金评测 YAML 路径")
     sc = sub.add_parser("security-check", help="运行租户安全与上线基线自检")
-    sc.add_argument("tenant")
+    sc.add_argument("tenant", nargs="?", default="")
+    sc.add_argument("--all", action="store_true", help="巡检全部已注册租户")
+    sc.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     wd = sub.add_parser("watchdog", help="执行全厂统一 Watchdog 巡检（支持单次或守护循环）")
     wd.add_argument("tenant", nargs="?", default="")
     wd.add_argument("--all", action="store_true", help="巡检全部已注册租户")

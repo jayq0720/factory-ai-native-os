@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -58,6 +59,13 @@ def test_cli_eval_security_and_watchdog(
         assert main(["security-check", "luneng"]) == 0
         out_sec = capsys.readouterr().out
         assert "[OK" in out_sec
+        assert main(["security-check", "--all", "--json"]) == 0
+        sec_all = json.loads(capsys.readouterr().out)
+        assert sec_all["all_ok"] is True and sec_all["tenants_count"] >= 1
+        assert main(["security-check", "luneng", "--json"]) == 0
+        sec_one = json.loads(capsys.readouterr().out)
+        assert sec_one["passed"] is True
+        assert main(["security-check"]) == 1
 
         assert main(["watchdog", "luneng"]) == 0
         out_wd = capsys.readouterr().out
