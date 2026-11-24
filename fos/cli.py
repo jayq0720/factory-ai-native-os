@@ -307,6 +307,26 @@ async def _run(args: argparse.Namespace) -> int:
             return 0
         finally:
             await svc.aclose()
+    if args.cmd == "validate-pack":
+        from fos.ops.packs import list_packs, validate_pack
+
+        reports = [validate_pack(s.packs_dir, args.pack)] if args.pack else list_packs(s.packs_dir)
+        if not reports:
+            print("未找到任何行业包", file=sys.stderr)
+            return 1
+        all_ok = True
+        for rep in reports:
+            mark = "OK" if rep["ok"] else "FAIL"
+            print(
+                f"[{mark}] pack={rep['pack']} | 模块 {len(rep.get('modules') or [])} | "
+                f"对象 {rep.get('objects_count', 0)} | 事件 {rep.get('events_count', 0)} | "
+                f"Skill {rep.get('skills_count', 0)} | 黄金用例 {rep.get('eval_cases', 0)}"
+            )
+            for err in rep.get("errors") or []:
+                print(f"  [ERR] {err}", file=sys.stderr)
+            if not rep["ok"]:
+                all_ok = False
+        return 0 if all_ok else 1
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -557,6 +577,8 @@ def main(argv: list[str] | None = None) -> int:
     rl = sub.add_parser("restore-ledger", help="校验防篡改灾备文件并向空租户恢复账本与投影")
     rl.add_argument("tenant")
     rl.add_argument("file")
+    vp = sub.add_parser("validate-pack", help="独立校验行业包本体、Skill/Tool 绑定与黄金评测集")
+    vp.add_argument("pack", nargs="?", default="", help="行业包名称（留空则校验全部）")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":
