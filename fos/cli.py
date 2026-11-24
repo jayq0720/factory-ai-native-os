@@ -395,6 +395,26 @@ async def _run(args: argparse.Namespace) -> int:
             return 0
         finally:
             await svc.aclose()
+    if args.cmd == "verify-ledger":
+        import json
+
+        from fos.ops.ledger_audit import format_ledger_audit_text, verify_tenant_ledger
+        from fos.services import Services
+
+        svc = Services.build(s)
+        try:
+            if svc.registry.get(args.tenant) is None:
+                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+                return 1
+            async with svc.sessionmaker() as session:
+                rep = await verify_tenant_ledger(session, args.tenant)
+            if args.json:
+                print(json.dumps(rep, ensure_ascii=False, indent=2))
+            else:
+                print(format_ledger_audit_text(rep))
+            return 0 if rep["ok"] else 1
+        finally:
+            await svc.aclose()
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -658,6 +678,9 @@ def main(argv: list[str] | None = None) -> int:
     sb.add_argument("tenant")
     sb.add_argument("out")
     sb.add_argument("--audit-limit", type=int, default=100, help="附带最近 N 条账本审计流水（默认 100）")
+    vl = sub.add_parser("verify-ledger", help="实时只读审计租户账本序号连续性、计数器对齐与投影同步")
+    vl.add_argument("tenant")
+    vl.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":
