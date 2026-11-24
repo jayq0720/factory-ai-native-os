@@ -86,3 +86,12 @@ groups:
         annotations:
           summary: "租户 {{ $labels.tenant }} 存在厂端 fos-edge 网关离线"
           description: "请调用 GET /v1/ops/edge-fleet 或在工控机运行 fos-edge doctor 排查断网原因。"
+
+      - alert: FosLedgerIntegrityFailed
+        expr: fos_ledger_integrity_ok == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "租户 {{ $labels.tenant }} 不可变事件账本一致性校验失败"
+          description: "请立即运行 fos verify-ledger {{ $labels.tenant }} 排查序号断层、计数器漂移或投影不同步。"

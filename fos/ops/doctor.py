@@ -148,6 +148,21 @@ async def _check_edge_fleet(session: AsyncSession, reg: TenantRegistry) -> Docto
     return DoctorCheck("edge_fleet", "ok", f"{online_gw}/{total_gw} 台厂端网关在线，无未闭环窑炉告警")
 
 
+async def _check_ledger_integrity(session: AsyncSession, reg: TenantRegistry) -> DoctorCheck:
+    from fos.ops.ledger_audit import verify_tenant_ledger
+
+    bad: list[str] = []
+    total_ev = 0
+    for tid in sorted(reg.ids()):
+        rep = await verify_tenant_ledger(session, tid)
+        total_ev += int(rep["events_total"])
+        if not rep["ok"]:
+            bad.append(tid)
+    if bad:
+        return DoctorCheck("ledger_integrity", "fail", f"租户账本一致性异常：{', '.join(bad)}")
+    return DoctorCheck("ledger_integrity", "ok", f"全部租户账本序号/计数器/投影一致（累计 {total_ev} 条）")
+
+
 async def run_doctor(
     settings: Settings,
     *,
@@ -182,6 +197,7 @@ async def run_doctor(
         if db_check.status == "ok" and reg is not None:
             checks.append(await _check_budgets(session, reg))
             checks.append(await _check_edge_fleet(session, reg))
+            checks.append(await _check_ledger_integrity(session, reg))
 
     summary = {
         "ok": sum(1 for c in checks if c.status == "ok"),

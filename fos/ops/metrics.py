@@ -63,6 +63,7 @@ def render_prometheus(
     budgets: list[dict[str, Any]] | None = None,
     packs: list[dict[str, Any]] | None = None,
     edge_stats: list[dict[str, Any]] | None = None,
+    ledger_audits: list[dict[str, Any]] | None = None,
 ) -> str:
     """将 HTTP 指标、多租户 SaaS 运行快照、预算租约与行业包状态渲染为标准 Prometheus 文本格式。"""
     lines = http_metrics.render_lines()
@@ -185,6 +186,26 @@ def render_prometheus(
         for es in edge_stats:
             tid = _esc(str(es["tenant_id"]))
             lines.append(f'fos_kiln_open_alarms{{tenant="{tid}"}} {int(es["open_alarms_total"])}')
+    if ledger_audits is not None:
+        lines.extend(
+            [
+                "# HELP fos_ledger_integrity_ok Ledger consistency status (1=ok, 0=fail) per tenant.",
+                "# TYPE fos_ledger_integrity_ok gauge",
+            ]
+        )
+        for la in ledger_audits:
+            tid = _esc(str(la["tenant_id"]))
+            lines.append(f'fos_ledger_integrity_ok{{tenant="{tid}"}} {1 if la.get("ok") else 0}')
+        lines.extend(
+            [
+                "# HELP fos_ledger_evidence_coverage_ratio Real event evidence ratio per tenant.",
+                "# TYPE fos_ledger_evidence_coverage_ratio gauge",
+            ]
+        )
+        for la in ledger_audits:
+            tid = _esc(str(la["tenant_id"]))
+            ratio = float(la.get("evidence_coverage_pct", 100.0)) / 100.0
+            lines.append(f'fos_ledger_evidence_coverage_ratio{{tenant="{tid}"}} {ratio:.4f}')
     return "\n".join(lines) + "\n"
 
 
