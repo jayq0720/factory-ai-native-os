@@ -18,8 +18,9 @@ def test_sliding_window_limiter_unit() -> None:
     assert lim.check("k1", now=101.0) == (True, 0, 0)
     ok, rem, retry = lim.check("k1", now=102.0)
     assert ok is False and rem == 0 and retry >= 1
-    # 窗口滑出后自动恢复
-    assert lim.check("k1", now=110.5) == (True, 1, 0)
+    # 窗口部分滑出后恢复 1 个名额（101.0 仍在窗口内），完全滑出后恢复全部名额
+    assert lim.check("k1", now=110.5) == (True, 0, 0)
+    assert lim.check("k1", now=125.0) == (True, 1, 0)
 
     off = SlidingWindowLimiter(limit=0)
     assert off.check("k1", now=100.0) == (True, 0, 0)
