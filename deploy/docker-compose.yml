@@ -152,6 +152,24 @@ services:
         condition: service_healthy
     environment: *fos-env
 
+  # 全租户不可变账本周期灾备守护（落盘即校验 SHA-256 + 自动保留最近 N 份），配合 --profile ops
+  backup:
+    profiles: ["ops"]
+    build: *fos-build
+    image: fos-api:local
+    command:
+      - sh
+      - -c
+      - "fos backup-ledger --all --out-dir /data/backups --keep ${FOS_BACKUP_KEEP:-30} --interval ${FOS_BACKUP_INTERVAL:-86400}"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *fos-env
+    volumes:
+      - backups:/data/backups
+
 volumes:
   pgdata:
   blobs:
+  backups:
