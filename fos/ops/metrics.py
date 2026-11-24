@@ -62,6 +62,7 @@ def render_prometheus(
     *,
     budgets: list[dict[str, Any]] | None = None,
     packs: list[dict[str, Any]] | None = None,
+    edge_stats: list[dict[str, Any]] | None = None,
 ) -> str:
     """将 HTTP 指标、多租户 SaaS 运行快照、预算租约与行业包状态渲染为标准 Prometheus 文本格式。"""
     lines = http_metrics.render_lines()
@@ -156,6 +157,34 @@ def render_prometheus(
         for pk in packs:
             pname = _esc(str(pk["pack"]))
             lines.append(f'fos_industry_pack_ok{{pack="{pname}"}} {1 if pk.get("ok") else 0}')
+    if edge_stats is not None:
+        lines.extend(
+            [
+                "# HELP fos_edge_gateways_total Known factory edge gateways per tenant.",
+                "# TYPE fos_edge_gateways_total gauge",
+            ]
+        )
+        for es in edge_stats:
+            tid = _esc(str(es["tenant_id"]))
+            lines.append(f'fos_edge_gateways_total{{tenant="{tid}"}} {int(es["gateways_total"])}')
+        lines.extend(
+            [
+                "# HELP fos_edge_gateways_online Online factory edge gateways per tenant.",
+                "# TYPE fos_edge_gateways_online gauge",
+            ]
+        )
+        for es in edge_stats:
+            tid = _esc(str(es["tenant_id"]))
+            lines.append(f'fos_edge_gateways_online{{tenant="{tid}"}} {int(es["gateways_online"])}')
+        lines.extend(
+            [
+                "# HELP fos_kiln_open_alarms Open kiln and edge alarms per tenant.",
+                "# TYPE fos_kiln_open_alarms gauge",
+            ]
+        )
+        for es in edge_stats:
+            tid = _esc(str(es["tenant_id"]))
+            lines.append(f'fos_kiln_open_alarms{{tenant="{tid}"}} {int(es["open_alarms_total"])}')
     return "\n".join(lines) + "\n"
 
 

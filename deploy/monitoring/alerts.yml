@@ -68,3 +68,21 @@ groups:
         annotations:
           summary: "租户 {{ $labels.tenant }} 待审批单积压超过 20 条"
           description: "请提醒对应审批角色及时处理，或检查 Watchdog 守护进程是否正常。"
+
+      - alert: FosKilnOpenAlarms
+        expr: fos_kiln_open_alarms > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "租户 {{ $labels.tenant }} 存在未闭环窑炉/厂端告警"
+          description: "请立即打开 /app/kiln.html 或钉钉卡片核查超温、曲线超差或设备故障告警。"
+
+      - alert: FosEdgeGatewayOffline
+        expr: fos_edge_gateways_total > 0 and fos_edge_gateways_online < fos_edge_gateways_total
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "租户 {{ $labels.tenant }} 存在厂端 fos-edge 网关离线"
+          description: "请调用 GET /v1/ops/edge-fleet 或在工控机运行 fos-edge doctor 排查断网原因。"
