@@ -72,16 +72,14 @@ def ledger_audit_card(tenant_name: str, report: dict[str, Any]) -> Card:
         else f"漂移（counter={report['counter_seq']} != {report['last_seq']}）"
     )
     proj_txt = f"{report['projected_objects_count']} / {report['event_distinct_objects_count']} 个对象"
+    ev_pct = report["evidence_coverage_pct"]
+    ev_txt = f"{ev_pct}%（{report['real_events_with_evidence']}/{report['real_events_total']}）"
     rows = [
         ("审计状态", "完整通过" if report["ok"] else "发现异常"),
         ("账本事件", f"{report['events_total']} 条（last_seq={report['last_seq']}）"),
         ("序号连续", seq_txt),
         ("计数器对齐", ctr_txt),
-        (
-            "证据链覆盖",
-            f"{report['evidence_coverage_pct']}%（"
-            f"{report['real_events_with_evidence']}/{report['real_events_total']}）",
-        ),
+        ("证据链覆盖", ev_txt),
         ("投影同步", proj_txt),
     ]
     return Card(
