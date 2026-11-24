@@ -1,0 +1,177 @@
+{
+  "uid": "fos-prod-sre",
+  "title": "Factory AI Native OS · 生产运维与厂端大盘",
+  "description": "与 GET /v1/ops/metrics 严格对齐的开箱即用 Grafana SRE 监控大盘",
+  "tags": ["fos", "sre", "manufacturing", "edge"],
+  "timezone": "Asia/Shanghai",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "工厂租户",
+        "query": "label_values(fos_events_total, tenant)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "已接入工厂与行业包",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {"refId": "A", "expr": "fos_tenants_total", "legendFormat": "工厂租户数"},
+        {"refId": "B", "expr": "fos_industry_packs_total", "legendFormat": "行业包数"}
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "行业包健康状态 (1=正常)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {"refId": "A", "expr": "fos_industry_pack_ok", "legendFormat": "{{pack}}"}
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "API 请求速率 (QPS · 按状态码)",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status_class) (rate(fos_http_requests_total[5m]))",
+          "legendFormat": "{{status_class}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "API 平均响应耗时 (秒)",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 4},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(fos_http_request_duration_seconds_sum[5m]) / clamp_min(rate(fos_http_request_duration_seconds_count[5m]), 1e-6)",
+          "legendFormat": "平均耗时 (s)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "租户 LLM Token 日/月预算利用率",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 7},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fos_budget_daily_ratio{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 日预算占比"
+        },
+        {
+          "refId": "B",
+          "expr": "fos_budget_monthly_ratio{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 月预算占比"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "预算熔断与安全基线 (1=正常)",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 7},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fos_budget_allowed{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 允许调用 LLM"
+        },
+        {
+          "refId": "B",
+          "expr": "fos_security_baseline_ok{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 安全基线"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "近 7 日 LLM Token 消耗",
+      "gridPos": {"x": 0, "y": 15, "w": 8, "h": 7},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fos_llm_tokens_7d{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "未闭环待办与待审批积压",
+      "gridPos": {"x": 8, "y": 15, "w": 8, "h": 7},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fos_open_todos{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 待办"
+        },
+        {
+          "refId": "B",
+          "expr": "fos_pending_approvals{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 待审批"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "不可变事件账本累计条数",
+      "gridPos": {"x": 16, "y": 15, "w": 8, "h": 7},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fos_events_total{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "厂端网关在线与未闭环窑炉告警",
+      "gridPos": {"x": 0, "y": 22, "w": 24, "h": 6},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fos_edge_gateways_online{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 在线网关"
+        },
+        {
+          "refId": "B",
+          "expr": "fos_edge_gateways_total{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 总网关"
+        },
+        {
+          "refId": "C",
+          "expr": "fos_kiln_open_alarms{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 未闭环窑炉告警"
+        }
+      ]
+    }
+  ]
+}

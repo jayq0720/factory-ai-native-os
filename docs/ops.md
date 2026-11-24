@@ -18,7 +18,7 @@
   - 租户指标：`fos_tenants_total`、`fos_events_total`、`fos_open_todos`、`fos_pending_approvals`、`fos_llm_tokens_7d`、`fos_security_baseline_ok`；
   - 成本、行业包与厂端指标：`fos_budget_daily_ratio`、`fos_budget_monthly_ratio`、`fos_budget_allowed`、`fos_industry_packs_total`、`fos_industry_pack_ok`、`fos_edge_gateways_total`、`fos_edge_gateways_online`、`fos_kiln_open_alarms`；
   - 厂端网关车队实时汇总：`GET /v1/ops/edge-fleet`（在线数、心跳延迟、待执行命令、未闭环窑炉告警）；
-  - 开箱即用抓取与告警规则包：`deploy/monitoring/prometheus.yml` 与 `deploy/monitoring/alerts.yml`（覆盖 5xx 错误率、慢响应、Token 预算预警/硬熔断、安全基线、行业包健康度、窑炉未闭环告警、网关离线与待审批积压）。
+  - 开箱即用监控与告警包：`deploy/monitoring/prometheus.yml`、`deploy/monitoring/alerts.yml` 与 `deploy/monitoring/grafana-dashboard.json`（覆盖 5xx 错误率、慢响应、Token 预算预警/硬熔断、安全基线、行业包健康度、窑炉未闭环告警、网关离线与待审批积压，说明见 `deploy/monitoring/README.md`）。
 - **不可变账本审计流水**：`GET /v1/ops/audit`（按 `event_prefix` / `object_type` / `actor_id` / `data_mode` 倒序分页），以及 `GET /v1/ops/audit.xlsx`（防公式注入合规审计 Excel 导出）。
 
 ## 3. 成本熔断与访问防护（`fos/governance/`）
