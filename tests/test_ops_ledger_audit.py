@@ -66,6 +66,10 @@ def test_verify_ledger_cli_detects_counter_drift(
         rep = json.loads(capsys.readouterr().out)
         assert rep["ok"] is True and rep["counter_aligned"] is True
 
+        assert main(["verify-ledger", "--all", "--json"]) == 0
+        rep_all = json.loads(capsys.readouterr().out)
+        assert rep_all["all_ok"] is True and rep_all["tenants_count"] >= 1
+
         # 模拟 TenantCounter.last_seq 漂移，验证审计引擎能实时捕获并返非零
         async def _drift() -> None:
             eng = make_engine(db_url)
@@ -81,6 +85,8 @@ def test_verify_ledger_cli_detects_counter_drift(
         assert main(["verify-ledger", "luneng"]) == 1
         txt = capsys.readouterr().out
         assert "计数器漂移" in txt
+        assert main(["verify-ledger", "--all"]) == 1
+        assert main(["verify-ledger"]) == 1
         assert main(["verify-ledger", "nonexistent-tenant"]) == 1
     finally:
         get_settings.cache_clear()

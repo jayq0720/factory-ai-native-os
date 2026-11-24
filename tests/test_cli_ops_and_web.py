@@ -44,6 +44,7 @@ def test_cli_eval_security_and_watchdog(
         assert main(["eval", "luneng"]) == 0
         out = capsys.readouterr().out
         assert "100.0%" in out
+        assert main(["eval", "--all"]) == 0
 
         bad_suite = tmp_path / "bad.yaml"
         bad_suite.write_text(

@@ -57,3 +57,4 @@ def test_k8s_manifests_security_and_structure() -> None:
         assert t_spec["securityContext"]["runAsNonRoot"] is True
         cmd = t_spec["containers"][0]["command"]
         assert cmd[0] == "fos"
+        assert "--all" in cmd
