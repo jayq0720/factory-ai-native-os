@@ -39,8 +39,17 @@ class DailyReportSchedule(BaseModel):
     to: list[str] = Field(default_factory=list)  # 收报人登录名；各自按自己的权限出报告，发到绑定的 IM 单聊
 
 
+class MonthlyReportSchedule(BaseModel):
+    """每月定时推送上月全厂经营与合规月报（fos/reports/schedule.py）。"""
+
+    day_of_month: int = Field(default=1, ge=1, le=28)
+    at: str = Field(default="09:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    to: list[str] = Field(default_factory=list)
+
+
 class ReportsConfig(BaseModel):
     daily: DailyReportSchedule | None = None
+    monthly: MonthlyReportSchedule | None = None
 
 
 class BudgetConfig(BaseModel):

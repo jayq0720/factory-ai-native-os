@@ -158,3 +158,151 @@ async def daily_loop(svc: Services, tenant_id: str, adapter: ChannelAdapter) -> 
             log.info("%s 日报 %s：发送 %s，跳过 %s", tenant_id, r.day, r.sent, r.skipped)
         except Exception:  # 一次失败不影响第二天
             log.exception("%s 日报推送失败", tenant_id)
+
+
+MONTHLY_THREAD_KEY = "schedule:monthly_report"
+
+
+@dataclass
+class MonthlySendResult:
+    month: str
+    duplicate: bool = False
+    sent: list[str] = field(default_factory=list)
+    skipped: dict[str, str] = field(default_factory=dict)
+    errors: dict[str, str] = field(default_factory=dict)
+
+
+def prev_month_str(d: date) -> str:
+    """给定日期返回上个月 YYYY-MM（每月 1 号推送上月经营月报）。"""
+    if d.month == 1:
+        return f"{d.year - 1:04d}-12"
+    return f"{d.year:04d}-{d.month - 1:02d}"
+
+
+def next_monthly_fire(now: datetime, day_of_month: int, at: str, tz: ZoneInfo) -> datetime:
+    """计算下一次月报推送时间（工厂时区，day_of_month 取 1..28 避免大小月歧义）。"""
+    h, m = (int(x) for x in at.split(":"))
+    local = now.astimezone(tz)
+    fire = local.replace(day=day_of_month, hour=h, minute=m, second=0, microsecond=0)
+    if fire <= local:
+        if local.month == 12:
+            fire = fire.replace(year=local.year + 1, month=1)
+        else:
+            fire = fire.replace(month=local.month + 1)
+    return fire
+
+
+async def _monthly_thread(session, tenant_id: str) -> str:
+    q = select(Thread.id).where(Thread.tenant_id == tenant_id, Thread.key == MONTHLY_THREAD_KEY)
+    tid = (await session.scalars(q)).one_or_none()
+    if tid:
+        return tid
+    th = Thread(tenant_id=tenant_id, key=MONTHLY_THREAD_KEY, kind="schedule")
+    try:
+        async with session.begin_nested():
+            session.add(th)
+        return th.id
+    except IntegrityError:
+        return (await session.scalars(q)).one()
+
+
+async def send_monthly(
+    svc: Services,
+    tenant_id: str,
+    adapter: ChannelAdapter,
+    month: str,
+    *,
+    force: bool = False,
+) -> MonthlySendResult:
+    """幂等推送指定月份的全厂经营与合规月报卡片（规则 4 仅真实数据 + 规则 6 先提交再发送）。"""
+    from fos.market.cards import monthly_card
+    from fos.reports.monthly import build_monthly_report
+
+    tenant = svc.registry.get(tenant_id)
+    assert tenant is not None
+    sched = tenant.reports.monthly
+    res = MonthlySendResult(month)
+    if sched is None:
+        return res
+    outbox: list[tuple[str, ConversationRef, Card]] = []
+    async with svc.sessionmaker() as session, session.begin():
+        ext = f"monthly_report:{month}" + (f":{utcnow().timestamp():.0f}" if force else "")
+        trig = Trigger(
+            tenant_id=tenant_id,
+            source="schedule",
+            external_id=ext,
+            thread_id=await _monthly_thread(session, tenant_id),
+            sender_ref="system",
+            kind="schedule",
+            route="monthly_report",
+            status="pending",
+            payload={"month": month, "to": list(sched.to), "channel": adapter.name},
+            created_at=utcnow(),
+        )
+        try:
+            async with session.begin_nested():
+                session.add(trig)
+        except IntegrityError:
+            res.duplicate = True
+            return res
+
+        rep = await build_monthly_report(session, svc, tenant_id, month)
+        card = monthly_card(rep)
+        for login in sched.to:
+            u = (
+                await session.scalars(select(User).where(User.tenant_id == tenant_id, User.login == login))
+            ).one_or_none()
+            if u is None or not u.is_active:
+                res.skipped[login] = "用户不存在或已停用"
+                continue
+            principal = principal_for_user(u, tenant)
+            if not principal.can("market.lead:read"):
+                res.skipped[login] = "缺少 market.lead:read 权限"
+                continue
+            ident = (
+                await session.scalars(
+                    select(ChannelIdentity).where(
+                        ChannelIdentity.tenant_id == tenant_id,
+                        ChannelIdentity.channel == adapter.name,
+                        ChannelIdentity.user_id == u.id,
+                    )
+                )
+            ).first()
+            if ident is None:
+                res.skipped[login] = f"没有绑定 {adapter.name} 账号"
+                continue
+            to = ConversationRef(
+                channel=adapter.name,  # type: ignore[arg-type]
+                conversation_id=ident.external_id,
+                conversation_type="direct",
+                user_id=ident.external_id,
+            )
+            outbox.append((login, to, card))
+        trig.status = "done"
+        trig.result = {"month": month, "recipients": [x[0] for x in outbox], "skipped": res.skipped}
+    for login, to, card in outbox:
+        try:
+            await adapter.send_card(to, card, card_id="", short_code="")
+            res.sent.append(login)
+        except ChannelError as e:
+            log.warning("月报发送失败 %s/%s：%s", tenant_id, login, e)
+            res.errors[login] = str(e)[:200]
+    return res
+
+
+async def monthly_loop(svc: Services, tenant_id: str, adapter: ChannelAdapter) -> None:
+    """常驻循环：每月按配置日与钟点推送上月全厂经营月报。"""
+    tenant = svc.registry.get(tenant_id)
+    if tenant is None or tenant.reports.monthly is None or not tenant.reports.monthly.to:
+        return
+    sched = tenant.reports.monthly
+    tz = ZoneInfo(tenant.timezone)
+    while True:
+        fire = next_monthly_fire(utcnow(), sched.day_of_month, sched.at, tz)
+        await asyncio.sleep(max(1.0, (fire - utcnow()).total_seconds()))
+        try:
+            month = prev_month_str(fire.date())
+            r = await send_monthly(svc, tenant_id, adapter, month)
+            log.info("%s 月报 %s：发送 %s，跳过 %s", tenant_id, r.month, r.sent, r.skipped)
+        except Exception:
+            log.exception("%s 月报推送失败", tenant_id)

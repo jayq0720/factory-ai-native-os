@@ -342,3 +342,50 @@ async def update_tenant_user(
         u.is_active = active
     await session.flush()
     return _user_out(u)
+
+
+@router.get("/im-bindings")
+async def list_im_bindings(session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """统计本租户活跃员工的 IM 账号绑定状态与覆盖率（便于试点上线前排查漏绑）。"""
+    from sqlalchemy import select
+
+    from fos.db.models import ChannelIdentity, User
+
+    users = (
+        await session.scalars(select(User).where(User.tenant_id == p.tenant_id).order_by(User.login.asc()))
+    ).all()
+    idents = (
+        await session.scalars(select(ChannelIdentity).where(ChannelIdentity.tenant_id == p.tenant_id))
+    ).all()
+    by_uid: dict[str, list[dict[str, str]]] = {}
+    for ident in idents:
+        by_uid.setdefault(ident.user_id, []).append(
+            {"channel": ident.channel, "external_id": ident.external_id}
+        )
+    items = []
+    active_cnt = 0
+    bound_active = 0
+    for u in users:
+        binds = sorted(by_uid.get(u.id, []), key=lambda x: (x["channel"], x["external_id"]))
+        if u.is_active:
+            active_cnt += 1
+            if binds:
+                bound_active += 1
+        items.append(
+            {
+                "login": u.login,
+                "display_name": u.display_name,
+                "roles": list(u.roles or []),
+                "is_active": bool(u.is_active),
+                "bindings": binds,
+                "bound": len(binds) > 0,
+            }
+        )
+    cov = round(bound_active / active_cnt * 100.0, 1) if active_cnt else 0.0
+    return {
+        "tenant_id": p.tenant_id,
+        "active_users": active_cnt,
+        "bound_active_users": bound_active,
+        "coverage_pct": cov,
+        "items": items,
+    }
