@@ -1,0 +1,79 @@
+# 耐火材料行业市场商机线索与竞品行情本体扩展（W27c）。
+# 商机漏斗、赢单/丢单复盘与竞品情报全部走事件账本，由 fos/market/guards.py 校验不变量。
+
+objects:
+  market_lead:
+    name: 市场商机线索
+    domain: market
+    description: 钢铁、水泥、玻璃等下游行业客户商机跟进、加权预测与赢/丢单复盘台账
+    properties:
+      lead_no: {type: string, name: 商机编号, required: true}
+      customer_name: {type: string, name: 客户名称, required: true}
+      industry:
+        type: enum
+        name: 下游行业
+        values: [steel, cement, glass, nonferrous, chemical, power, other]
+        required: true
+      source:
+        type: enum
+        name: 线索来源
+        values: [referral, exhibition, tender_portal, cold_call, existing_customer, other]
+        required: true
+      product_interest: {type: string, name: 意向产品/炉型, required: true}
+      est_amount: {type: number, name: 预计金额(元), required: true}
+      probability: {type: integer, name: 赢单概率(%), required: true}
+      owner_name: {type: string, name: 跟进负责人, required: true}
+      stage:
+        type: enum
+        name: 商机阶段
+        values: [new, qualified, quoted, negotiation, won, lost]
+        required: true
+      expected_close_date: {type: date, name: 预计成交日, required: true}
+      note: {type: text, name: 跟进/丢单说明}
+
+  competitor_intel:
+    name: 竞品行情情报
+    domain: market
+    description: 竞争对手报价水平、区域动态与行业价格走势记录
+    properties:
+      intel_no: {type: string, name: 情报编号, required: true}
+      competitor: {type: string, name: 竞争对手, required: true}
+      product_category: {type: string, name: 产品大类, required: true}
+      quoted_price: {type: number, name: 参考吨价(元)}
+      region: {type: string, name: 区域}
+      recorded_date: {type: date, name: 记录日期, required: true}
+      summary: {type: text, name: 行情摘要, required: true}
+
+events:
+  market.lead_created:
+    name: 新建市场商机线索
+    object: market_lead
+    op: create
+    permission: market.lead:write
+    evidence: required
+    fields:
+      [lead_no, customer_name, industry, source, product_interest, est_amount, probability, owner_name, stage, expected_close_date, note]
+
+  market.lead_updated:
+    name: 更新商机跟进阶段
+    object: market_lead
+    op: update
+    permission: market.lead:write
+    evidence: required
+    fields: [est_amount, probability, stage, expected_close_date, note]
+
+  market.lead_closed:
+    name: 商机赢单/丢单关闭
+    object: market_lead
+    op: update
+    permission: market.lead:write
+    evidence: required
+    fields: [stage, probability, note]
+
+  market.intel_logged:
+    name: 登记竞品行情情报
+    object: competitor_intel
+    op: create
+    permission: market.intel:write
+    evidence: required
+    fields: [intel_no, competitor, product_category, quoted_price, region, recorded_date, summary]
