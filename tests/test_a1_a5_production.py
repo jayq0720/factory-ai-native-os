@@ -271,3 +271,60 @@ def test_a5_all_frontend_pages_smoke_and_ledger_benchmark(
         assert main(["benchmark-ledger", "bench_t1", "--events", "10", "--allow-nonempty"]) == 0
     finally:
         get_settings.cache_clear()
+
+
+def test_golive_js_cookie_doctor_and_s3_backup(tmp_path: Path) -> None:
+    """验证 16 个工作台 JS 均开启 Cookie 凭据透传、doctor 生产项校验及灾备异地上传。"""
+    import asyncio
+
+    from fos.db.session import make_engine, make_sessionmaker
+    from fos.ops.backup import backup_all_tenants
+    from fos.ops.doctor import _check_blob_dir, _check_env
+
+    # 1. 全部 16 个工作台 JS 均启用 credentials: "same-origin"
+    js_files = sorted(STATIC_DIR.glob("*.js"))
+    assert len(js_files) >= 16
+    for jf in js_files:
+        assert 'credentials: "same-origin"' in jf.read_text(encoding="utf-8"), jf.name
+
+    # 2. doctor 生产校验：prod 缺 FOS_SESSION_SECRET 告警；s3 缺凭据失败、齐全通过
+    chk_env = _check_env(Settings(env="prod", session_secret="", redis_url="redis://r:6379/0"))
+    assert chk_env.status == "warn" and "FOS_SESSION_SECRET" in chk_env.detail
+    assert "redis=on" in chk_env.detail
+
+    chk_s3_bad = _check_blob_dir(Settings(blob_backend="s3", s3_endpoint="", s3_bucket=""))
+    assert chk_s3_bad.status == "fail" and "FOS_S3_ENDPOINT" in chk_s3_bad.detail
+
+    chk_s3_ok = _check_blob_dir(
+        Settings(
+            blob_backend="s3",
+            s3_endpoint="https://oss-cn-shanghai.aliyuncs.com",
+            s3_bucket="fos-b",
+            s3_access_key="ak",
+            s3_secret_key="sk",
+        )
+    )
+    assert chk_s3_ok.status == "ok"
+
+    # 3. 灾备全租户导出支持异地上传至 BlobStore（S3/OSS）并记录 remote_uri
+    db_url = f"sqlite+aiosqlite:///{tmp_path / 'bk.db'}"
+    remote_store = LocalBlobStore(tmp_path / "remote_oss")
+
+    async def _run_bk() -> dict:
+        eng = make_engine(db_url)
+        from fos.db.models import Base
+
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        sm = make_sessionmaker(eng)
+        try:
+            async with sm() as sess:
+                return await backup_all_tenants(
+                    sess, ["luneng"], tmp_path / "bk_out", upload_blob_store=remote_store
+                )
+        finally:
+            await eng.dispose()
+
+    res = asyncio.run(_run_bk())
+    assert res["tenants_count"] == 1
+    assert res["items"][0]["remote_uri"].startswith("blob://luneng/")

@@ -15,8 +15,8 @@ function store(op, v) {
   return "";
 }
 async function api(path, opts = {}) {
-  const headers = Object.assign({ Authorization: "Bearer " + state.key }, opts.headers || {});
-  const r = await fetch(path, Object.assign({}, opts, { headers }));
+  const headers = Object.assign(state.key ? { Authorization: "Bearer " + state.key } : {}, opts.headers || {});
+  const r = await fetch(path, Object.assign({ credentials: "same-origin" }, opts, { headers }));
   if (r.status === 401) { logout(); throw new Error("登录已失效，请重新输入 API Key"); }
   return r;
 }

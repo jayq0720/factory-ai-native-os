@@ -38,13 +38,16 @@ def _check_env(settings: Settings) -> DoctorCheck:
             warns.append("生产环境关闭了 API 限流（FOS_RATE_LIMIT_PER_MIN=0）")
         if not settings.edge_command_key.strip():
             warns.append("未配置 FOS_EDGE_COMMAND_KEY，无法向厂端网关下发签名命令")
+        if not settings.session_secret.strip():
+            warns.append("未配置 FOS_SESSION_SECRET，重启或多副本将导致 Web 登录态失效")
         if settings.llm_mode == "mock":
             warns.append("FOS_LLM_MODE=mock")
         if settings.ocr_mode == "mock":
             warns.append("FOS_OCR_MODE=mock")
+    redis_st = "on" if settings.redis_url.strip() else "off"
     base = (
         f"env={settings.env}, llm={settings.llm_mode}, ocr={settings.ocr_mode}, "
-        f"rate_limit={settings.rate_limit_per_min}/min"
+        f"blob={settings.blob_backend}, redis={redis_st}, rate_limit={settings.rate_limit_per_min}/min"
     )
     if warns:
         return DoctorCheck("env_profile", "warn", f"{base}；提示：{'；'.join(warns)}")
@@ -52,6 +55,24 @@ def _check_env(settings: Settings) -> DoctorCheck:
 
 
 def _check_blob_dir(settings: Settings) -> DoctorCheck:
+    if settings.blob_backend == "s3":
+        missing = [
+            k
+            for k, v in (
+                ("FOS_S3_ENDPOINT", settings.s3_endpoint),
+                ("FOS_S3_BUCKET", settings.s3_bucket),
+                ("FOS_S3_ACCESS_KEY", settings.s3_access_key),
+                ("FOS_S3_SECRET_KEY", settings.s3_secret_key),
+            )
+            if not v.strip()
+        ]
+        if missing:
+            return DoctorCheck("blob_dir", "fail", f"FOS_BLOB_BACKEND=s3 缺少必填配置：{', '.join(missing)}")
+        return DoctorCheck(
+            "blob_dir",
+            "ok",
+            f"S3/OSS 对象存储已配置：{settings.s3_endpoint.rstrip('/')}/{settings.s3_bucket}",
+        )
     target = settings.blob_dir
     if target.exists():
         if target.is_dir():

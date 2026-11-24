@@ -12,11 +12,12 @@ function setMsg(text, isErr = false) {
 
 async function api(path, opts = {}) {
   const key = getKey();
-  if (!key) throw new Error("请先填入 API Key");
-  localStorage.setItem("fos_key", key);
+  if (key) localStorage.setItem("fos_key", key);
+  const auth = key ? { Authorization: `Bearer ${key}` } : {};
   const res = await fetch(path, {
+    credentials: "same-origin",
     ...opts,
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers: { ...auth, "Content-Type": "application/json", ...(opts.headers || {}) },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
