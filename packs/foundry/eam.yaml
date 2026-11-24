@@ -1,0 +1,6 @@
+# 工业陶瓷行业设备管理（EAM）默认配置
+pm_remind_days: 7
+auto_wo_on_abnormal: true
+default_window_days: 30
+planned_hours_per_day: 24.0
+notify_roles: [admin, gm]

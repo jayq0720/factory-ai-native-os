@@ -1,0 +1,87 @@
+# 精密铸造与热处理行业包：扩展熔炼炉、熔炼炉次、模具台账及力学/金相理化检验指标。
+
+objects:
+  furnace:
+    name: 熔炼与热处理炉
+    domain: production
+    properties:
+      name: {type: string, name: 炉号名称, required: true}
+      furnace_type:
+        type: enum
+        name: 炉型
+        required: true
+        values: [induction, electric_arc, holding, heat_treatment, vacuum_melting, other]
+      capacity_tons: {type: number, name: 额定容量, unit: 吨}
+      max_temp_c: {type: number, name: 最高炉温, unit: ℃}
+
+  mold_pattern:
+    name: 铸造模具
+    domain: eam
+    properties:
+      code: {type: string, name: 模具编号, required: true}
+      product: {type: ref, target: product, name: 对应铸件, required: true}
+      cavity_count: {type: integer, name: 型腔数, required: true}
+      rated_shots: {type: integer, name: 设计寿命模次}
+      status: {type: enum, name: 状态, values: [active, maintenance, retired]}
+
+  heat_lot:
+    name: 熔炼炉次
+    domain: production
+    properties:
+      furnace: {type: ref, target: furnace, name: 熔炼炉, required: true}
+      heat_no: {type: string, name: 炉次号, required: true}
+      alloy_grade: {type: string, name: 合金牌号, required: true}
+      tapping_temp_c: {type: number, name: 出炉温度, unit: ℃}
+      pouring_temp_c: {type: number, name: 浇注温度, unit: ℃}
+      started_at: {type: datetime, name: 开炉时间, required: true}
+      status: {type: enum, name: 状态, values: [melting, poured, completed, scrapped]}
+
+extend:
+  product:
+    alloy_grade:
+      type: enum
+      name: 材质牌号
+      values: [qt450_10, qt500_7, ht250, zg270_500, sus304, alsi7mg, other]
+    casting_weight_kg: {type: number, name: 单件毛重, unit: kg}
+  production_batch:
+    heat_lot: {type: ref, target: heat_lot, name: 熔炼炉次}
+    mold_pattern: {type: ref, target: mold_pattern, name: 铸造模具}
+    casting_process:
+      type: enum
+      name: 铸造工艺
+      values: [sand_casting, investment_casting, lost_foam, die_casting, gravity_casting]
+  inspection:
+    tensile_strength_mpa: {type: number, name: 抗拉强度, unit: MPa}
+    elongation_pct: {type: number, name: 断后伸长率, unit: "%"}
+    hardness_hbw: {type: number, name: 布氏硬度, unit: HBW}
+    nodularity_pct: {type: number, name: 球化率, unit: "%"}
+    ndt_passed: {type: bool, name: 无损探伤合格}
+
+events:
+  production.furnace_registered:
+    name: 登记熔炼/热处理炉
+    object: furnace
+    op: create
+    permission: production.kiln:write
+    fields: [name, furnace_type, capacity_tons, max_temp_c]
+
+  eam.mold_registered:
+    name: 登记铸造模具
+    object: mold_pattern
+    op: create
+    permission: eam.equipment:write
+    fields: [code, product, cavity_count, rated_shots, status]
+
+  production.heat_lot_started:
+    name: 开炉熔炼
+    object: heat_lot
+    op: create
+    permission: production.kiln:write
+    fields: [furnace, heat_no, alloy_grade, tapping_temp_c, started_at, status]
+
+  production.heat_lot_poured:
+    name: 完成浇注
+    object: heat_lot
+    op: update
+    permission: production.kiln:write
+    fields: [pouring_temp_c, status]

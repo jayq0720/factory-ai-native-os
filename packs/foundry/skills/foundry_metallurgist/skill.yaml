@@ -1,0 +1,24 @@
+id: foundry_metallurgist
+name: 铸造熔炼与金相工艺助理
+role: 铸造工艺工程师
+version: 1
+description: 查询中频电炉熔炼炉次、铸造模具台账、出炉/浇注温度及抗拉强度、布氏硬度、球化率与无损探伤检验记录
+autonomy: L1
+model: fos-chat
+max_steps: 5
+permissions:
+  - "production.*:read"
+  - "eam.*:read"
+  - "quality.*:read"
+tools:
+  - ontology.describe
+  - objects.list
+  - objects.get
+keywords:
+  - 熔炼炉次
+  - 浇注温度
+  - 球化率
+  - 布氏硬度
+  - 抗拉强度
+  - 铸造模具
+  - 球墨铸铁

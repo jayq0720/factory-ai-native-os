@@ -1,0 +1,36 @@
+# 精密铸造与热处理行业包（foundry）黄金评测数据集（12 条）。
+# 验证跨行业零代码扩展：Fast Path 分流、铸造 Skill 路由与熔炼/抛丸专属环保阈值（粉尘 12 mg/m³、SO2 35 mg/m³）。
+
+fast_path_routing:
+  - {id: fnd_fp_eq, text: 设备, expect: eam_equipment}
+  - {id: fnd_fp_env, text: 环保, expect: ehs_env}
+  - {id: fnd_fp_mkt, text: 经营月报, expect: market_monthly}
+  - {id: fnd_fp_ops, text: 系统状态, expect: ops_status}
+  - {id: fnd_fp_nl, text: 帮我对比一下QT450球墨铸铁和ZG270铸钢的浇注温度范围, expect: router}
+
+skill_routing:
+  - {id: fnd_sk_met, text: 查看最近熔炼炉次的浇注温度和球化率抗拉强度, expect_skill: foundry_metallurgist}
+  - {id: fnd_sk_ehs, text: 查看抛丸车间粉尘排放环保监测和安全隐患, expect_skill: ehs_officer}
+  - {id: fnd_sk_chat, text: 辛苦了明天见, expect_skill: null}
+
+deterministic_calculators:
+  # 铸造抛丸/熔炼粉尘限值 12.0 mg/m³：13.0 超标、10.0 达标
+  - id: fnd_calc_dust_exceed
+    kind: ehs_env
+    input: {metric: dust, value: 13.0}
+    expect: {passed: false}
+  - id: fnd_calc_dust_ok
+    kind: ehs_env
+    input: {metric: dust, value: 10.0}
+    expect: {passed: true}
+  # 二氧化硫 SO2 限值 35.0 mg/m³：40.0 超标、25.0 达标
+  - id: fnd_calc_so2_exceed
+    kind: ehs_env
+    input: {metric: so2, value: 40.0}
+    expect: {passed: false}
+  - id: fnd_calc_so2_ok
+    kind: ehs_env
+    input: {metric: so2, value: 25.0}
+    expect: {passed: true}
+
+policy_redlines: []

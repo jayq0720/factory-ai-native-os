@@ -1,6 +1,6 @@
 # Factory AI Native OS
 
-让没有任何信息化系统的工厂，跳过"先上 MES/ERP"，直接由常驻在线的工厂 Agent 承担录入、追溯、监控、分析、审批与提醒。当前内置双行业包：**耐火材料（`packs/refractory`，首个试点六安绿能）** 与 **工业陶瓷（`packs/ceramics`）**，支持零代码多租户与跨行业扩展。
+让没有任何信息化系统的工厂，跳过"先上 MES/ERP"，直接由常驻在线的工厂 Agent 承担录入、追溯、监控、分析、审批与提醒。当前内置三大行业包：**耐火材料（`packs/refractory`，首个试点六安绿能）**、**工业陶瓷（`packs/ceramics`）** 与 **精密铸造（`packs/foundry`）**，支持零代码多租户与跨行业扩展。
 
 - 架构与 31 周路线图：`docs/development-plan.md`（**M1–M5 全职能里程碑 + 生产级 SRE/灾备/治理体系已完成**）
 - 工程规范与代码地图：`CLAUDE.md`
@@ -13,7 +13,7 @@
 - **工程与投标**：技术文件解析 → 选材匹配 → 方案/BOM/报价草稿与二次审核（M2，`docs/engineering.md`）、招标拆解与偏离表/资审提醒（`docs/tender.md`）。
 - **产供销主干（M3）**：销售合同/订单/发货/签收（`docs/orders.md`）、约束求解排窑与交期评估（`docs/planning.md`）、实时库存/请购/比价/采购到货（`docs/supply.md`）。
 - **质量、财务与设备（M4）**：来料/成品检验、自动 NCR 与 8D 追溯、质保书、计量器具校准与 ISO 审核包（`docs/quality.md`）；应收/应付账龄、批次成本、订单毛利与金蝶/用友凭证草稿（`docs/finance.md`）；设备台账、预防性保养、故障工单与 MTBF/MTTR（`docs/eam.md`）。
-- **全职能扩展、SRE 与灾备（M5+）**：EHS 安全环保（`docs/ehs.md`）、人力排班与计件工资（`docs/hr.md`）、研发配方与试产（`docs/rnd.md`）、筑炉施工与烘炉验收（`docs/construction.md`）、经营决策驾驶舱/商机漏斗/定时月报（`docs/market.md`）、统一 Watchdog 巡检 + Prometheus 指标/告警规则包 + 不可变账本防篡改灾备/恢复 + 云边一键 `doctor` 诊断（`docs/ops.md`）、双行业包 60 条零成本黄金评测与 Badcase 回归引擎（`docs/eval.md`）。
+- **全职能扩展、SRE 与灾备（M5+）**：EHS 安全环保（`docs/ehs.md`）、人力排班与计件工资（`docs/hr.md`）、研发配方与试产（`docs/rnd.md`）、筑炉施工与烘炉验收（`docs/construction.md`）、经营决策驾驶舱/商机漏斗/定时月报（`docs/market.md`）、统一 Watchdog 巡检 + Prometheus/Grafana 监控告警包 + 不可变账本实时一致性审计/防篡改灾备恢复 + 脱敏诊断包 + 云边一键 `doctor` 诊断（`docs/ops.md`）、三行业包 75 条零成本黄金评测与 Badcase 回归引擎（`docs/eval.md`）。
 
 ## 仓库目录
 
@@ -21,11 +21,12 @@
 |---|---|
 | `fos/` | Python 核心 OS、15 大业务领域模块、FastAPI 接口、统一 CLI 与 16 个 Web 工作台（`/app/`） |
 | `crates/` | Rust Workspace：`fos-protocol` 云边数据契约、`fos-edge` 厂端 Modbus 采集与断网缓存守护进程 |
-| `packs/refractory/` | 耐火材料行业包：本体扩展、14 个岗位 Skill、50 条黄金评测数据集 |
-| `packs/ceramics/` | 工业陶瓷行业包：本体/EHS/EAM/市场扩展、陶瓷工艺与安环 Skill、10 条黄金评测数据集 |
+| `packs/refractory/` | 耐火材料行业包：本体扩展、14 个岗位 Skill、52 条黄金评测数据集 |
+| `packs/ceramics/` | 工业陶瓷行业包：本体/EHS/EAM/市场扩展、陶瓷工艺与安环 Skill、11 条黄金评测数据集 |
+| `packs/foundry/` | 精密铸造行业包：熔炼炉次/模具/金相本体扩展、铸造工艺与安环 Skill、12 条黄金评测数据集 |
 | `tenants/<id>/` | 租户目录（`tenant.yaml` 与可选 `policy.yaml`，不含密钥，支持 `fos clone-tenant` 一键复制） |
 | `migrations/` | Alembic PostgreSQL 迁移脚本 |
-| `deploy/` | Docker Compose（`db`/`api`/`ocr`/`litellm`/`channels`/`watchdog`/`backup`）、Prometheus 告警包（`deploy/monitoring/`）与阿里云部署脚本 |
+| `deploy/` | Docker Compose（`db`/`api`/`ocr`/`litellm`/`channels`/`watchdog`/`backup`）、Prometheus/Grafana 监控包（`deploy/monitoring/`）与阿里云部署脚本 |
 
 ## 本地快速试用与开发
 
