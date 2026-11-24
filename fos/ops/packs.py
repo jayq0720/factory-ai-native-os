@@ -65,7 +65,7 @@ def validate_pack(packs_dir: Path, pack_name: str) -> dict[str, Any]:
     events_count = 0
     ontology_layers: list[str] = []
     try:
-        onto = load_ontology(tenant, packs_dir=packs_dir, tenants_dir=None)
+        onto = load_ontology(tenant, packs_dir=packs_dir, tenants_dir=packs_dir / "_no_tenant")
         objects_count = len(onto.objects)
         events_count = len(onto.events)
         ontology_layers = list(onto.layers)
