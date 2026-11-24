@@ -61,6 +61,7 @@ def test_verify_ledger_cli_detects_counter_drift(
     get_settings.cache_clear()
     try:
         assert main(["init-db"]) == 0
+        capsys.readouterr()
         assert main(["verify-ledger", "luneng", "--json"]) == 0
         rep = json.loads(capsys.readouterr().out)
         assert rep["ok"] is True and rep["counter_aligned"] is True
