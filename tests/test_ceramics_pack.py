@@ -60,6 +60,6 @@ async def test_zero_code_provision_and_golden_eval_for_ceramics_factory(tmp_path
 
         ev = run_golden_eval(svc, "jingde-ceramics")
         assert ev["all_passed"] is True, ev["badcases"]
-        assert ev["pass_rate_pct"] == 100.0 and ev["total"] == 10
+        assert ev["pass_rate_pct"] == 100.0 and ev["total"] >= 10
     finally:
         await svc.aclose()

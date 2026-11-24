@@ -5,6 +5,7 @@ fast_path_routing:
   - {id: cer_fp_eq, text: 设备, expect: eam_equipment}
   - {id: cer_fp_env, text: 环保, expect: ehs_env}
   - {id: cer_fp_mkt, text: 经营月报, expect: market_monthly}
+  - {id: cer_fp_ops, text: 系统状态, expect: ops_status}
   - {id: cer_fp_nl, text: 帮我对比一下99氧化铝陶瓷和氧化锆的抗弯强度, expect: router}
 
 skill_routing:

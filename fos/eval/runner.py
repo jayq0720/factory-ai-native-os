@@ -24,6 +24,7 @@ from fos.triggers.intake import (
     _finance_word,
     _hr_word,
     _market_word,
+    _ops_word,
     _quality_word,
     _rnd_word,
 )
@@ -89,6 +90,8 @@ def _classify_fast_path(text: str) -> str:
         return f"construction_{cm}"
     if mm := _market_word(t):
         return f"market_{mm}"
+    if om := _ops_word(t):
+        return f"ops_{om}"
     return "router"
 
 
