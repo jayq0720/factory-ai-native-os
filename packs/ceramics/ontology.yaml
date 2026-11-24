@@ -1,0 +1,81 @@
+# 工业陶瓷行业包：在核心本体上扩展陶瓷窑炉、釉料/坯体配方、烧成窑次及陶瓷专属理化指标。
+
+objects:
+  kiln:
+    name: 陶瓷窑炉
+    domain: production
+    properties:
+      name: {type: string, name: 名称, required: true}
+      kiln_type: {type: enum, name: 窑型, required: true,
+                  values: [roller, shuttle, tunnel, atmosphere_furnace, vacuum_sintering, other]}
+      access_path: {type: enum, name: 接入路径, values: [direct, retrofit, manual], required: true}
+      max_temp: {type: number, name: 最高烧成温度, unit: ℃}
+
+  glaze_recipe:
+    name: 坯釉配方
+    domain: rnd
+    description: 工业陶瓷坯体与釉料配方版本受控对象
+    properties:
+      code: {type: string, name: 配方编号, required: true}
+      version: {type: integer, name: 版本号, required: true}
+      product: {type: ref, target: product, name: 适用陶瓷产品, required: true}
+      firing_temp_c: {type: number, name: 目标烧成温度, unit: ℃}
+      atmosphere: {type: enum, name: 烧成气氛, values: [oxidizing, reducing, nitrogen, vacuum]}
+      note: {type: text, name: 工艺说明}
+
+  kiln_run:
+    name: 烧成窑次
+    domain: production
+    properties:
+      kiln: {type: ref, target: kiln, name: 窑炉, required: true}
+      run_no: {type: string, name: 窑次号, required: true}
+      started_at: {type: datetime, name: 开始时间, required: true}
+      ended_at: {type: datetime, name: 结束时间}
+      peak_temp_c: {type: number, name: 峰值温度, unit: ℃}
+      status: {type: enum, name: 状态, values: [firing, finished, aborted]}
+
+extend:
+  product:
+    ceramic_grade: {type: enum, name: 瓷质等级,
+                    values: [alumina_95, alumina_99, zirconia, silicon_nitride, porcelain, other]}
+    water_absorption_max: {type: number, name: 吸水率上限, unit: "%"}
+  production_batch:
+    glaze_recipe: {type: ref, target: glaze_recipe, name: 坯釉配方}
+    kiln_run: {type: ref, target: kiln_run, name: 烧成窑次}
+    forming: {type: enum, name: 成型工艺,
+              values: [dry_pressing, isostatic_pressing, slip_casting, injection_molding, extrusion]}
+  inspection:
+    flexural_strength: {type: number, name: 抗弯强度, unit: MPa}
+    rockwell_hardness: {type: number, name: 洛氏硬度, unit: HRA}
+    water_absorption: {type: number, name: 吸水率, unit: "%"}
+    bulk_density: {type: number, name: 体积密度, unit: g/cm³}
+    whiteness: {type: number, name: 白度, unit: "%"}
+
+events:
+  production.kiln_registered:
+    name: 登记陶瓷窑炉
+    object: kiln
+    op: create
+    permission: production.kiln:write
+    fields: [name, kiln_type, access_path, max_temp]
+
+  rnd.glaze_recipe_released:
+    name: 发布坯釉配方版本
+    object: glaze_recipe
+    op: create
+    permission: rnd.recipe:approve
+    fields: [code, version, product, firing_temp_c, atmosphere, note]
+
+  production.kiln_run_started:
+    name: 开窑烧成
+    object: kiln_run
+    op: create
+    permission: production.kiln:write
+    fields: [kiln, run_no, started_at, status]
+
+  production.kiln_run_finished:
+    name: 结束窑次
+    object: kiln_run
+    op: update
+    permission: production.kiln:write
+    fields: [ended_at, peak_temp_c, status]

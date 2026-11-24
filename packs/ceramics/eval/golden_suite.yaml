@@ -1,0 +1,33 @@
+# 工业陶瓷行业包（ceramics）黄金评测数据集。
+# 验证跨行业包可独立执行 Fast Path、Skill 路由与陶瓷行业专属环保阈值（粉尘限值 15 mg/m³）。
+
+fast_path_routing:
+  - {id: cer_fp_eq, text: 设备, expect: eam_equipment}
+  - {id: cer_fp_env, text: 环保, expect: ehs_env}
+  - {id: cer_fp_mkt, text: 经营月报, expect: market_monthly}
+  - {id: cer_fp_nl, text: 帮我对比一下99氧化铝陶瓷和氧化锆的抗弯强度, expect: router}
+
+skill_routing:
+  - {id: cer_sk_proc, text: 查看最近辊道窑的烧成窑次和坯釉配方抗弯强度, expect_skill: ceramic_process_advisor}
+  - {id: cer_sk_ehs, text: 查看喷雾干燥塔粉尘排放环保监测和安全隐患, expect_skill: ehs_officer}
+  - {id: cer_sk_chat, text: 早上好辛苦了, expect_skill: null}
+
+deterministic_calculators:
+  # 工业陶瓷粉尘限值 15.0 mg/m³（比耐材 20.0 更严）：16.0 超标、12.0 达标
+  - id: cer_calc_dust_exceed
+    kind: ehs_env
+    input: {metric: dust, value: 16.0}
+    expect: {passed: false}
+  - id: cer_calc_dust_ok
+    kind: ehs_env
+    input: {metric: dust, value: 12.0}
+    expect: {passed: true}
+  - id: cer_calc_mkt_funnel
+    kind: market_funnel
+    input:
+      leads:
+        - {stage: quoted, est_amount: 100000.0, probability: 55}
+        - {stage: won, est_amount: 200000.0, probability: 100}
+    expect: {weighted_pipeline_amount: 55000.0, won_amount: 200000.0}
+
+policy_redlines: []
