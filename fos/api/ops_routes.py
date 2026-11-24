@@ -82,13 +82,22 @@ async def get_prometheus_metrics(request: Request, session: SessionDep, p: OpsAd
     """导出标准 Prometheus OpenMetrics 指标（需平台超级管理员权限）。"""
     from fastapi import Response
 
+    from fos.governance.budget import check_tenant_budget
     from fos.ops.metrics import HttpMetrics, render_prometheus
+    from fos.ops.packs import list_packs
 
     if "*.*:*" not in p.permissions:
         raise HTTPException(403, detail="仅平台超级管理员可抓取系统指标")
-    ov = await ops.saas_overview(session, request.app.state.services, _today(request, p.tenant_id))
+    svc = request.app.state.services
+    ov = await ops.saas_overview(session, svc, _today(request, p.tenant_id))
+    budgets = []
+    for tid in sorted(svc.registry.ids()):
+        t = svc.registry.get(tid)
+        if t is not None:
+            budgets.append(await check_tenant_budget(session, t))
+    packs = list_packs(request.app.state.settings.packs_dir)
     hm = getattr(request.app.state, "http_metrics", None) or HttpMetrics()
-    body = render_prometheus(hm, ov)
+    body = render_prometheus(hm, ov, budgets=budgets, packs=packs)
     return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 

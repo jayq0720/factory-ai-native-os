@@ -56,8 +56,14 @@ class HttpMetrics:
         return lines
 
 
-def render_prometheus(http_metrics: HttpMetrics, overview: dict[str, Any]) -> str:
-    """将 HTTP 指标与多租户 SaaS 运行快照渲染为标准 Prometheus 文本格式。"""
+def render_prometheus(
+    http_metrics: HttpMetrics,
+    overview: dict[str, Any],
+    *,
+    budgets: list[dict[str, Any]] | None = None,
+    packs: list[dict[str, Any]] | None = None,
+) -> str:
+    """将 HTTP 指标、多租户 SaaS 运行快照、预算租约与行业包状态渲染为标准 Prometheus 文本格式。"""
     lines = http_metrics.render_lines()
     tenants = overview.get("tenants") or []
     lines.extend(
@@ -109,6 +115,47 @@ def render_prometheus(http_metrics: HttpMetrics, overview: dict[str, Any]) -> st
         tid = _esc(str(t["tenant_id"]))
         ok = 1 if t.get("security_passed") else 0
         lines.append(f'fos_security_baseline_ok{{tenant="{tid}"}} {ok}')
+    if budgets is not None:
+        lines.extend(
+            [
+                "# HELP fos_budget_daily_ratio Daily LLM token budget usage ratio per tenant.",
+                "# TYPE fos_budget_daily_ratio gauge",
+            ]
+        )
+        for b in budgets:
+            tid = _esc(str(b["tenant_id"]))
+            lines.append(f'fos_budget_daily_ratio{{tenant="{tid}"}} {float(b["daily_pct"]) / 100.0:.4f}')
+        lines.extend(
+            [
+                "# HELP fos_budget_monthly_ratio Monthly LLM token budget usage ratio per tenant.",
+                "# TYPE fos_budget_monthly_ratio gauge",
+            ]
+        )
+        for b in budgets:
+            tid = _esc(str(b["tenant_id"]))
+            lines.append(f'fos_budget_monthly_ratio{{tenant="{tid}"}} {float(b["monthly_pct"]) / 100.0:.4f}')
+        lines.extend(
+            [
+                "# HELP fos_budget_allowed Whether LLM calls are allowed (1=yes, 0=circuit_open).",
+                "# TYPE fos_budget_allowed gauge",
+            ]
+        )
+        for b in budgets:
+            tid = _esc(str(b["tenant_id"]))
+            lines.append(f'fos_budget_allowed{{tenant="{tid}"}} {1 if b.get("allowed") else 0}')
+    if packs is not None:
+        lines.extend(
+            [
+                "# HELP fos_industry_packs_total Number of installed industry packs.",
+                "# TYPE fos_industry_packs_total gauge",
+                f"fos_industry_packs_total {len(packs)}",
+                "# HELP fos_industry_pack_ok Industry pack validation status (1=ok, 0=error).",
+                "# TYPE fos_industry_pack_ok gauge",
+            ]
+        )
+        for pk in packs:
+            pname = _esc(str(pk["pack"]))
+            lines.append(f'fos_industry_pack_ok{{pack="{pname}"}} {1 if pk.get("ok") else 0}')
     return "\n".join(lines) + "\n"
 
 

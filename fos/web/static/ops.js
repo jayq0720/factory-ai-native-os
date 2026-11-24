@@ -53,21 +53,29 @@
     try {
       const me = await (await api("/v1/me")).json();
       $("who").textContent = `${me.tenant_name} · ${me.display_name}`;
-      const [ov, sec, aud, bud, ks, us] = await Promise.all([
+      const [ov, sec, aud, bud, ks, us, pks, imb] = await Promise.all([
         api("/v1/ops/tenants").then((r) => r.json()),
         api("/v1/ops/security").then((r) => r.json()),
         api("/v1/ops/audit?limit=20").then((r) => r.json()),
         api("/v1/ops/budget").then((r) => r.json()),
         api("/v1/ops/keys").then((r) => r.json()),
         api("/v1/ops/users").then((r) => r.json()),
+        api("/v1/ops/packs").then((r) => r.json()),
+        api("/v1/ops/im-bindings").then((r) => r.json()),
       ]);
       const t = ov.totals;
       $("saasSummary").textContent =
         `已接入工厂 ${ov.tenant_count} 家 | 活跃用户 ${t.users_active} | 账本事件 ${t.events_total}` +
         ` | 未闭环待办 ${t.open_todos} | 待审批 ${t.pending_approvals} | 7日 Token ${t.llm_tokens_7d}`;
       $("budgetSummary").textContent =
-        `状态：${bud.status}（${bud.reason}） | 今日 ${bud.daily_used}/${bud.daily_limit} (${bud.daily_pct}%)` +
+        `预算租约：${bud.status}（${bud.reason}） | 今日 ${bud.daily_used}/${bud.daily_limit} (${bud.daily_pct}%)` +
         ` | 本月 ${bud.monthly_used}/${bud.monthly_limit} (${bud.monthly_pct}%)`;
+      const packStr = (pks.items || [])
+        .map((x) => `${x.pack}(${x.ok ? "正常" : "异常"}, Skill:${x.skills_count}, 用例:${x.eval_cases})`)
+        .join(" / ");
+      $("packSummary").textContent = `已安装行业包（${pks.count} 个）：${packStr}`;
+      $("imSummary").textContent =
+        `全厂 IM 绑定覆盖率：${imb.bound_active_users}/${imb.active_users} 活跃员工（${imb.coverage_pct}%）`;
 
       fillTable("tenantTable", ov.tenants || [], [
         (r) => r.tenant_id,
