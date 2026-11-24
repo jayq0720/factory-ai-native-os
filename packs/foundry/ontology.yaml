@@ -55,7 +55,7 @@ extend:
     elongation_pct: {type: number, name: 断后伸长率, unit: "%"}
     hardness_hbw: {type: number, name: 布氏硬度, unit: HBW}
     nodularity_pct: {type: number, name: 球化率, unit: "%"}
-    ndt_passed: {type: boolean, name: 无损探伤合格}
+    ndt_passed: {type: bool, name: 无损探伤合格}
 
 events:
   production.furnace_registered:
