@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fos-config
+  namespace: fos
+data:
+  FOS_ENV: "prod"
+  FOS_LLM_MODE: "litellm"
+  FOS_OCR_MODE: "qwen_vl"
+  FOS_OCR_CONCURRENCY: "4"
+  FOS_OCR_TIMEOUT_S: "120"
+  FOS_RATE_LIMIT_PER_MIN: "600"
+  FOS_AGENT_MAX_TOKENS: "40000"
+  FOS_BLOB_DIR: "/data/blobs"

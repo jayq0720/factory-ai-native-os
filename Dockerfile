@@ -13,9 +13,13 @@ COPY alembic.ini ./
 COPY migrations ./migrations
 COPY tenants ./tenants
 COPY packs ./packs
-RUN useradd --create-home --uid 10001 fos && mkdir -p /data/blobs && chown fos /data/blobs
+RUN useradd --create-home --uid 10001 fos \
+    && mkdir -p /data/blobs /data/backups \
+    && chown fos:fos /data/blobs /data/backups
 ENV FOS_BLOB_DIR=/data/blobs
 USER fos
 EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
 # 启动前执行数据库迁移（可重复执行）
 CMD ["sh", "-c", "fos init-db && exec uvicorn fos.api.app:app --host 0.0.0.0 --port 8000 --proxy-headers"]

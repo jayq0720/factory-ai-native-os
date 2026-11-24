@@ -1,0 +1,115 @@
+# 全厂 Watchdog 巡检、不可变账本每日防篡改灾备与账本一致性审计 CronJob 组合
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fos-watchdog
+  namespace: fos
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+          containers:
+            - name: watchdog
+              image: fos-api:latest
+              command: ["fos", "watchdog", "--all"]
+              envFrom:
+                - configMapRef:
+                    name: fos-config
+              env:
+                - name: FOS_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: fos-secrets
+                      key: database-url
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fos-backup-ledger
+  namespace: fos
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+          containers:
+            - name: backup
+              image: fos-api:latest
+              command: ["fos", "backup-ledger", "--all", "--out-dir", "/data/backups", "--keep", "30"]
+              envFrom:
+                - configMapRef:
+                    name: fos-config
+              env:
+                - name: FOS_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: fos-secrets
+                      key: database-url
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backups
+                  mountPath: /data/backups
+          volumes:
+            - name: backups
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fos-verify-ledger
+  namespace: fos
+spec:
+  schedule: "30 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+          containers:
+            - name: verify
+              image: fos-api:latest
+              command: ["fos", "verify-ledger", "luneng"]
+              envFrom:
+                - configMapRef:
+                    name: fos-config
+              env:
+                - name: FOS_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: fos-secrets
+                      key: database-url
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
