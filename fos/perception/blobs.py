@@ -88,9 +88,8 @@ def sign_s3_v4(
     canonical_uri = quote(parsed.path or "/", safe="/-_.~")
     canonical_headers = f"host:{host}\nx-amz-content-sha256:{payload_sha256}\nx-amz-date:{amz_date}\n"
     signed_headers = "host;x-amz-content-sha256;x-amz-date"
-    canonical_req = "\n".join(
-        [method.upper(), canonical_uri, parsed.query, canonical_headers, signed_headers, payload_sha256]
-    )
+    parts = [method.upper(), canonical_uri, parsed.query, canonical_headers, signed_headers, payload_sha256]
+    canonical_req = "\n".join(parts)
     scope = f"{date_stamp}/{region}/s3/aws4_request"
     req_hash = hashlib.sha256(canonical_req.encode("utf-8")).hexdigest()
     string_to_sign = f"AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{req_hash}"
@@ -99,10 +98,8 @@ def sign_s3_v4(
     k_service = _hmac_sha256(k_region, "s3")
     k_signing = _hmac_sha256(k_service, "aws4_request")
     sig = hmac.new(k_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
-    auth = (
-        f"AWS4-HMAC-SHA256 Credential={access_key}/{scope}, "
-        f"SignedHeaders={signed_headers}, Signature={sig}"
-    )
+    cred = f"Credential={access_key}/{scope}"
+    auth = f"AWS4-HMAC-SHA256 {cred}, SignedHeaders={signed_headers}, Signature={sig}"
     return {
         "Host": host,
         "x-amz-content-sha256": payload_sha256,

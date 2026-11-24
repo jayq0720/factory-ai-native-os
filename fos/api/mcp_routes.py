@@ -101,13 +101,7 @@ async def mcp_endpoint(
             extras["planning"] = svc.planning[principal.tenant_id]
         if principal.tenant_id in svc.supply:
             extras["supply"] = svc.supply[principal.tenant_id]
-        ctx = ToolContext(
-            session=session,
-            user=principal,
-            skill=mcp_skill,
-            ontology=onto,
-            extras=extras,
-        )
+        ctx = ToolContext(session=session, user=principal, skill=mcp_skill, ontology=onto, extras=extras)
         try:
             res = await REGISTRY[name].call(ctx, raw_args)
         except ToolError as e:

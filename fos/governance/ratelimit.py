@@ -123,9 +123,8 @@ def _redis_eval_sliding(
         if db > 0:
             sock.sendall(_resp_encode("SELECT", str(db)))
             _resp_parse(f)
-        sock.sendall(
-            _resp_encode("EVAL", _LUA_SLIDING, "1", key, str(now_ms), str(win_ms), str(limit), member)
-        )
+        eval_pkt = _resp_encode("EVAL", _LUA_SLIDING, "1", key, str(now_ms), str(win_ms), str(limit), member)
+        sock.sendall(eval_pkt)
         res = _resp_parse(f)
         return bool(res[0]), int(res[1]), int(res[2])
 

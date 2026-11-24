@@ -27,10 +27,8 @@ async def run_ledger_benchmark(
     n_ev = max(1, int(events_count))
     n_obj = max(1, min(n_ev, int(objects_count)))
 
-    existing = int(
-        (await session.execute(select(func.count(Event.id)).where(Event.tenant_id == tenant_id))).scalar_one()
-        or 0
-    )
+    q_cnt = select(func.count(Event.id)).where(Event.tenant_id == tenant_id)
+    existing = int((await session.execute(q_cnt)).scalar_one() or 0)
     if existing > 0 and not allow_nonempty:
         raise ValueError(f"租户 {tenant_id!r} 已有 {existing} 条事件，请换空租户或加 --allow-nonempty")
 
