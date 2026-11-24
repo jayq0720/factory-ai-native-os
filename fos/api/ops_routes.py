@@ -457,3 +457,11 @@ async def download_support_bundle(request: Request, session: SessionDep, p: OpsA
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@router.get("/ledger-check")
+async def get_ledger_integrity(session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """实时只读审计当前租户不可变事件账本序号连续性、计数器对齐、证据链覆盖与投影同步。"""
+    from fos.ops.ledger_audit import verify_tenant_ledger
+
+    return await verify_tenant_ledger(session, p.tenant_id)

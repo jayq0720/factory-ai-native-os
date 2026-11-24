@@ -36,6 +36,7 @@ def test_support_bundle_api_sanitization_and_hashes(client, keys) -> None:
         "edge_fleet.json",
         "packs.json",
         "eval.json",
+        "ledger_check.json",
         "audit_recent.json",
     }
     assert expected.issubset(names)
@@ -43,7 +44,7 @@ def test_support_bundle_api_sanitization_and_hashes(client, keys) -> None:
     manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
     assert manifest["format"] == "fos-support-bundle-v1"
     assert manifest["tenant_id"] == "luneng"
-    assert manifest["files_count"] == 7
+    assert manifest["files_count"] == 8
 
     admin_key = keys["admin"]
     for entry in manifest["files"]:

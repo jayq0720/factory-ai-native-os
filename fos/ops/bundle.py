@@ -15,6 +15,7 @@ from fos.eval.runner import run_golden_eval
 from fos.governance.budget import check_tenant_budget
 from fos.ops.doctor import run_doctor
 from fos.ops.edge_fleet import edge_fleet_summary
+from fos.ops.ledger_audit import verify_tenant_ledger
 from fos.ops.metrics import query_audit_log
 from fos.ops.packs import list_packs
 from fos.ops.service import security_baseline
@@ -51,6 +52,7 @@ async def build_support_bundle_zip(
         "edge_fleet.json": await edge_fleet_summary(session, tenant_id),
         "packs.json": list_packs(svc.settings.packs_dir),
         "eval.json": eval_report,
+        "ledger_check.json": await verify_tenant_ledger(session, tenant_id),
         "audit_recent.json": await query_audit_log(session, tenant_id, limit=max(1, min(audit_limit, 500))),
     }
 
