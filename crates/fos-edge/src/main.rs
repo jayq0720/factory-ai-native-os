@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! fos-edge check <edge.toml>                 校验配置（兼容旧写法 --check）
-//! fos-edge doctor <edge.toml>                上线前一键自检（配置/API Key 环境变量/公钥/本地缓存）
+//! fos-edge doctor <edge.toml> [--json]       上线前一键自检（配置/API Key 环境变量/公钥/本地缓存）
 //! fos-edge run <edge.toml>                   启动采集 + 缓存 + 上行
 //! fos-edge status <edge.toml> [--json]       看本地缓存积压、被拒批次（--json 输出机器可读 JSON）
 //! fos-edge resend <edge.toml> --from <seq>   把某个序号起的批次重新排队上行
@@ -24,7 +24,7 @@ use serde::Serialize;
 
 const USAGE: &str = "用法：
   fos-edge check <edge.toml>
-  fos-edge doctor <edge.toml>
+  fos-edge doctor <edge.toml> [--json]
   fos-edge run <edge.toml>
   fos-edge status <edge.toml> [--json]
   fos-edge resend <edge.toml> --from <seq>
@@ -42,7 +42,8 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let r = match args.as_slice() {
         ["check" | "--check", path] => check(path),
-        ["doctor", path] => doctor(path),
+        ["doctor", path] => doctor(path, false),
+        ["doctor", path, "--json"] => doctor(path, true),
         ["run", path] => block(run(path)),
         ["status", path] => status(path, false),
         ["status", path, "--json"] => status(path, true),
@@ -276,48 +277,109 @@ fn status(path: &str, as_json: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn doctor(path: &str) -> Result<(), String> {
+#[derive(Debug, Serialize)]
+struct DoctorCheckJson {
+    name: &'static str,
+    status: &'static str,
+    detail: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorReportJson {
+    version: &'static str,
+    tenant_id: String,
+    edge_id: String,
+    ok: bool,
+    checks: Vec<DoctorCheckJson>,
+}
+
+fn build_doctor_report(path: &str) -> Result<DoctorReportJson, String> {
     let cfg = load(path)?;
-    let mut failed = false;
-    println!(
-        "[OK]   配置解析通过：tenant={} edge={} 点位 {} 个",
-        cfg.tenant_id,
-        cfg.edge_id,
-        cfg.points.len()
-    );
+    let mut checks = vec![DoctorCheckJson {
+        name: "config",
+        status: "ok",
+        detail: format!(
+            "配置解析通过：tenant={} edge={} 点位 {} 个",
+            cfg.tenant_id,
+            cfg.edge_id,
+            cfg.points.len()
+        ),
+    }];
     match std::env::var(&cfg.api_key_env) {
-        Ok(v) if !v.trim().is_empty() => {
-            println!("[OK]   上行密钥环境变量 {} 已设置", cfg.api_key_env);
-        }
-        _ => {
-            println!("[FAIL] 环境变量 {} 未设置或为空", cfg.api_key_env);
-            failed = true;
-        }
+        Ok(v) if !v.trim().is_empty() => checks.push(DoctorCheckJson {
+            name: "api_key_env",
+            status: "ok",
+            detail: format!("上行密钥环境变量 {} 已设置", cfg.api_key_env),
+        }),
+        _ => checks.push(DoctorCheckJson {
+            name: "api_key_env",
+            status: "fail",
+            detail: format!("环境变量 {} 未设置或为空", cfg.api_key_env),
+        }),
     }
     match cfg.command_public_key.as_deref() {
         Some(pk) => match parse_public_key(pk) {
-            Ok(_) => println!("[OK]   云端命令 Ed25519 公钥格式合法"),
-            Err(e) => {
-                println!("[FAIL] 云端命令公钥无效：{e}");
-                failed = true;
-            }
+            Ok(_) => checks.push(DoctorCheckJson {
+                name: "command_public_key",
+                status: "ok",
+                detail: "云端命令 Ed25519 公钥格式合法".into(),
+            }),
+            Err(e) => checks.push(DoctorCheckJson {
+                name: "command_public_key",
+                status: "fail",
+                detail: format!("云端命令公钥无效：{e}"),
+            }),
         },
-        None => println!("[WARN] 未配置 command_public_key（将拒绝一切云端只读命令）"),
+        None => checks.push(DoctorCheckJson {
+            name: "command_public_key",
+            status: "warn",
+            detail: "未配置 command_public_key（将拒绝一切云端只读命令）".into(),
+        }),
     }
     match open_buffer(path, &cfg).and_then(|b| b.stats().map_err(|e| e.to_string())) {
-        Ok(st) => println!(
-            "[OK]   本地缓存可读写：待上行 {} 批，next_seq={}",
-            st.pending_batches, st.next_seq
-        ),
-        Err(e) => {
-            println!("[FAIL] 本地缓存打开失败：{e}");
-            failed = true;
+        Ok(st) => checks.push(DoctorCheckJson {
+            name: "buffer",
+            status: "ok",
+            detail: format!(
+                "本地缓存可读写：待上行 {} 批，next_seq={}",
+                st.pending_batches, st.next_seq
+            ),
+        }),
+        Err(e) => checks.push(DoctorCheckJson {
+            name: "buffer",
+            status: "fail",
+            detail: format!("本地缓存打开失败：{e}"),
+        }),
+    }
+    let ok = checks.iter().all(|c| c.status != "fail");
+    Ok(DoctorReportJson {
+        version: env!("CARGO_PKG_VERSION"),
+        tenant_id: cfg.tenant_id,
+        edge_id: cfg.edge_id,
+        ok,
+        checks,
+    })
+}
+
+fn doctor(path: &str, as_json: bool) -> Result<(), String> {
+    let report = build_doctor_report(path)?;
+    if as_json {
+        let txt = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+        println!("{txt}");
+    } else {
+        for c in &report.checks {
+            let tag = match c.status {
+                "ok" => "[OK]  ",
+                "warn" => "[WARN]",
+                _ => "[FAIL]",
+            };
+            println!("{tag} {}", c.detail);
         }
     }
-    if failed {
-        Err("fos-edge doctor 发现必须修复的上线阻断项".into())
-    } else {
+    if report.ok {
         Ok(())
+    } else {
+        Err("fos-edge doctor 发现必须修复的上线阻断项".into())
     }
 }
 
@@ -404,10 +466,24 @@ mod tests {
         let cfg_path = dir.join("edge.toml");
         let raw = include_str!("../edge.example.toml");
         std::fs::write(&cfg_path, raw).expect("write temp edge.toml");
-        let res = doctor(cfg_path.to_str().expect("utf8 path"));
+        let res = doctor(cfg_path.to_str().expect("utf8 path"), false);
+        let report = build_doctor_report(cfg_path.to_str().expect("utf8 path"))
+            .expect("build doctor report");
+        let val = serde_json::to_value(&report).expect("serialize doctor json");
+        let names: Vec<&str> = val["checks"]
+            .as_array()
+            .expect("checks array")
+            .iter()
+            .filter_map(|c| c["name"].as_str())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["config", "api_key_env", "command_public_key", "buffer"]
+        );
         let _ = std::fs::remove_dir_all(&dir);
         if std::env::var("FOS_EDGE_API_KEY").is_err() {
             assert!(res.is_err());
+            assert_eq!(val["ok"], false);
         }
     }
 }

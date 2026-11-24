@@ -55,4 +55,4 @@ fos backup-ledger --all --out-dir ./backups --keep 30
 - **一键复制同行业新工厂**：`fos clone-tenant <new_id> <工厂全称> [--pack refractory|ceramics] [--im dingtalk,feishu]`，自动落盘配置并执行 `verify_tenant_replication()` 校验。
 - **行业包独立校验与目录**：`fos validate-pack [pack]`（已接入 CI 硬门禁）与 `GET /v1/ops/packs`，当前内置 `refractory`（耐火材料）与 `ceramics`（工业陶瓷）双行业包。
 - **黄金评测与安全基线门禁**：`fos eval <tenant>`、`fos security-check <tenant>`。
-- **厂端 Rust 网关 `fos-edge`**：`fos-edge doctor <edge.toml>`（上线前一键自检）与 `fos-edge status <edge.toml> --json`（监控探针 JSON 输出）。
+- **厂端 Rust 网关 `fos-edge`**：`fos-edge doctor <edge.toml> [--json]`（上线前一键自检与机器可读 JSON）与 `fos-edge status <edge.toml> --json`（监控探针 JSON 输出）。
