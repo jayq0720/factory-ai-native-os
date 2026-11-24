@@ -6,8 +6,10 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fos.db.models import ApiKey, User
 from fos.governance import apikeys
 from fos.governance.principal import Principal, principal_for_user
+from fos.governance.session import COOKIE_NAME, resolve_secret, verify_session
 from fos.tenancy import TenantRegistry
 
 
@@ -38,12 +40,30 @@ _UNAUTH = HTTPException(
 async def get_principal(request: Request, session: SessionDep, registry: RegistryDep) -> Principal:
     auth = request.headers.get("authorization", "")
     scheme, _, token = auth.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise _UNAUTH
-    found = await apikeys.verify(session, token.strip())
-    if not found:
-        raise _UNAUTH
-    key, user = found
+    if scheme.lower() == "bearer" and token:
+        found = await apikeys.verify(session, token.strip())
+        if not found:
+            raise _UNAUTH
+        key, user = found
+    else:
+        raw_cookie = request.cookies.get(COOKIE_NAME, "")
+        if not raw_cookie:
+            raise _UNAUTH
+        secret = resolve_secret(request.app.state.settings.session_secret)
+        claims = verify_session(raw_cookie, secret=secret)
+        if not claims:
+            raise _UNAUTH
+        key = await session.get(ApiKey, str(claims["kid"]))
+        user = await session.get(User, str(claims["uid"]))
+        if (
+            key is None
+            or key.revoked_at is not None
+            or user is None
+            or not user.is_active
+            or key.user_id != user.id
+            or user.tenant_id != str(claims["tid"])
+        ):
+            raise _UNAUTH
     tenant = registry.get(user.tenant_id)
     if tenant is None:  # 租户配置被移除：一律拒绝
         raise _UNAUTH

@@ -78,7 +78,7 @@ from fos.ontology.loader import load_ontology
 from fos.orders import tools as order_tools  # noqa: F401  注册订单工具
 from fos.orders.config import OrdersConfig, load_orders_config
 from fos.orders.shipping import SHIP_EVENT, ShipmentGuard
-from fos.perception.blobs import LocalBlobStore
+from fos.perception.blobs import BlobStore, build_blob_store
 from fos.perception.jobs import DocumentJobs
 from fos.perception.ocr import OCRProvider, make_ocr
 from fos.planning import tools as planning_tools  # noqa: F401  注册计划排窑工具
@@ -130,7 +130,7 @@ class Services:
     approvals: ApprovalService
     llm: LLMClient
     ocr: OCRProvider
-    blobs: LocalBlobStore
+    blobs: BlobStore
     intake: TriggerIntake
     skills: dict[str, dict[str, SkillDef]]
     runtime: AgentRuntime
@@ -209,7 +209,7 @@ class Services:
         }
         llm = LLMClient.from_settings(settings)
         ocr = make_ocr(settings)
-        blobs = LocalBlobStore(settings.blob_dir)
+        blobs = build_blob_store(settings)
         schemas = {
             tid: load_schemas(t, packs_dir=settings.packs_dir, tenants_dir=settings.tenants_dir)
             for tid in registry.ids()
