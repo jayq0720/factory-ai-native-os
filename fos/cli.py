@@ -238,15 +238,34 @@ async def _run(args: argparse.Namespace) -> int:
     if args.cmd == "backup-ledger":
         from pathlib import Path
 
-        from fos.ops.backup import export_tenant_ledger_jsonl
+        from fos.ops.backup import backup_all_tenants, backup_loop, export_tenant_ledger_jsonl
         from fos.services import Services
 
         svc = Services.build(s)
         try:
+            mode = None if args.include_mock else "real"
+            if args.all:
+                out_dir = Path(args.out_dir or "var/backups")
+                if args.interval > 0:
+                    await backup_loop(
+                        svc, out_dir, interval_s=args.interval, keep=args.keep, data_mode=mode
+                    )
+                    return 0
+                async with svc.sessionmaker() as session:
+                    res = await backup_all_tenants(
+                        session, list(svc.registry.ids()), out_dir, data_mode=mode, keep=args.keep
+                    )
+                print(
+                    f"全租户灾备完成：{res['tenants_count']} 家 | 目录 {out_dir} | "
+                    f"清理旧档 {res['pruned_total']} 份 | 清单 {res['manifest']}"
+                )
+                return 0
+            if not args.tenant or not args.out:
+                print("单租户导出需指定 <tenant> <out>，或使用 --all --out-dir <dir>", file=sys.stderr)
+                return 1
             if svc.registry.get(args.tenant) is None:
                 print(f"租户 {args.tenant} 不存在", file=sys.stderr)
                 return 1
-            mode = None if args.include_mock else "real"
             async with svc.sessionmaker() as session:
                 content, summary = await export_tenant_ledger_jsonl(session, args.tenant, data_mode=mode)
             out_path = Path(args.out)
@@ -595,8 +614,12 @@ def main(argv: list[str] | None = None) -> int:
     mr.add_argument("--month", default="", help="统计月份 YYYY-MM（默认当月）")
     mr.add_argument("--xlsx", default="", help="可选：导出正式三表 Excel 文件路径")
     bl = sub.add_parser("backup-ledger", help="导出租户不可变事件账本防篡改灾备文件（JSONL + SHA-256）")
-    bl.add_argument("tenant")
-    bl.add_argument("out")
+    bl.add_argument("tenant", nargs="?", default="")
+    bl.add_argument("out", nargs="?", default="")
+    bl.add_argument("--all", action="store_true", help="批量导出全部租户并落盘自检与清理旧档")
+    bl.add_argument("--out-dir", default="var/backups", help="批量导出目标目录（配合 --all）")
+    bl.add_argument("--keep", type=int, default=30, help="每个租户保留最近 N 份备份（0 表示不清理）")
+    bl.add_argument("--interval", type=int, default=0, help="周期灾备间隔（秒），>0 时常驻循环")
     bl.add_argument("--include-mock", action="store_true", help="包含模拟数据（默认仅真实账本）")
     vb = sub.add_parser("verify-backup", help="离线校验账本灾备 JSONL 完整性与 SHA-256")
     vb.add_argument("file")

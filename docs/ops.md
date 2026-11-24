@@ -45,6 +45,9 @@ fos verify-backup ./backups/luneng_2026-11.jsonl
 
 # 3. 向全新空租户原子恢复并自动重建全量投影与 TenantCounter 序号（严守账本只追加红线）
 fos restore-ledger luneng ./backups/luneng_2026-11.jsonl
+
+# 4. 全租户批量自检灾备与保留策略清理（--profile ops 中 backup 服务默认每 24h 自动执行）
+fos backup-ledger --all --out-dir ./backups --keep 30
 ```
 
 ## 5. 多工厂复制、多行业包与厂端网关自检

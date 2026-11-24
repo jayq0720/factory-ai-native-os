@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
+import logging
 from datetime import datetime
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from openpyxl import Workbook
 from sqlalchemy import func, select
@@ -16,6 +19,11 @@ from fos.db.models import Event, TenantCounter, utcnow
 from fos.excel_safe import excel_row
 from fos.ledger.projection import rebuild
 from fos.ontology import Ontology
+
+if TYPE_CHECKING:
+    from fos.services import Services
+
+_log = logging.getLogger(__name__)
 
 
 def _canonical_event(e: Event) -> dict[str, Any]:
@@ -253,3 +261,94 @@ async def restore_tenant_ledger_jsonl(
         "last_seq": max_seq,
         "sha256": ver["sha256"],
     }
+
+
+def prune_old_backups(out_dir: Path, tenant_id: str, keep: int) -> int:
+    """按文件名时间倒序保留最近 keep 份单租户备份，删除更早文件。"""
+    if keep <= 0 or not out_dir.is_dir():
+        return 0
+    files = sorted(out_dir.glob(f"{tenant_id}_*.jsonl"), key=lambda p: p.name, reverse=True)
+    removed = 0
+    for old in files[keep:]:
+        old.unlink(missing_ok=True)
+        removed += 1
+    return removed
+
+
+async def backup_all_tenants(
+    session: AsyncSession,
+    tenant_ids: list[str],
+    out_dir: Path,
+    *,
+    data_mode: str | None = "real",
+    keep: int = 30,
+    stamp: str | None = None,
+) -> dict[str, Any]:
+    """全租户批量防篡改导出、落盘即校验、写清单并执行保留策略清理。"""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = stamp or utcnow().strftime("%Y%m%d_%H%M%S")
+    items: list[dict[str, Any]] = []
+    pruned_total = 0
+
+    for tid in sorted(tenant_ids):
+        content, summary = await export_tenant_ledger_jsonl(session, tid, data_mode=data_mode)
+        ver = verify_ledger_backup_jsonl(content)
+        if not ver["ok"]:
+            raise RuntimeError(f"租户 {tid} 备份自检失败：{ver['error']}")
+        fname = f"{tid}_{ts}.jsonl"
+        (out_dir / fname).write_text(content, encoding="utf-8")
+        pruned = prune_old_backups(out_dir, tid, keep)
+        pruned_total += pruned
+        items.append(
+            {
+                "tenant_id": tid,
+                "file": fname,
+                "count": summary["count"],
+                "sha256": summary["sha256"],
+                "verified": True,
+                "pruned": pruned,
+            }
+        )
+
+    manifest = {
+        "stamp": ts,
+        "data_mode": data_mode or "all",
+        "keep": keep,
+        "tenants_count": len(items),
+        "pruned_total": pruned_total,
+        "items": items,
+    }
+    manifest_name = f"manifest_{ts}.json"
+    (out_dir / manifest_name).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return {**manifest, "manifest": manifest_name}
+
+
+async def backup_loop(
+    svc: Services,
+    out_dir: Path,
+    *,
+    interval_s: int,
+    keep: int = 30,
+    data_mode: str | None = "real",
+) -> None:
+    """后台常驻全租户周期灾备守护循环（配合 Docker Compose --profile ops）。"""
+    step = max(60, int(interval_s))
+    while True:
+        try:
+            async with svc.sessionmaker() as session:
+                res = await backup_all_tenants(
+                    session, list(svc.registry.ids()), out_dir, data_mode=data_mode, keep=keep
+                )
+            _log.info(
+                "backup_loop: 完成 %d 家租户灾备（清理旧档 %d 份，清单 %s）",
+                res["tenants_count"],
+                res["pruned_total"],
+                res["manifest"],
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _log.exception("backup_loop 执行失败，将于下一周期重试")
+        await asyncio.sleep(step)

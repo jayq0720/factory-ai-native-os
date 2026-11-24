@@ -71,6 +71,9 @@ echo "== OCR 自检"
 echo "== 管理员账号"
 "${DC[@]}" exec -T api fos quickstart --login "${ADMIN_LOGIN:-admin}" --display-name "${ADMIN_NAME:-管理员}"
 
+echo "== 云端控制面自检"
+"${DC[@]}" exec -T api fos doctor || echo "控制面自检存在告警或失败项，请检查上述输出"
+
 PORT="$(getenv FOS_HTTP_PORT)"; PORT="${PORT:-8000}"
 # 阿里云实例元数据里取公网 IP（EIP 或固定公网 IP）
 IP=""
