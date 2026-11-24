@@ -2,8 +2,9 @@
 //!
 //! ```text
 //! fos-edge check <edge.toml>                 校验配置（兼容旧写法 --check）
+//! fos-edge doctor <edge.toml>                上线前一键自检（配置/API Key 环境变量/公钥/本地缓存）
 //! fos-edge run <edge.toml>                   启动采集 + 缓存 + 上行
-//! fos-edge status <edge.toml>                看本地缓存积压、被拒批次
+//! fos-edge status <edge.toml> [--json]       看本地缓存积压、被拒批次（--json 输出机器可读 JSON）
 //! fos-edge resend <edge.toml> --from <seq>   把某个序号起的批次重新排队上行
 //! fos-edge simulate [--listen 127.0.0.1:5020] [--speed 60] [--start-h 0] [--fault-unit N]
 //!                                            起一个 Modbus TCP 仪表模拟器
@@ -13,17 +14,19 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use fos_edge::buffer::Buffer;
+use fos_edge::buffer::{Buffer, Stats};
 use fos_edge::commands::{parse_public_key, Verifier};
 use fos_edge::config::{DataMode, EdgeConfig};
 use fos_edge::daemon::{self, now_ms, Shared, Timing};
 use fos_edge::sim::{self, SimOptions};
 use fos_edge::uplink::HttpUplink;
+use serde::Serialize;
 
 const USAGE: &str = "用法：
   fos-edge check <edge.toml>
+  fos-edge doctor <edge.toml>
   fos-edge run <edge.toml>
-  fos-edge status <edge.toml>
+  fos-edge status <edge.toml> [--json]
   fos-edge resend <edge.toml> --from <seq>
   fos-edge simulate [--listen 127.0.0.1:5020] [--speed 60] [--start-h 0] [--fault-unit N]";
 
@@ -39,8 +42,10 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let r = match args.as_slice() {
         ["check" | "--check", path] => check(path),
+        ["doctor", path] => doctor(path),
         ["run", path] => block(run(path)),
-        ["status", path] => status(path),
+        ["status", path] => status(path, false),
+        ["status", path, "--json"] => status(path, true),
         ["resend", path, "--from", seq] => resend(path, seq),
         ["simulate", rest @ ..] => block(simulate(rest)),
         _ => {
@@ -196,11 +201,63 @@ fn fmt_ms(ms: i64) -> String {
     format!("{} 分钟前", age / 60)
 }
 
-fn status(path: &str) -> Result<(), String> {
+#[derive(Debug, Serialize)]
+struct StatusJson {
+    version: &'static str,
+    tenant_id: String,
+    edge_id: String,
+    buffer_path: String,
+    buffer_bytes: u64,
+    pending_batches: u64,
+    pending_readings: u64,
+    oldest_pending_age_s: Option<i64>,
+    sent_batches: u64,
+    rejected_batches: u64,
+    next_seq: u64,
+    rejected_samples: Vec<(u64, String)>,
+}
+
+fn build_status_json(
+    cfg: &EdgeConfig,
+    buf_path: &Path,
+    buffer_bytes: u64,
+    st: &Stats,
+    rejected_samples: Vec<(u64, String)>,
+    current_ms: i64,
+) -> StatusJson {
+    let oldest_pending_age_s = st
+        .oldest_pending_ms
+        .map(|ms| ((current_ms - ms) / 1000).max(0));
+    StatusJson {
+        version: env!("CARGO_PKG_VERSION"),
+        tenant_id: cfg.tenant_id.clone(),
+        edge_id: cfg.edge_id.clone(),
+        buffer_path: buf_path.display().to_string(),
+        buffer_bytes,
+        pending_batches: st.pending_batches,
+        pending_readings: st.pending_readings,
+        oldest_pending_age_s,
+        sent_batches: st.sent_batches,
+        rejected_batches: st.rejected_batches,
+        next_seq: st.next_seq,
+        rejected_samples,
+    }
+}
+
+fn status(path: &str, as_json: bool) -> Result<(), String> {
     let cfg = load(path)?;
+    let bp = buffer_path(path, &cfg);
     let b = open_buffer(path, &cfg)?;
     let st = b.stats().map_err(|e| e.to_string())?;
-    println!("缓存文件：{}", buffer_path(path, &cfg).display());
+    let rejected = b.rejected(10).map_err(|e| e.to_string())?;
+    if as_json {
+        let bytes = std::fs::metadata(&bp).map(|m| m.len()).unwrap_or(0);
+        let payload = build_status_json(&cfg, &bp, bytes, &st, rejected, now_ms());
+        let txt = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+        println!("{txt}");
+        return Ok(());
+    }
+    println!("缓存文件：{}", bp.display());
     println!(
         "待上行：{} 批 / {} 条读数",
         st.pending_batches, st.pending_readings
@@ -213,10 +270,55 @@ fn status(path: &str) -> Result<(), String> {
         st.sent_batches, st.next_seq
     );
     println!("被云端拒收：{} 批", st.rejected_batches);
-    for (seq, note) in b.rejected(10).map_err(|e| e.to_string())? {
+    for (seq, note) in rejected {
         println!("  seq {seq}：{note}");
     }
     Ok(())
+}
+
+fn doctor(path: &str) -> Result<(), String> {
+    let cfg = load(path)?;
+    let mut failed = false;
+    println!(
+        "[OK]   配置解析通过：tenant={} edge={} 点位 {} 个",
+        cfg.tenant_id,
+        cfg.edge_id,
+        cfg.points.len()
+    );
+    match std::env::var(&cfg.api_key_env) {
+        Ok(v) if !v.trim().is_empty() => {
+            println!("[OK]   上行密钥环境变量 {} 已设置", cfg.api_key_env);
+        }
+        _ => {
+            println!("[FAIL] 环境变量 {} 未设置或为空", cfg.api_key_env);
+            failed = true;
+        }
+    }
+    match cfg.command_public_key.as_deref() {
+        Some(pk) => match parse_public_key(pk) {
+            Ok(_) => println!("[OK]   云端命令 Ed25519 公钥格式合法"),
+            Err(e) => {
+                println!("[FAIL] 云端命令公钥无效：{e}");
+                failed = true;
+            }
+        },
+        None => println!("[WARN] 未配置 command_public_key（将拒绝一切云端只读命令）"),
+    }
+    match open_buffer(path, &cfg).and_then(|b| b.stats().map_err(|e| e.to_string())) {
+        Ok(st) => println!(
+            "[OK]   本地缓存可读写：待上行 {} 批，next_seq={}",
+            st.pending_batches, st.next_seq
+        ),
+        Err(e) => {
+            println!("[FAIL] 本地缓存打开失败：{e}");
+            failed = true;
+        }
+    }
+    if failed {
+        Err("fos-edge doctor 发现必须修复的上线阻断项".into())
+    } else {
+        Ok(())
+    }
 }
 
 fn resend(path: &str, seq: &str) -> Result<(), String> {
@@ -258,5 +360,54 @@ async fn simulate(rest: &[&str]) -> Result<(), String> {
     tokio::select! {
         _ = handle => Err("模拟器意外退出".into()),
         _ = shutdown_signal() => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_json_computes_age_and_serializes() {
+        let raw = include_str!("../edge.example.toml");
+        let cfg = EdgeConfig::parse(raw).expect("example config valid");
+        let st = Stats {
+            pending_batches: 3,
+            pending_readings: 42,
+            oldest_pending_ms: Some(1_000_000),
+            rejected_batches: 1,
+            sent_batches: 10,
+            next_seq: 99,
+        };
+        let payload = build_status_json(
+            &cfg,
+            Path::new("/tmp/edge.db"),
+            4096,
+            &st,
+            vec![(12, "bad unit".into())],
+            1_125_000,
+        );
+        let val = serde_json::to_value(&payload).expect("serialize status json");
+        assert_eq!(val["tenant_id"], cfg.tenant_id);
+        assert_eq!(val["edge_id"], cfg.edge_id);
+        assert_eq!(val["pending_batches"], 3);
+        assert_eq!(val["pending_readings"], 42);
+        assert_eq!(val["oldest_pending_age_s"], 125);
+        assert_eq!(val["buffer_bytes"], 4096);
+        assert_eq!(val["rejected_batches"], 1);
+    }
+
+    #[test]
+    fn doctor_fails_when_api_key_env_missing() {
+        let dir = std::env::temp_dir().join(format!("fos_edge_doc_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let cfg_path = dir.join("edge.toml");
+        let raw = include_str!("../edge.example.toml");
+        std::fs::write(&cfg_path, raw).expect("write temp edge.toml");
+        let res = doctor(cfg_path.to_str().expect("utf8 path"));
+        let _ = std::fs::remove_dir_all(&dir);
+        if std::env::var("FOS_EDGE_API_KEY").is_err() {
+            assert!(res.is_err());
+        }
     }
 }
