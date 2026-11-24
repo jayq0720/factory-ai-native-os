@@ -221,6 +221,24 @@
       setMsg(e.message);
     }
   }
+  async function runDoctorPanel() {
+    try {
+      const doc = await (await api("/v1/ops/doctor")).json();
+      const s = doc.summary || {};
+      const verdict = doc.ok ? "全部通过" : "存在失败项";
+      $("doctorSummary").textContent =
+        `环境 ${doc.env} | 结论：${verdict}（通过 ${s.ok || 0} / 警告 ${s.warn || 0} / 失败 ${s.fail || 0}）`;
+      fillTable("doctorTable", doc.checks || [], [
+        (r) => r.name,
+        (r) => String(r.status || "").toUpperCase(),
+        (r) => r.detail,
+      ]);
+      setMsg(`控制面自检完成：${verdict}`);
+    } catch (e) {
+      $("doctorSummary").textContent = `自检未执行：${e.message}`;
+    }
+  }
+  $("btnDoctor").addEventListener("click", runDoctorPanel);
   $("btnAuditXlsx").addEventListener("click", () =>
     downloadFile("/v1/ops/audit.xlsx", "账本审计流水.xlsx", "已导出审计流水 (.xlsx)")
   );
@@ -232,5 +250,6 @@
   if (saved) {
     $("apiKey").value = saved;
     loadAll();
+    runDoctorPanel();
   }
 })();

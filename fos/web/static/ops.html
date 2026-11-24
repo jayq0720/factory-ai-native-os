@@ -24,10 +24,22 @@
         <button id="btnLoad">刷新运营总览</button>
         <button id="btnWatchdog">立即执行全厂 Watchdog 巡检</button>
         <button id="btnEval">运行黄金数据集评测</button>
+        <button id="btnDoctor">控制面一键自检</button>
         <button id="btnAuditXlsx">导出审计流水 (.xlsx)</button>
         <button id="btnBackupJsonl">下载账本灾备 (.jsonl)</button>
         <span id="msg" class="muted"></span>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>云端控制面一键诊断（Doctor）</h2>
+      <div id="doctorSummary" class="muted">点击“控制面一键自检”或刷新页面自动执行六维健康检查。</div>
+      <table id="doctorTable" style="width:100%;margin-top:.5rem">
+        <thead>
+          <tr><th>诊断项</th><th>状态</th><th>详情</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </section>
 
     <section class="card">
