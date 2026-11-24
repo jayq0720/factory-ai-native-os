@@ -129,6 +129,25 @@ async def _check_budgets(session: AsyncSession, reg: TenantRegistry) -> DoctorCh
     return DoctorCheck("budgets", "ok", f"{checked} 个租户 Token 预算租约均在安全水位")
 
 
+async def _check_edge_fleet(session: AsyncSession, reg: TenantRegistry) -> DoctorCheck:
+    from fos.ops.edge_fleet import tenant_edge_alarm_counts
+
+    stats = await tenant_edge_alarm_counts(session, list(reg.ids()))
+    total_gw = sum(int(x["gateways_total"]) for x in stats)
+    online_gw = sum(int(x["gateways_online"]) for x in stats)
+    open_alarms = sum(int(x["open_alarms_total"]) for x in stats)
+    if total_gw == 0 and open_alarms == 0:
+        return DoctorCheck("edge_fleet", "ok", "暂无已接入厂端网关，无未闭环窑炉告警")
+    issues: list[str] = []
+    if online_gw < total_gw:
+        issues.append(f"离线网关 {total_gw - online_gw}/{total_gw} 台")
+    if open_alarms > 0:
+        issues.append(f"未闭环窑炉告警 {open_alarms} 条")
+    if issues:
+        return DoctorCheck("edge_fleet", "warn", "；".join(issues))
+    return DoctorCheck("edge_fleet", "ok", f"{online_gw}/{total_gw} 台厂端网关在线，无未闭环窑炉告警")
+
+
 async def run_doctor(
     settings: Settings,
     *,
@@ -162,6 +181,7 @@ async def run_doctor(
         checks.append(db_check)
         if db_check.status == "ok" and reg is not None:
             checks.append(await _check_budgets(session, reg))
+            checks.append(await _check_edge_fleet(session, reg))
 
     summary = {
         "ok": sum(1 for c in checks if c.status == "ok"),
