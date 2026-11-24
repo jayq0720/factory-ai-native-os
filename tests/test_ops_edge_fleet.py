@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 
+from fos.db.engine import make_engine, make_sessionmaker
 from fos.db.models import EdgeBatch, EdgeCommandRecord, KilnAlarm, utcnow
 
 
@@ -18,68 +19,73 @@ def test_edge_fleet_api_and_prometheus_metrics(client, keys) -> None:
 
     now = utcnow()
     stale = now - timedelta(minutes=20)
-    svc = client.app.state.services
+    db_url = client.app.state.settings.database_url
 
     async def _seed() -> None:
-        async with svc.sessionmaker() as s, s.begin():
-            s.add_all(
-                [
-                    EdgeBatch(
-                        tenant_id="luneng",
-                        edge_id="gw-kiln-01",
-                        seq=11,
-                        backfill=False,
-                        accepted=8,
-                        rejected={},
-                        received_by="edge-user",
-                        received_at=now - timedelta(seconds=30),
-                    ),
-                    EdgeBatch(
-                        tenant_id="luneng",
-                        edge_id="gw-kiln-02",
-                        seq=5,
-                        backfill=False,
-                        accepted=4,
-                        rejected={},
-                        received_by="edge-user",
-                        received_at=stale,
-                    ),
-                    KilnAlarm(
-                        tenant_id="luneng",
-                        key="high:kiln1_top",
-                        kind="high",
-                        point="kiln1_top",
-                        edge_id="gw-kiln-01",
-                        status="open",
-                        message="1号窑顶部超温",
-                        detail={"value": 1410},
-                        started_at=now - timedelta(minutes=3),
-                        last_seen_at=now,
-                    ),
-                    KilnAlarm(
-                        tenant_id="luneng",
-                        key="low:kiln2_bot",
-                        kind="low",
-                        point="kiln2_bot",
-                        edge_id="gw-kiln-02",
-                        status="closed",
-                        message="已恢复",
-                        detail={},
-                        started_at=stale,
-                        last_seen_at=stale,
-                        closed_at=stale,
-                    ),
-                    EdgeCommandRecord(
-                        tenant_id="luneng",
-                        edge_id="gw-kiln-01",
-                        command={"type": "status"},
-                        status="pending",
-                        created_by="admin",
-                        created_by_name="管理员",
-                        expires_at=now + timedelta(minutes=10),
-                    ),
-                ]
-            )
+        eng = make_engine(db_url)
+        try:
+            sm = make_sessionmaker(eng)
+            async with sm() as s, s.begin():
+                s.add_all(
+                    [
+                        EdgeBatch(
+                            tenant_id="luneng",
+                            edge_id="gw-kiln-01",
+                            seq=11,
+                            backfill=False,
+                            accepted=8,
+                            rejected={},
+                            received_by="edge-user",
+                            received_at=now - timedelta(seconds=30),
+                        ),
+                        EdgeBatch(
+                            tenant_id="luneng",
+                            edge_id="gw-kiln-02",
+                            seq=5,
+                            backfill=False,
+                            accepted=4,
+                            rejected={},
+                            received_by="edge-user",
+                            received_at=stale,
+                        ),
+                        KilnAlarm(
+                            tenant_id="luneng",
+                            key="high:kiln1_top",
+                            kind="high",
+                            point="kiln1_top",
+                            edge_id="gw-kiln-01",
+                            status="open",
+                            message="1号窑顶部超温",
+                            detail={"value": 1410},
+                            started_at=now - timedelta(minutes=3),
+                            last_seen_at=now,
+                        ),
+                        KilnAlarm(
+                            tenant_id="luneng",
+                            key="low:kiln2_bot",
+                            kind="low",
+                            point="kiln2_bot",
+                            edge_id="gw-kiln-02",
+                            status="closed",
+                            message="已恢复",
+                            detail={},
+                            started_at=stale,
+                            last_seen_at=stale,
+                            closed_at=stale,
+                        ),
+                        EdgeCommandRecord(
+                            tenant_id="luneng",
+                            edge_id="gw-kiln-01",
+                            command={"type": "status"},
+                            status="pending",
+                            created_by="admin",
+                            created_by_name="管理员",
+                            expires_at=now + timedelta(minutes=10),
+                        ),
+                    ]
+                )
+        finally:
+            await eng.dispose()
 
     asyncio.run(_seed())
 
