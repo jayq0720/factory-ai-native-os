@@ -24,7 +24,7 @@
     const k = apiKey();
     const headers = Object.assign({}, opts.headers || {});
     if (k) headers["X-API-Key"] = k;
-    const res = await fetch(path, Object.assign({}, opts, { headers }));
+    const res = await fetch(path, Object.assign({ credentials: "same-origin" }, opts, { headers }));
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`HTTP ${res.status}: ${txt.slice(0, 160)}`);

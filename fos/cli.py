@@ -246,12 +246,30 @@ async def _run(args: argparse.Namespace) -> int:
             mode = None if args.include_mock else "real"
             if args.all:
                 out_dir = Path(args.out_dir or "var/backups")
+                up_store = None
+                if args.upload_s3:
+                    if s.blob_backend != "s3":
+                        print("--upload-s3 需要先设置 FOS_BLOB_BACKEND=s3 与 S3/OSS 参数", file=sys.stderr)
+                        return 1
+                    up_store = svc.blobs
                 if args.interval > 0:
-                    await backup_loop(svc, out_dir, interval_s=args.interval, keep=args.keep, data_mode=mode)
+                    await backup_loop(
+                        svc,
+                        out_dir,
+                        interval_s=args.interval,
+                        keep=args.keep,
+                        data_mode=mode,
+                        upload_blob_store=up_store,
+                    )
                     return 0
                 async with svc.sessionmaker() as session:
                     res = await backup_all_tenants(
-                        session, list(svc.registry.ids()), out_dir, data_mode=mode, keep=args.keep
+                        session,
+                        list(svc.registry.ids()),
+                        out_dir,
+                        data_mode=mode,
+                        keep=args.keep,
+                        upload_blob_store=up_store,
                     )
                 print(
                     f"全租户灾备完成：{res['tenants_count']} 家 | 目录 {out_dir} | "
@@ -735,6 +753,7 @@ def main(argv: list[str] | None = None) -> int:
     bl.add_argument("--keep", type=int, default=30, help="每个租户保留最近 N 份备份（0 表示不清理）")
     bl.add_argument("--interval", type=int, default=0, help="周期灾备间隔（秒），>0 时常驻循环")
     bl.add_argument("--include-mock", action="store_true", help="包含模拟数据（默认仅真实账本）")
+    bl.add_argument("--upload-s3", action="store_true", help="同步异地上传备份至 S3/阿里云 OSS")
     vb = sub.add_parser("verify-backup", help="离线校验账本灾备 JSONL 完整性与 SHA-256")
     vb.add_argument("file")
     rl = sub.add_parser("restore-ledger", help="校验防篡改灾备文件并向空租户恢复账本与投影")

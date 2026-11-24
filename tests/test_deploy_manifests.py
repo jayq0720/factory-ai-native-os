@@ -58,3 +58,11 @@ def test_k8s_manifests_security_and_structure() -> None:
         cmd = t_spec["containers"][0]["command"]
         assert cmd[0] == "fos"
         assert "--all" in cmd
+
+    # 校验 HTTPS 入口模板（K8s Ingress / Caddyfile / Nginx）与发版 CD workflow
+    ing = yaml.safe_load((K8S_DIR / "ingress.yaml").read_text(encoding="utf-8"))
+    assert ing["kind"] == "Ingress" and ing["spec"]["tls"]
+    assert "reverse_proxy api:8000" in (ROOT / "deploy" / "caddy" / "Caddyfile").read_text(encoding="utf-8")
+    assert "ssl_protocols" in (ROOT / "deploy" / "nginx" / "fos.conf").read_text(encoding="utf-8")
+    rel = yaml.safe_load((ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    assert "docker" in rel["jobs"] and "fos-edge" in rel["jobs"]

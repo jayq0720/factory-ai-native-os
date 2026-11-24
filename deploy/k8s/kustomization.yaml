@@ -6,4 +6,5 @@ resources:
   - configmap.yaml
   - deployment-api.yaml
   - service-api.yaml
+  - ingress.yaml
   - cronjob-ops.yaml

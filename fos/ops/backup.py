@@ -283,8 +283,9 @@ async def backup_all_tenants(
     data_mode: str | None = "real",
     keep: int = 30,
     stamp: str | None = None,
+    upload_blob_store: Any | None = None,
 ) -> dict[str, Any]:
-    """全租户批量防篡改导出、落盘即校验、写清单并执行保留策略清理。"""
+    """全租户批量防篡改导出、落盘即校验、写清单并执行保留策略清理（可选异地上传 S3/OSS）。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = stamp or utcnow().strftime("%Y%m%d_%H%M%S")
     items: list[dict[str, Any]] = []
@@ -297,18 +298,23 @@ async def backup_all_tenants(
             raise RuntimeError(f"租户 {tid} 备份自检失败：{ver['error']}")
         fname = f"{tid}_{ts}.jsonl"
         (out_dir / fname).write_text(content, encoding="utf-8")
+        remote_uri = ""
+        if upload_blob_store is not None:
+            digest = upload_blob_store.put(tid, content.encode("utf-8"))
+            remote_uri = upload_blob_store.uri(tid, digest)
         pruned = prune_old_backups(out_dir, tid, keep)
         pruned_total += pruned
-        items.append(
-            {
-                "tenant_id": tid,
-                "file": fname,
-                "count": summary["count"],
-                "sha256": summary["sha256"],
-                "verified": True,
-                "pruned": pruned,
-            }
-        )
+        item: dict[str, Any] = {
+            "tenant_id": tid,
+            "file": fname,
+            "count": summary["count"],
+            "sha256": summary["sha256"],
+            "verified": True,
+            "pruned": pruned,
+        }
+        if remote_uri:
+            item["remote_uri"] = remote_uri
+        items.append(item)
 
     manifest = {
         "stamp": ts,
@@ -332,6 +338,7 @@ async def backup_loop(
     interval_s: int,
     keep: int = 30,
     data_mode: str | None = "real",
+    upload_blob_store: Any | None = None,
 ) -> None:
     """后台常驻全租户周期灾备守护循环（配合 Docker Compose --profile ops）。"""
     step = max(60, int(interval_s))
@@ -339,7 +346,12 @@ async def backup_loop(
         try:
             async with svc.sessionmaker() as session:
                 res = await backup_all_tenants(
-                    session, list(svc.registry.ids()), out_dir, data_mode=data_mode, keep=keep
+                    session,
+                    list(svc.registry.ids()),
+                    out_dir,
+                    data_mode=data_mode,
+                    keep=keep,
+                    upload_blob_store=upload_blob_store,
                 )
             _log.info(
                 "backup_loop: 完成 %d 家租户灾备（清理旧档 %d 份，清单 %s）",
