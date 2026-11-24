@@ -99,7 +99,7 @@ spec:
           containers:
             - name: verify
               image: fos-api:latest
-              command: ["fos", "verify-ledger", "luneng"]
+              command: ["fos", "verify-ledger", "--all"]
               envFrom:
                 - configMapRef:
                     name: fos-config

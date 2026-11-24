@@ -403,8 +403,22 @@ async def _run(args: argparse.Namespace) -> int:
 
         svc = Services.build(s)
         try:
-            if svc.registry.get(args.tenant) is None:
-                print(f"租户 {args.tenant} 不存在", file=sys.stderr)
+            if args.all:
+                targets = sorted(svc.registry.ids())
+                items = []
+                async with svc.sessionmaker() as session:
+                    for tid in targets:
+                        items.append(await verify_tenant_ledger(session, tid))
+                all_ok = all(it["ok"] for it in items)
+                if args.json:
+                    out_obj = {"all_ok": all_ok, "tenants_count": len(items), "items": items}
+                    print(json.dumps(out_obj, ensure_ascii=False, indent=2))
+                else:
+                    for it in items:
+                        print(format_ledger_audit_text(it))
+                return 0 if all_ok else 1
+            if not args.tenant or svc.registry.get(args.tenant) is None:
+                print(f"租户 {args.tenant or '(未指定)'} 不存在", file=sys.stderr)
                 return 1
             async with svc.sessionmaker() as session:
                 rep = await verify_tenant_ledger(session, args.tenant)
@@ -453,24 +467,35 @@ async def _run(args: argparse.Namespace) -> int:
                     for mod, cnt in res["modules"].items():
                         print(f"  {mod:<24} +{cnt}")
                 return 0
+            if args.cmd == "eval":
+                if args.all:
+                    ev_targets = sorted(svc.registry.ids())
+                elif not args.tenant or svc.registry.get(args.tenant) is None:
+                    print(f"租户 {args.tenant or '(未指定)'} 不存在", file=sys.stderr)
+                    return 1
+                else:
+                    ev_targets = [args.tenant]
+                sp = Path(args.suite) if args.suite else None
+                all_passed = True
+                for tid in ev_targets:
+                    res = run_golden_eval(svc, tid, suite_path=sp)
+                    print(
+                        f"{res['tenant_id']} [{res['suite']}]: "
+                        f"{res['passed']}/{res['total']} ({res['pass_rate_pct']}%)"
+                    )
+                    for cat, st in res["categories"].items():
+                        print(f"  {cat:<28} {st['passed']}/{st['total']} (failed={st['failed']})")
+                    for bc in res["badcases"]:
+                        print(
+                            f"  [BADCASE] {bc['category']}:{bc['id']} "
+                            f"expect={bc['expected']!r} got={bc['actual']!r}"
+                        )
+                    if not res["all_passed"]:
+                        all_passed = False
+                return 0 if all_passed else 1
             if svc.registry.get(args.tenant) is None:
                 print(f"租户 {args.tenant} 不存在", file=sys.stderr)
                 return 1
-            if args.cmd == "eval":
-                sp = Path(args.suite) if args.suite else None
-                res = run_golden_eval(svc, args.tenant, suite_path=sp)
-                print(
-                    f"{res['tenant_id']} [{res['suite']}]: "
-                    f"{res['passed']}/{res['total']} ({res['pass_rate_pct']}%)"
-                )
-                for cat, st in res["categories"].items():
-                    print(f"  {cat:<28} {st['passed']}/{st['total']} (failed={st['failed']})")
-                for bc in res["badcases"]:
-                    print(
-                        f"  [BADCASE] {bc['category']}:{bc['id']} "
-                        f"expect={bc['expected']!r} got={bc['actual']!r}"
-                    )
-                return 0 if res["all_passed"] else 1
             res = security_baseline(svc, args.tenant)
             for chk in res["checks"]:
                 mark = "OK" if chk["ok"] else "FAIL"
@@ -638,7 +663,8 @@ def main(argv: list[str] | None = None) -> int:
     sm = sub.add_parser("samples")
     sm.add_argument("out")
     ev = sub.add_parser("eval", help="运行行业包黄金数据集回归评测")
-    ev.add_argument("tenant")
+    ev.add_argument("tenant", nargs="?", default="")
+    ev.add_argument("--all", action="store_true", help="评测全部已注册租户")
     ev.add_argument("--suite", default="", help="自定义黄金评测 YAML 路径")
     sc = sub.add_parser("security-check", help="运行租户安全与上线基线自检")
     sc.add_argument("tenant")
@@ -679,7 +705,8 @@ def main(argv: list[str] | None = None) -> int:
     sb.add_argument("out")
     sb.add_argument("--audit-limit", type=int, default=100, help="附带最近 N 条账本审计流水（默认 100）")
     vl = sub.add_parser("verify-ledger", help="实时只读审计租户账本序号连续性、计数器对齐与投影同步")
-    vl.add_argument("tenant")
+    vl.add_argument("tenant", nargs="?", default="")
+    vl.add_argument("--all", action="store_true", help="审计全部已注册租户")
     vl.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
