@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fos.db.models import Event, ObjectState, TenantCounter
+from fos.db.models import Event, ObjectState, TenantCounter, utcnow
 from fos.ops.backup import export_tenant_ledger, verify_backup_file
 from fos.ops.ledger_audit import verify_tenant_ledger
 
@@ -34,25 +34,34 @@ async def run_ledger_benchmark(
 
     ctr = await session.get(TenantCounter, tenant_id)
     base_seq = int(ctr.last_seq) if ctr is not None else 0
+    now = utcnow()
 
     t0 = perf_counter()
-    objs_seen: dict[str, int] = {}
+    objs_first: dict[str, int] = {}
+    objs_last: dict[str, int] = {}
+    objs_cnt: dict[str, int] = {}
     batch_events: list[Event] = []
     for i in range(1, n_ev + 1):
         seq = base_seq + i
         oid = f"bench_obj_{(i - 1) % n_obj:05d}"
-        objs_seen[oid] = seq
+        if oid not in objs_first:
+            objs_first[oid] = seq
+        objs_last[oid] = seq
+        objs_cnt[oid] = objs_cnt.get(oid, 0) + 1
         batch_events.append(
             Event(
                 tenant_id=tenant_id,
                 seq=seq,
-                event_type="bench.recorded",
+                type="bench.recorded",
                 object_type="batch",
                 object_id=oid,
                 payload={"idx": i, "qty": 100.0},
                 evidence=[{"kind": "benchmark", "ref": f"b-{i}"}],
-                actor="benchmark",
+                actor_kind="system",
+                actor_id="benchmark",
+                actor_name="性能基准",
                 data_mode="mock",
+                occurred_at=now,
             )
         )
     session.add_all(batch_events)
@@ -61,7 +70,7 @@ async def run_ledger_benchmark(
     else:
         ctr.last_seq = base_seq + n_ev
 
-    for oid, last_seq in objs_seen.items():
+    for oid, last_seq in objs_last.items():
         st = await session.get(ObjectState, (tenant_id, "batch", oid))
         if st is None:
             session.add(
@@ -70,11 +79,18 @@ async def run_ledger_benchmark(
                     object_type="batch",
                     object_id=oid,
                     state={"last_seq": last_seq},
-                    last_seq=last_seq,
+                    data_mode="mock",
+                    version=objs_cnt[oid],
+                    created_seq=objs_first[oid],
+                    updated_seq=last_seq,
+                    created_at=now,
+                    updated_at=now,
                 )
             )
         else:
-            st.last_seq = last_seq
+            st.updated_seq = last_seq
+            st.version += objs_cnt[oid]
+            st.updated_at = now
             st.state = {"last_seq": last_seq}
     await session.flush()
     write_ms = (perf_counter() - t0) * 1000.0

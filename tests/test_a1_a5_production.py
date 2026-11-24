@@ -107,13 +107,13 @@ def test_a2_unified_web_login_cookie_and_revocation(client, keys) -> None:
 
     # 2. 签发临时 API Key 用于测试登录与吊销联动
     r_new = client.post(
-        "/v1/ops/api-keys",
+        "/v1/ops/keys",
         json={"login": "admin", "label": "web-session-test"},
         headers=_h(keys, "admin"),
     )
     assert r_new.status_code == 201
     tmp_key = r_new.json()["plaintext"]
-    tmp_kid = r_new.json()["id"]
+    tmp_kid = r_new.json()["key_id"]
 
     # 3. 无认证访问 /v1/auth/session 返回 401
     assert client.get("/v1/auth/session").status_code == 401
@@ -129,7 +129,7 @@ def test_a2_unified_web_login_cookie_and_revocation(client, keys) -> None:
     assert client.get("/v1/auth/session").json()["authenticated"] is True
 
     # 6. 吊销底层 API Key 后，已有 Cookie 立即失效（401）
-    r_rev = client.post(f"/v1/ops/api-keys/{tmp_kid}/revoke", headers=_h(keys, "admin"))
+    r_rev = client.post(f"/v1/ops/keys/{tmp_kid}/revoke", headers=_h(keys, "admin"))
     assert r_rev.status_code == 200
     assert client.get("/v1/me").status_code == 401
 
