@@ -83,6 +83,7 @@ async def get_prometheus_metrics(request: Request, session: SessionDep, p: OpsAd
     from fastapi import Response
 
     from fos.governance.budget import check_tenant_budget
+    from fos.ops.edge_fleet import tenant_edge_alarm_counts
     from fos.ops.metrics import HttpMetrics, render_prometheus
     from fos.ops.packs import list_packs
 
@@ -90,14 +91,16 @@ async def get_prometheus_metrics(request: Request, session: SessionDep, p: OpsAd
         raise HTTPException(403, detail="仅平台超级管理员可抓取系统指标")
     svc = request.app.state.services
     ov = await ops.saas_overview(session, svc, _today(request, p.tenant_id))
+    tids = sorted(svc.registry.ids())
     budgets = []
-    for tid in sorted(svc.registry.ids()):
+    for tid in tids:
         t = svc.registry.get(tid)
         if t is not None:
             budgets.append(await check_tenant_budget(session, t))
     packs = list_packs(request.app.state.settings.packs_dir)
+    edge_stats = await tenant_edge_alarm_counts(session, tids)
     hm = getattr(request.app.state, "http_metrics", None) or HttpMetrics()
-    body = render_prometheus(hm, ov, budgets=budgets, packs=packs)
+    body = render_prometheus(hm, ov, budgets=budgets, packs=packs, edge_stats=edge_stats)
     return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
@@ -425,3 +428,11 @@ async def get_control_plane_doctor(request: Request, session: SessionDep, p: Ops
         session=session,
         services=request.app.state.services,
     )
+
+
+@router.get("/edge-fleet")
+async def get_edge_fleet(session: SessionDep, p: OpsAdmin, online_window_s: int = 300) -> dict[str, Any]:
+    """查询当前租户厂端 fos-edge 网关在线状态、心跳延迟、待执行命令与未闭环窑炉告警。"""
+    from fos.ops.edge_fleet import edge_fleet_summary
+
+    return await edge_fleet_summary(session, p.tenant_id, online_window_s=online_window_s)
