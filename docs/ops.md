@@ -15,7 +15,8 @@
 - **零依赖 Prometheus 指标（`GET /v1/ops/metrics`）**：需 `*.*:*` 平台超级管理员权限，导出：
   - HTTP 指标：`fos_http_requests_total`、`fos_http_request_duration_seconds_{sum,count}`；
   - 租户指标：`fos_tenants_total`、`fos_events_total`、`fos_open_todos`、`fos_pending_approvals`、`fos_llm_tokens_7d`、`fos_security_baseline_ok`；
-  - 成本与行业包指标：`fos_budget_daily_ratio`、`fos_budget_monthly_ratio`、`fos_budget_allowed`、`fos_industry_packs_total`、`fos_industry_pack_ok`。
+  - 成本与行业包指标：`fos_budget_daily_ratio`、`fos_budget_monthly_ratio`、`fos_budget_allowed`、`fos_industry_packs_total`、`fos_industry_pack_ok`；
+  - 开箱即用抓取与告警规则包：`deploy/monitoring/prometheus.yml` 与 `deploy/monitoring/alerts.yml`（覆盖 5xx 错误率、慢响应、Token 预算预警/硬熔断、安全基线、行业包健康度与待审批积压）。
 - **不可变账本审计流水**：`GET /v1/ops/audit`（按 `event_prefix` / `object_type` / `actor_id` / `data_mode` 倒序分页），以及 `GET /v1/ops/audit.xlsx`（防公式注入合规审计 Excel 导出）。
 
 ## 3. 成本熔断与访问防护（`fos/governance/`）

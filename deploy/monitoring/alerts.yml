@@ -1,0 +1,70 @@
+# Factory AI Native OS 生产 SRE 告警规则（与 GET /v1/ops/metrics 导出指标严格对齐）
+groups:
+  - name: fos-control-plane
+    rules:
+      - alert: FosHigh5xxRate
+        expr: >-
+          sum(rate(fos_http_requests_total{status_class="5xx"}[5m]))
+          / clamp_min(sum(rate(fos_http_requests_total[5m])), 1e-6) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "FOS API 5xx 错误率超过 5%"
+          description: "近 5 分钟 HTTP 5xx 占比持续超过 5%，请立即排查 api 日志与数据库连接。"
+
+      - alert: FosHighAvgLatency
+        expr: >-
+          rate(fos_http_request_duration_seconds_sum[5m])
+          / clamp_min(rate(fos_http_request_duration_seconds_count[5m]), 1e-6) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "FOS API 平均响应耗时超过 2 秒"
+          description: "近 5 分钟平均请求耗时持续 > 2s，请检查慢查询或上游 LLM/OCR 延迟。"
+
+      - alert: FosTenantBudgetWarning
+        expr: fos_budget_daily_ratio >= 0.8 or fos_budget_monthly_ratio >= 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "租户 {{ $labels.tenant }} LLM Token 预算使用率超过 80%"
+          description: "租户日度或月度 Token 消耗已达到预警水位，请评估是否调整 tenant.yaml 预算。"
+
+      - alert: FosTenantBudgetCircuitBroken
+        expr: fos_budget_allowed == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "租户 {{ $labels.tenant }} LLM Token 预算已触发硬熔断"
+          description: "当前租户已停止外部 LLM 调用，仅零成本 Fast Path 指令可用。"
+
+      - alert: FosSecurityBaselineFailed
+        expr: fos_security_baseline_ok == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "租户 {{ $labels.tenant }} 安全与上线基线校验未通过"
+          description: "请运行 fos security-check {{ $labels.tenant }} 或查看 /app/ops.html 定位异常项。"
+
+      - alert: FosIndustryPackUnhealthy
+        expr: fos_industry_pack_ok == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "行业包 {{ $labels.pack }} 完整性校验失败"
+          description: "请运行 fos validate-pack {{ $labels.pack }} 检查本体、Skill 与黄金评测集。"
+
+      - alert: FosPendingApprovalsBacklog
+        expr: fos_pending_approvals > 20
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "租户 {{ $labels.tenant }} 待审批单积压超过 20 条"
+          description: "请提醒对应审批角色及时处理，或检查 Watchdog 守护进程是否正常。"
