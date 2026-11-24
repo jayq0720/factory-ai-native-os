@@ -505,11 +505,8 @@ async def _run(args: argparse.Namespace) -> int:
             if args.json:
                 import json
 
-                out_obj = (
-                    {"all_ok": all_ok, "tenants_count": len(items), "items": items}
-                    if args.all
-                    else items[0]
-                )
+                payload = {"all_ok": all_ok, "tenants_count": len(items), "items": items}
+                out_obj = payload if args.all else items[0]
                 print(json.dumps(out_obj, ensure_ascii=False, indent=2))
             else:
                 for res in items:
