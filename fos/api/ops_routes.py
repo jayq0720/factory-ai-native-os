@@ -411,3 +411,17 @@ async def get_industry_packs(request: Request, p: OpsAdmin) -> dict[str, Any]:
         "all_ok": all(it["ok"] for it in items),
         "items": items,
     }
+
+
+@router.get("/doctor")
+async def get_control_plane_doctor(request: Request, session: SessionDep, p: OpsAdmin) -> dict[str, Any]:
+    """执行云端控制面一键只读诊断（需平台超级管理员权限）。"""
+    from fos.ops.doctor import run_doctor
+
+    if "*.*:*" not in p.permissions:
+        raise HTTPException(403, detail="仅平台超级管理员可执行全平台控制面诊断")
+    return await run_doctor(
+        request.app.state.settings,
+        session=session,
+        services=request.app.state.services,
+    )

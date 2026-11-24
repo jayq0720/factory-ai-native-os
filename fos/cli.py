@@ -327,6 +327,32 @@ async def _run(args: argparse.Namespace) -> int:
             if not rep["ok"]:
                 all_ok = False
         return 0 if all_ok else 1
+    if args.cmd == "doctor":
+        import json
+
+        from fos.ops.doctor import format_doctor_text, run_doctor
+
+        if args.skip_db:
+            report = await run_doctor(s)
+        else:
+            eng = make_engine(s.database_url)
+            try:
+                sm_doc = make_sessionmaker(eng)
+                async with sm_doc() as session:
+                    report = await run_doctor(s, session=session)
+            except Exception as e:
+                report = await run_doctor(s)
+                err_chk = {"name": "database", "status": "fail", "detail": f"数据库连接失败：{e}"}
+                report["checks"].append(err_chk)
+                report["summary"]["fail"] += 1
+                report["ok"] = False
+            finally:
+                await eng.dispose()
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            print(format_doctor_text(report))
+        return 0 if report["ok"] else 1
     if args.cmd in ("eval", "security-check", "watchdog"):
         from datetime import date
         from pathlib import Path
@@ -579,6 +605,9 @@ def main(argv: list[str] | None = None) -> int:
     rl.add_argument("file")
     vp = sub.add_parser("validate-pack", help="独立校验行业包本体、Skill/Tool 绑定与黄金评测集")
     vp.add_argument("pack", nargs="?", default="", help="行业包名称（留空则校验全部）")
+    dc = sub.add_parser("doctor", help="云端控制面一键只读诊断（环境/行业包/租户/数据库/预算）")
+    dc.add_argument("--json", action="store_true", help="输出机器可读 JSON")
+    dc.add_argument("--skip-db", action="store_true", help="跳过数据库连接与预算检查（离线自检）")
     sub.add_parser("edge-keygen", help="生成 fos-edge 命令签名密钥对（私钥进环境变量，公钥进 edge.toml）")
     args = p.parse_args(argv)
     if args.cmd == "edge-keygen":

@@ -10,7 +10,7 @@
 
 ## 2. SRE 可观测性与合规审计（`fos/ops/metrics.py`）
 
-- **健康探针**：`GET /healthz`（存活）与 `GET /readyz`（数据库连通性及模式状态），均豁免 API 限流。
+- **健康探针与一键自检**：`GET /healthz`（存活）与 `GET /readyz`（数据库连通性及模式状态），均豁免 API 限流；全平台控制面自检使用 `fos doctor [--json] [--skip-db]` 或 `GET /v1/ops/doctor`（需 `*.*:*` 权限，一次校验运行环境、原件目录、行业包、租户配置、数据库与租户 Token 预算水位）。
 - **响应追踪头**：所有 HTTP 响应自动附带 `X-Request-Id` 与 `X-Response-Time-Ms`。
 - **零依赖 Prometheus 指标（`GET /v1/ops/metrics`）**：需 `*.*:*` 平台超级管理员权限，导出：
   - HTTP 指标：`fos_http_requests_total`、`fos_http_request_duration_seconds_{sum,count}`；
