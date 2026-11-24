@@ -48,7 +48,7 @@ async def _run_channels(tenant_ids: list[str]) -> int:
     from fos.channels.wecom import WeComAdapter, WeComApp
     from fos.monitoring.watch import monitor_loop
     from fos.planning.notify import order_watch_loop
-    from fos.reports.schedule import daily_loop
+    from fos.reports.schedule import daily_loop, monthly_loop
     from fos.services import Services
     from fos.tender.notify import tender_watch_loop
     from fos.triggers.intake import deliver
@@ -104,6 +104,13 @@ async def _run_channels(tenant_ids: list[str]) -> int:
             if sched is not None and sched.to:
                 runs.append(daily_loop(svc, tid, adapter))
                 print(f"{tid}: [{adapter.name}] 每天 {sched.at} 推送生产日报给 {'、'.join(sched.to)}")
+            msched = tenant.reports.monthly
+            if msched is not None and msched.to:
+                runs.append(monthly_loop(svc, tid, adapter))
+                print(
+                    f"{tid}: [{adapter.name}] 每月 {msched.day_of_month} 日 {msched.at} "
+                    f"推送经营月报给 {'、'.join(msched.to)}"
+                )
             if tid in svc.planning:
                 runs.append(order_watch_loop(svc, tid, adapter))
                 roles = "、".join(svc.planning[tid].watch.notify_roles)
