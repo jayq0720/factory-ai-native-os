@@ -39,6 +39,7 @@ def test_prometheus_configs_and_alert_metric_alignment(client, keys) -> None:
         "FosPendingApprovalsBacklog",
         "FosKilnOpenAlarms",
         "FosEdgeGatewayOffline",
+        "FosLedgerIntegrityFailed",
     }
     assert expected.issubset(names)
 
@@ -81,15 +82,24 @@ def test_grafana_dashboard_json_and_metric_alignment(client, keys) -> None:
             missing = refs - emitted
             assert not missing, f"面板 {p.get('title')} 引用了未导出指标：{missing}"
             referenced_all |= refs
-    assert len(referenced_all) >= 12
+    assert len(referenced_all) >= 13
 
 
 def test_ops_web_doctor_panel_hooks() -> None:
-    """验证 ops.html 与 ops.js 正确挂载控制面 Doctor 与 Edge Fleet 面板。"""
+    """验证 ops.html 与 ops.js 正确挂载控制面 Doctor、Edge Fleet 与账本一致性面板。"""
     html = (REPO_ROOT / "fos" / "web" / "static" / "ops.html").read_text(encoding="utf-8")
     js = (REPO_ROOT / "fos" / "web" / "static" / "ops.js").read_text(encoding="utf-8")
-    for marker in ("btnDoctor", "doctorSummary", "doctorTable", "edgeFleetSummary", "edgeFleetTable"):
+    markers = (
+        "btnDoctor",
+        "doctorSummary",
+        "doctorTable",
+        "edgeFleetSummary",
+        "edgeFleetTable",
+        "ledgerSummary",
+    )
+    for marker in markers:
         assert marker in html
         assert marker in js
     assert "/v1/ops/doctor" in js
     assert "/v1/ops/edge-fleet" in js
+    assert "/v1/ops/ledger-check" in js

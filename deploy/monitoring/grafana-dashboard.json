@@ -91,7 +91,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "预算熔断与安全基线 (1=正常)",
+      "title": "预算熔断、安全基线与账本完整性 (1=正常)",
       "gridPos": {"x": 12, "y": 8, "w": 12, "h": 7},
       "targets": [
         {
@@ -103,6 +103,11 @@
           "refId": "B",
           "expr": "fos_security_baseline_ok{tenant=~\"$tenant\"}",
           "legendFormat": "{{tenant}} 安全基线"
+        },
+        {
+          "refId": "C",
+          "expr": "fos_ledger_integrity_ok{tenant=~\"$tenant\"}",
+          "legendFormat": "{{tenant}} 账本一致性"
         }
       ]
     },

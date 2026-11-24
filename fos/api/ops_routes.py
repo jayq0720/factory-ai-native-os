@@ -84,6 +84,7 @@ async def get_prometheus_metrics(request: Request, session: SessionDep, p: OpsAd
 
     from fos.governance.budget import check_tenant_budget
     from fos.ops.edge_fleet import tenant_edge_alarm_counts
+    from fos.ops.ledger_audit import verify_tenant_ledger
     from fos.ops.metrics import HttpMetrics, render_prometheus
     from fos.ops.packs import list_packs
 
@@ -93,14 +94,18 @@ async def get_prometheus_metrics(request: Request, session: SessionDep, p: OpsAd
     ov = await ops.saas_overview(session, svc, _today(request, p.tenant_id))
     tids = sorted(svc.registry.ids())
     budgets = []
+    ledger_audits = []
     for tid in tids:
         t = svc.registry.get(tid)
         if t is not None:
             budgets.append(await check_tenant_budget(session, t))
+            ledger_audits.append(await verify_tenant_ledger(session, tid))
     packs = list_packs(request.app.state.settings.packs_dir)
     edge_stats = await tenant_edge_alarm_counts(session, tids)
     hm = getattr(request.app.state, "http_metrics", None) or HttpMetrics()
-    body = render_prometheus(hm, ov, budgets=budgets, packs=packs, edge_stats=edge_stats)
+    body = render_prometheus(
+        hm, ov, budgets=budgets, packs=packs, edge_stats=edge_stats, ledger_audits=ledger_audits
+    )
     return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
