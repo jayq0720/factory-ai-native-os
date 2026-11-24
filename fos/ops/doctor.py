@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,8 +13,10 @@ from fos.db.models import Event, User
 from fos.governance.budget import check_tenant_budget
 from fos.ops.packs import list_packs
 from fos.ops.service import security_baseline, verify_tenant_replication
-from fos.services import Services
-from fos.tenancy.registry import TenantRegistry
+from fos.tenancy import TenantRegistry
+
+if TYPE_CHECKING:
+    from fos.services import Services
 
 Status = Literal["ok", "warn", "fail"]
 
