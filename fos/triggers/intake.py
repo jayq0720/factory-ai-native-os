@@ -296,6 +296,8 @@ class TriggerIntake:
                 msg.kind == "text" and msg.tenant_id in self.market and (mm := _market_word(msg.text.strip()))
             ):
                 await self._market(session, msg, out, principal, mm)
+            elif msg.kind == "text" and (om := _ops_word(msg.text.strip())):
+                await self._ops_query(session, msg, out, principal, om)
             elif msg.kind in ("text", "rich") and msg.text:
                 trig.route, trig.status = "router", "pending"  # 提交后交给 AgentRuntime
             else:
@@ -1141,6 +1143,67 @@ class TriggerIntake:
         trig.result = board["counts"]
         await self._reply(None, msg, out, mc.intel_card(board))
 
+    async def _ops_query(
+        self,
+        session: AsyncSession,
+        msg: InboundMessage,
+        out: Outcome,
+        principal: Principal,
+        kind: str,
+    ) -> None:
+        from sqlalchemy import func
+
+        from fos.governance.budget import check_tenant_budget
+        from fos.ops import cards as oc
+        from fos.ops.edge_fleet import edge_fleet_summary
+
+        trig = out.trigger
+        assert trig is not None
+        trig.route, trig.status = f"ops_{kind}", "done"
+        if not principal.can("platform.ops:admin"):
+            await self._reply(None, msg, out, "你没有查看系统运维状态的权限（platform.ops:admin）。")
+            return
+        tid = msg.tenant_id
+        tenant = self.registry.get(tid)
+        tname = tenant.name if tenant else tid
+        fleet = await edge_fleet_summary(session, tid)
+        if kind == "fleet":
+            trig.result = {
+                "gateways_total": fleet["gateways_total"],
+                "gateways_online": fleet["gateways_online"],
+                "open_alarms_total": fleet["open_alarms_total"],
+            }
+            await self._reply(None, msg, out, oc.edge_fleet_card(tname, fleet))
+            return
+        if tenant is not None:
+            budget = await check_tenant_budget(session, tenant)
+        else:
+            budget = {
+                "status": "ok",
+                "reason": "预算充足",
+                "daily_used": 0,
+                "daily_limit": 0,
+                "daily_pct": 0.0,
+                "monthly_used": 0,
+                "monthly_limit": 0,
+                "monthly_pct": 0.0,
+            }
+        q_act = select(func.count(User.id)).where(User.tenant_id == tid, User.is_active.is_(True))
+        active_users = int((await session.execute(q_act)).scalar_one() or 0)
+        q_bnd = (
+            select(func.count(func.distinct(ChannelIdentity.user_id)))
+            .join(User, User.id == ChannelIdentity.user_id)
+            .where(ChannelIdentity.tenant_id == tid, User.is_active.is_(True))
+        )
+        bound_users = int((await session.execute(q_bnd)).scalar_one() or 0)
+        trig.result = {
+            "budget_status": budget["status"],
+            "gateways_online": fleet["gateways_online"],
+            "open_alarms_total": fleet["open_alarms_total"],
+        }
+        card = oc.ops_status_card(tname, budget, fleet, active_users=active_users, bound_users=bound_users)
+        await self._reply(None, msg, out, card)
+
     # ---------------- 工具 ----------------
 
     def _parse_command(self, msg: InboundMessage) -> tuple[str, str] | None:
@@ -1305,6 +1368,16 @@ def _market_word(text: str) -> str | None:
         return "intel"
     if MONTHLY.match(text):
         return "monthly"
+    return None
+
+
+def _ops_word(text: str) -> str | None:
+    from fos.ops.cards import EDGE_FLEET, OPS_STATUS
+
+    if OPS_STATUS.match(text):
+        return "status"
+    if EDGE_FLEET.match(text):
+        return "fleet"
     return None
 
 
