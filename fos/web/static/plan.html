@@ -5,25 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>计划排窑 · 工厂 AI OS</title>
 <link rel="stylesheet" href="app.css">
-<style>
-  .pilot { max-width: 1100px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
-  .pilot > .card { padding: 16px 20px; }
-  .pilot h3 { margin: 14px 0 4px; font-size: 15px; }
-  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
-  .pilot .row > * { flex: 0 0 auto; width: auto; }
-  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-  .pilot .bad { color: #b91c1c; }
-  .pilot .ok { color: #15803d; }
-  .pilot ul.lines { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
-  .gantt { display: grid; gap: 6px; margin-top: 8px; }
-  .gantt .lane { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; font-size: 13px; }
-  .gantt .track { position: relative; height: 30px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
-  .gantt .bar { position: absolute; top: 3px; bottom: 3px; background: #2563eb; color: #fff; border-radius: 3px;
-                font-size: 11px; padding: 2px 4px; overflow: hidden; white-space: nowrap; box-sizing: border-box; }
-  .gantt .bar.part { background: #60a5fa; }
-  .gantt .axis { display: flex; justify-content: space-between; font-size: 11px; color: #6b7280; margin-left: 128px; }
-</style>
 </head>
 <body>
 <div id="mock-banner" class="mock-banner" hidden>模拟数据：演示用排程，确认后也只记为模拟数据</div>
@@ -79,5 +60,6 @@
 </main>
 <div id="toast" class="toast" hidden></div>
 <script src="plan.js"></script>
+<script src="shell.js" defer></script>
 </body>
 </html>

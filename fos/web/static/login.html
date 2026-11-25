@@ -7,40 +7,114 @@
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
-  <main style="max-width:520px;margin:48px auto;padding:24px;border:1px solid #d9dee7;border-radius:12px;">
-    <h1>Factory AI Native OS · 统一登录</h1>
-    <p style="color:#556">输入一次 API Key 即可签发 HttpOnly 会话 Cookie，直接访问全厂 16 个工作台。</p>
-    <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
-      <label>API Key
-        <input id="apiKey" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx"
-               style="width:100%;padding:10px;margin-top:4px;box-sizing:border-box;" required />
-      </label>
-      <div style="display:flex;gap:8px;">
-        <button type="submit" class="btn primary">登录并建立会话</button>
-        <button type="button" id="logoutBtn" class="btn">退出登录</button>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">F</span>
+      <b>Factory AI Native OS</b>
+      <span class="muted">全厂工作台统一入口</span>
+    </div>
+    <div class="top-right">
+      <button type="button" id="themeToggle" class="theme-btn" aria-label="切换深浅色主题">深色</button>
+    </div>
+  </header>
+
+  <main class="login-shell">
+    <section class="login-hero-grid">
+      <div class="login-intro">
+        <h1>全厂工作台统一登录</h1>
+        <p>输入一次 API Key 即可签发 HttpOnly 会话 Cookie，直接访问文档解析、工程热工、窑炉监控与运营总控等 16 个工作台。</p>
+        <div id="status" class="login-status-box">正在检查登录态…</div>
       </div>
-    </form>
-    <div id="status" style="margin-top:16px;padding:12px;border-radius:8px;background:#f5f7fa;">正在检查登录态…</div>
-    <nav id="links" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;">
-      <a href="/app/">主工作台</a>
-      <a href="/app/ops.html">运营总控</a>
-      <a href="/app/kiln.html">窑炉监控</a>
-      <a href="/app/eng.html">工程方案</a>
-      <a href="/app/tender.html">招标拆解</a>
-      <a href="/app/quality.html">质量管理</a>
-      <a href="/app/finance.html">财务成本</a>
-      <a href="/app/market.html">经营驾驶舱</a>
-    </nav>
+
+      <form id="loginForm" class="card login-card">
+        <h2>凭证登录</h2>
+        <label class="small muted" for="apiKey">API Key（由管理员通过 <code>fos issue-key</code> 签发）</label>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="fos_xxxxxxxxxxxxxxxx_xxxxxxxx" required />
+        <div class="row" style="justify-content:flex-start;">
+          <button type="submit" class="btn primary">登录并建立会话</button>
+          <button type="button" id="logoutBtn" class="btn ghost">退出登录</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="portal-directory">
+      <h2>工作台目录</h2>
+      <nav id="links" class="portal-domains" aria-label="全厂 16 个工作台">
+        <div class="portal-col">
+          <h3>核心生产</h3>
+          <ul>
+            <li><a href="/app/">文档解析</a></li>
+            <li><a href="/app/eng.html">工程方案</a></li>
+            <li><a href="/app/kiln.html">窑炉监控</a></li>
+            <li><a href="/app/plan.html">计划排窑</a></li>
+          </ul>
+        </div>
+        <div class="portal-col">
+          <h3>供应链与招采</h3>
+          <ul>
+            <li><a href="/app/tender.html">招标拆解</a></li>
+            <li><a href="/app/supply.html">采购仓储</a></li>
+            <li><a href="/app/quality.html">质量体系</a></li>
+            <li><a href="/app/rnd.html">研发配方</a></li>
+          </ul>
+        </div>
+        <div class="portal-col">
+          <h3>厂务与工程</h3>
+          <ul>
+            <li><a href="/app/construction.html">筑炉施工</a></li>
+            <li><a href="/app/eam.html">设备管理</a></li>
+            <li><a href="/app/ehs.html">安全环保</a></li>
+            <li><a href="/app/pilot.html">试点上线</a></li>
+          </ul>
+        </div>
+        <div class="portal-col">
+          <h3>经营与治理</h3>
+          <ul>
+            <li><a href="/app/finance.html">财务成本</a></li>
+            <li><a href="/app/hr.html">人力薪酬</a></li>
+            <li><a href="/app/market.html">经营与市场</a></li>
+            <li><a href="/app/ops.html">运营总控</a></li>
+          </ul>
+        </div>
+      </nav>
+    </section>
   </main>
+
+  <script src="shell.js" defer></script>
   <script>
     const st = document.getElementById("status");
+    const themeBtn = document.getElementById("themeToggle");
+    function getEffectiveTheme() {
+      const t = document.documentElement.dataset.theme;
+      if (t === "dark" || t === "light") return t;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    function syncThemeBtn() {
+      const dark = getEffectiveTheme() === "dark";
+      themeBtn.textContent = dark ? "浅色" : "深色";
+    }
+    themeBtn.addEventListener("click", () => {
+      const next = getEffectiveTheme() === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("fos_theme", next); } catch (_) {}
+      syncThemeBtn();
+    });
+    syncThemeBtn();
+
     async function refreshSession() {
-      const r = await fetch("/v1/auth/session", { credentials: "same-origin" });
-      if (r.ok) {
-        const d = await r.json();
-        st.textContent = `已登录：${d.display_name}（${d.tenant_name} · 角色：${d.roles.join(", ")}）`;
-      } else {
-        st.textContent = "当前未登录，请输入 API Key。";
+      try {
+        const r = await fetch("/v1/auth/session", { credentials: "same-origin" });
+        if (r.ok) {
+          const d = await r.json();
+          st.className = "login-status-box ok";
+          st.textContent = `已登录：${d.display_name}（${d.tenant_name} · 角色：${d.roles.join(", ")}）`;
+        } else {
+          st.className = "login-status-box";
+          st.textContent = "当前未登录，请输入 API Key。";
+        }
+      } catch (_) {
+        st.className = "login-status-box";
+        st.textContent = "当前未连接后端会话服务，请输入 API Key。";
       }
     }
     document.getElementById("loginForm").addEventListener("submit", async (e) => {
@@ -57,6 +131,7 @@
         await refreshSession();
       } else {
         const err = await r.json().catch(() => ({}));
+        st.className = "login-status-box bad";
         st.textContent = `登录失败：${err.detail || r.status}`;
       }
     });

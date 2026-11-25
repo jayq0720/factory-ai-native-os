@@ -5,25 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>招标拆解 · 工厂 AI OS</title>
 <link rel="stylesheet" href="app.css">
-<style>
-  .pilot { max-width: 1200px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
-  .pilot > .card { padding: 16px 20px; }
-  .pilot h3 { margin: 14px 0 4px; font-size: 15px; }
-  .pilot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
-  .pilot .row > * { flex: 0 0 auto; width: auto; }
-  .pilot table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .pilot th, .pilot td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-  .pilot tr.pick { cursor: pointer; }
-  .pilot tr.pick:hover { background: #f8fafc; }
-  .pilot .bad { color: #b91c1c; }
-  .pilot .warn { color: #b45309; }
-  .pilot .ok { color: #15803d; }
-  .pilot .star { color: #b91c1c; font-weight: 600; }
-  .pilot textarea { width: 100%; min-height: 38px; font: inherit; font-size: 13px; }
-  .pilot .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; font-size: 14px; }
-  .pilot ul.lines { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
-  .pilot .scroll { overflow-x: auto; }
-</style>
 </head>
 <body>
 <div id="mock-banner" class="mock-banner" hidden>模拟数据：用了模拟 OCR 或演示资料库，不能提交投标、不能导出正式文件</div>
@@ -102,5 +83,6 @@
 </main>
 <div id="toast" class="toast" hidden></div>
 <script src="tender.js"></script>
+<script src="shell.js" defer></script>
 </body>
 </html>
