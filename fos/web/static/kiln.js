@@ -155,19 +155,19 @@ async function loadCurve() {
   const g = svg("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none" });
   for (let i = 0; i <= 4; i++) {
     const v = (vmax / 4) * i;
-    g.append(svg("line", { x1: L, x2: W, y1: y(v), y2: y(v), stroke: "#e5e7eb" }));
-    const lab = svg("text", { x: 4, y: y(v) + 4, "font-size": 11, fill: "#6b7280" }); lab.textContent = Math.round(v); g.append(lab);
+    g.append(svg("line", { x1: L, x2: W, y1: y(v), y2: y(v), stroke: "var(--line)" }));
+    const lab = svg("text", { x: 4, y: y(v) + 4, "font-size": 11, fill: "var(--muted)" }); lab.textContent = Math.round(v); g.append(lab);
   }
   const path = (pts, attrs) => pts.length && g.append(svg("polyline", Object.assign({ points: pts.map((p) => `${x(p[0])},${y(p[1])}`).join(" "), fill: "none" }, attrs)));
   if (c.curve.tolerance) {
-    path(c.curve.series.map((p) => [p[0], p[1] + c.curve.tolerance]), { stroke: "#d1d5db", "stroke-dasharray": "4 4" });
-    path(c.curve.series.map((p) => [p[0], Math.max(0, p[1] - c.curve.tolerance)]), { stroke: "#d1d5db", "stroke-dasharray": "4 4" });
+    path(c.curve.series.map((p) => [p[0], p[1] + c.curve.tolerance]), { stroke: "var(--line-strong)", "stroke-dasharray": "4 4" });
+    path(c.curve.series.map((p) => [p[0], Math.max(0, p[1] - c.curve.tolerance)]), { stroke: "var(--line-strong)", "stroke-dasharray": "4 4" });
   }
-  path(c.curve.series, { stroke: "#9ca3af", "stroke-width": 2 });
-  const colors = ["#2563eb", "#059669", "#d97706", "#7c3aed"];
+  path(c.curve.series, { stroke: "var(--muted)", "stroke-width": 2 });
+  const colors = ["var(--accent)", "var(--ok)", "var(--warn)", "var(--bad)"];
   c.lines.forEach((l, i) => {
-    path(l.readings, { stroke: colors[i % colors.length], "stroke-width": 1.5 });
-    for (const s of l.spans) g.append(svg("rect", { x: x(s.start), y: 0, width: Math.max(2, x(s.end) - x(s.start)), height: H - B, fill: "#fecaca", opacity: 0.5 }));
+    path(l.readings, { stroke: colors[i % colors.length], "stroke-width": 1.75 });
+    for (const s of l.spans) g.append(svg("rect", { x: x(s.start), y: 0, width: Math.max(2, x(s.end) - x(s.start)), height: H - B, fill: "var(--bad-soft)", opacity: 0.7 }));
   });
   const legend = el("div", { class: "legend" },
     el("span", {}, `制度：${c.curve.code ? `${c.curve.code}（${c.curve.from}，±${n(c.curve.tolerance)}℃）` : "未指定（只看上下限）"}`),

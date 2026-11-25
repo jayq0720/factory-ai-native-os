@@ -17,37 +17,52 @@
       <a href="/app/rnd.html">研发配方</a>
       <a href="/app/construction.html">筑炉施工</a>
       <a href="/app/market.html"><strong>经营与市场</strong></a>
-      <span id="who" class="muted" style="margin-left:auto"></span>
+      <span id="who" class="muted"></span>
     </div>
   </header>
 
-  <main style="max-width:1180px;margin:1rem auto;padding:0 1rem">
-    <section class="card">
-      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-        <label>API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
-        <button id="btnLoad">刷新看板</button>
-        <button id="btnExport">导出经营与市场报表 (.xlsx)</button>
-        <label>月报月份：<input id="reportMonth" type="month" /></label>
-        <button id="btnMonthly">预览月度经营报告</button>
-        <button id="btnMonthlyXlsx">导出月报 (.xlsx)</button>
-        <span id="msg" class="muted"></span>
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>经营驾驶舱与市场商机</h1>
+        <p>跨部门实时经营汇总、月度合规报告导出、市场商机漏斗追踪与竞品行情情报。</p>
+      </div>
+    </div>
+
+    <section class="card toolbar-card">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <label class="toolbar-field">API Key
+            <input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" />
+          </label>
+          <button id="btnLoad" class="btn primary">刷新看板</button>
+        </div>
+        <div class="toolbar-group">
+          <label class="toolbar-field">月报月份
+            <input id="reportMonth" type="month" />
+          </label>
+          <button id="btnMonthly" class="btn small">预览月度报告</button>
+          <button id="btnMonthlyXlsx" class="btn small">导出月报 (.xlsx)</button>
+          <button id="btnExport" class="btn small">导出商机报表 (.xlsx)</button>
+        </div>
+        <span id="msg" class="muted toolbar-msg"></span>
       </div>
     </section>
 
     <section class="card">
       <h2>工厂经营决策驾驶舱（跨部门实时汇总）</h2>
-      <div id="cockpitSummary" class="muted">加载中...</div>
+      <div id="cockpitSummary" class="summary-strip">加载中...</div>
     </section>
 
     <section class="card" id="monthlyCard" style="display:none">
       <h2>全厂月度经营与合规汇总报表</h2>
-      <pre id="monthlyPreview" style="white-space:pre-wrap;margin:0;font-family:inherit"></pre>
+      <pre id="monthlyPreview" class="code-out prose-out"></pre>
     </section>
 
     <section class="card">
       <h2>市场商机漏斗（50 万元及以上丢单需销售负责人复盘确认）</h2>
-      <div id="funnelSummary" class="muted">加载中...</div>
-      <table id="leadTable" style="width:100%;margin-top:.5rem">
+      <div id="funnelSummary" class="summary-strip">加载中...</div>
+      <table id="leadTable">
         <thead>
           <tr><th>商机号</th><th>客户</th><th>行业</th><th>意向产品</th><th>预计金额</th><th>概率%</th><th>加权额</th><th>阶段</th><th>负责人</th></tr>
         </thead>
@@ -57,7 +72,7 @@
 
     <section class="card">
       <h2>竞品行情情报</h2>
-      <table id="intelTable" style="width:100%">
+      <table id="intelTable">
         <thead>
           <tr><th>情报号</th><th>竞争对手</th><th>产品大类</th><th>参考吨价</th><th>区域</th><th>日期</th><th>行情摘要</th></tr>
         </thead>
@@ -66,6 +81,6 @@
     </section>
   </main>
   <script src="market.js"></script>
-<script src="shell.js" defer></script>
+  <script src="shell.js" defer></script>
 </body>
 </html>

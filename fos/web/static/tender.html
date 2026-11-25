@@ -31,11 +31,12 @@
 </section>
 
 <main id="app" class="pilot" hidden>
+  <div class="page-head"><div><h1>招标文件拆解与星标审查</h1><p>标书核心条款抽取、星标实质性响应核对与风险项逐条确认。</p></div></div>
   <section class="card">
     <h2>招标项目</h2>
     <p class="muted small">在“文档解析”页上传招标文件（类别选“招标文件”），核对投标截止时间等字段后，把文档 id 填在这里登记。登记时按截止时间生成提醒待办，并自动拆解。</p>
     <div class="row">
-      <input id="doc-id" placeholder="招标文件的文档 id" style="min-width:300px">
+      <input id="doc-id" placeholder="招标文件的文档 id" class="w-wide">
       <input id="owner" placeholder="负责人登录名（默认自己）">
       <button id="b-create" class="btn primary small">登记并拆解</button>
       <button id="b-list" class="btn small">刷新</button>
@@ -48,7 +49,7 @@
     <div id="d-info" class="kv"></div>
     <h3>风险</h3>
     <div id="d-risks"></div>
-    <div class="row" style="margin-top:10px">
+    <div class="row" class="mt-sm">
       <button id="b-analyze" class="btn small">重新拆解</button>
       <button id="b-eng" class="btn small">技术规格转工程项目</button>
       <a id="b-export" class="btn small" href="#">导出 Excel</a>

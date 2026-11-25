@@ -13,40 +13,66 @@
       <a href="/app/">工作台</a>
       <a href="/app/market.html">经营与市场</a>
       <a href="/app/ops.html"><strong>运营总控</strong></a>
-      <span id="who" class="muted" style="margin-left:auto"></span>
+      <span id="who" class="muted"></span>
     </div>
   </header>
 
-  <main style="max-width:1180px;margin:1rem auto;padding:0 1rem">
-    <section class="card">
-      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-        <label>管理员 API Key：<input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" style="width:260px" /></label>
-        <button id="btnLoad">刷新运营总览</button>
-        <button id="btnWatchdog">立即执行全厂 Watchdog 巡检</button>
-        <button id="btnEval">运行黄金数据集评测</button>
-        <button id="btnDoctor">控制面一键自检</button>
-        <button id="btnAuditXlsx">导出审计流水 (.xlsx)</button>
-        <button id="btnBackupJsonl">下载账本灾备 (.jsonl)</button>
-        <button id="btnSupportBundle">下载诊断包 (.zip)</button>
-        <span id="msg" class="muted"></span>
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>SaaS 运营总控与巡检中心</h1>
+        <p>控制面健康自检、厂端采集网关车队状态、多租户配额治理与不可变账本审计流水。</p>
+      </div>
+    </div>
+
+    <section class="card toolbar-card">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <label class="toolbar-field">管理员 API Key
+            <input id="apiKey" type="password" placeholder="粘贴 fos_... 密钥" />
+          </label>
+          <button id="btnLoad" class="btn primary">刷新运营总览</button>
+        </div>
+        <div class="toolbar-group">
+          <button id="btnDoctor" class="btn small">控制面自检</button>
+          <button id="btnWatchdog" class="btn small">Watchdog 巡检</button>
+          <button id="btnEval" class="btn small">黄金集评测</button>
+          <button id="btnAuditXlsx" class="btn small">审计流水 (.xlsx)</button>
+          <button id="btnBackupJsonl" class="btn small">账本灾备 (.jsonl)</button>
+          <button id="btnSupportBundle" class="btn small">诊断包 (.zip)</button>
+        </div>
+        <span id="msg" class="muted toolbar-msg"></span>
       </div>
     </section>
 
-    <section class="card">
-      <h2>云端控制面一键诊断（Doctor）</h2>
-      <div id="doctorSummary" class="muted">点击“控制面一键自检”或刷新页面自动执行七维健康检查。</div>
-      <table id="doctorTable" style="width:100%;margin-top:.5rem">
-        <thead>
-          <tr><th>诊断项</th><th>状态</th><th>详情</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
+    <div class="grid-2">
+      <section class="card">
+        <h2>云端控制面一键诊断（Doctor）</h2>
+        <div id="doctorSummary" class="summary-strip">点击“控制面自检”或刷新页面自动执行七维健康检查。</div>
+        <table id="doctorTable">
+          <thead>
+            <tr><th>诊断项</th><th>状态</th><th>详情</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>黄金数据集回归评测（W29）</h2>
+        <div id="evalSummary" class="summary-strip">点击“黄金集评测”执行全量确定性回归。</div>
+        <table id="evalTable">
+          <thead>
+            <tr><th>评测类别</th><th>用例总数</th><th>通过</th><th>失败</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
 
     <section class="card">
       <h2>厂端网关车队与窑炉告警总览（Edge Fleet）</h2>
-      <div id="edgeFleetSummary" class="muted">加载中...</div>
-      <table id="edgeFleetTable" style="width:100%;margin-top:.5rem">
+      <div id="edgeFleetSummary" class="summary-strip">加载中...</div>
+      <table id="edgeFleetTable">
         <thead>
           <tr><th>网关 ID</th><th>状态</th><th>最近心跳</th><th>延迟(秒)</th><th>最新序号</th><th>待执行命令</th><th>未闭环告警</th></tr>
         </thead>
@@ -56,8 +82,8 @@
 
     <section class="card">
       <h2>多租户 SaaS 运营总览</h2>
-      <div id="saasSummary" class="muted">加载中...</div>
-      <table id="tenantTable" style="width:100%;margin-top:.5rem">
+      <div id="saasSummary" class="summary-strip">加载中...</div>
+      <table id="tenantTable">
         <thead>
           <tr><th>租户 ID</th><th>工厂名称</th><th>行业包</th><th>启用模块数</th><th>活跃用户</th><th>事件总数</th><th>未闭环待办</th><th>待审批</th><th>7日 Token</th><th>安全基线</th></tr>
         </thead>
@@ -65,38 +91,31 @@
       </table>
     </section>
 
-    <section class="card">
-      <h2>当前租户安全与上线基线自检</h2>
-      <table id="secTable" style="width:100%">
-        <thead>
-          <tr><th>检查项</th><th>结果</th><th>级别</th><th>详情</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
+    <div class="grid-2">
+      <section class="card">
+        <h2>当前租户安全与上线基线自检</h2>
+        <table id="secTable">
+          <thead>
+            <tr><th>检查项</th><th>结果</th><th>级别</th><th>详情</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
 
-    <section class="card">
-      <h2>黄金数据集回归评测（W29）</h2>
-      <div id="evalSummary" class="muted">点击“运行黄金数据集评测”执行全量确定性回归。</div>
-      <table id="evalTable" style="width:100%;margin-top:.5rem">
-        <thead>
-          <tr><th>评测类别</th><th>用例总数</th><th>通过</th><th>失败</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <section class="card">
-      <h2>LLM Token 预算租约、行业包与 IM 绑定覆盖率</h2>
-      <div id="budgetSummary" class="muted">加载中...</div>
-      <div id="packSummary" class="muted" style="margin-top:.35rem"></div>
-      <div id="imSummary" class="muted" style="margin-top:.35rem"></div>
-      <div id="ledgerSummary" class="muted" style="margin-top:.35rem"></div>
-    </section>
+      <section class="card">
+        <h2>LLM Token 预算租约、行业包与 IM 绑定覆盖率</h2>
+        <div class="summary-stack">
+          <div id="budgetSummary" class="summary-strip">加载中...</div>
+          <div id="packSummary" class="summary-strip"></div>
+          <div id="imSummary" class="summary-strip"></div>
+          <div id="ledgerSummary" class="summary-strip"></div>
+        </div>
+      </section>
+    </div>
 
     <section class="card">
       <h2>租户账号与角色治理</h2>
-      <table id="userTable" style="width:100%">
+      <table id="userTable">
         <thead>
           <tr><th>登录名</th><th>姓名</th><th>角色</th><th>状态</th><th>操作</th></tr>
         </thead>
@@ -106,7 +125,7 @@
 
     <section class="card">
       <h2>API Key 密钥治理（仅展示脱敏元数据）</h2>
-      <table id="keyTable" style="width:100%">
+      <table id="keyTable">
         <thead>
           <tr><th>Key ID</th><th>登录名</th><th>角色</th><th>标签</th><th>网关绑定</th><th>状态</th><th>最近使用</th><th>操作</th></tr>
         </thead>
@@ -116,7 +135,7 @@
 
     <section class="card">
       <h2>最新不可变账本审计流水</h2>
-      <table id="auditTable" style="width:100%">
+      <table id="auditTable">
         <thead>
           <tr><th>序号</th><th>事件类型</th><th>对象</th><th>操作者</th><th>模式</th><th>证据数</th><th>发生时间</th></tr>
         </thead>
@@ -125,6 +144,6 @@
     </section>
   </main>
   <script src="ops.js"></script>
-<script src="shell.js" defer></script>
+  <script src="shell.js" defer></script>
 </body>
 </html>
