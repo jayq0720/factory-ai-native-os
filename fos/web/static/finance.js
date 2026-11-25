@@ -7,7 +7,7 @@ function getKey() {
 function setMsg(text, isErr = false) {
   const el = $("msg");
   el.textContent = text;
-  el.style.color = isErr ? "#c00" : "#555";
+  el.className = isErr ? "bad" : "muted";
 }
 
 async function api(path, opts = {}) {
